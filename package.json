@@ -1,0 +1,17 @@
+{
+  "name": "emberfall-last-light",
+  "version": "1.0.0",
+  "description": "EMBERFALL: LAST LIGHT — a top-down action roguelite. Explore corrupted zones, fight the dark, protect the last light.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.2",
+    "vite": "^5.4.8"
+  }
+}
