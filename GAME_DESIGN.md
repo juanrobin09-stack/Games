@@ -29,7 +29,7 @@ A run ends when the player either falls (**Defeat**) or destroys **The Ashen Col
 5. Exploration reveals a **shop**, **event**, **chest**, or **rest** room — each has its own one-time onboarding hint the first time it's found.
 6. Reaching the zone's **heart** room (a tougher guardian fight) grants a bigger reward and unlocks the portal to the next zone.
 
-All hints are shown at most once, ever (tracked via `tutorialSeen` in the save); a completed first run silences onboarding for good.
+All hints are shown at most once, ever, tracked per-hint key via `hintsShown` in the save (a legacy save with the old single `tutorialSeen` flag migrates to every hint marked seen, so returning players aren't hint-flooded); a completed first run silences onboarding for good.
 
 ## 3. Progression Layers
 
@@ -68,9 +68,10 @@ Base stats: 100 HP, 0.4 HP/s regen, 190 move speed, 5% crit chance, 1.5× crit d
 - **Melee weapons** hit *every* enemy inside an arc (`arcDegrees`) out to `range × rangeMult` the instant the swing starts — an intentional design choice for crowd-clearing game feel over single-target precision.
 - **Ranged weapons** fire `1 + projectileCount` projectiles that pierce `pierce` targets before expiring.
 - **Crits** roll at `critChance` (stat + weapon bonus) and multiply damage by `critDamage`. A crit landed on an enemy mid-windup **interrupts** its attack (except elites/boss) — a skill reward for aggressive, well-timed play.
-- **Dodge** grants full invulnerability for its duration (~0.22s, scaled by `dodgeCooldownMult`) and a directional burst of speed.
+- **Dodge** grants full invulnerability for its duration (~0.22s, scaled by `dodgeCooldownMult`) and a directional burst of speed. A **perfect dodge** (avoiding a real hit) always triggers a distinct particle flash and chime so skilled timing is immediately readable regardless of build; the **Shadow & Dodge** synergy additionally grants +35% damage for 3s on top of that universal feedback.
 - **Contact damage**: non-telegraphed touch damage from a chasing enemy, capped to once per 0.6s per enemy, so standing in a crowd chips rather than melts you — the *real* threat is always the telegraphed attack.
 - **Hit-stop**: crits, Ember Burst, elite kills, and boss-phase/death beats briefly slow the whole simulation (not just the visuals) to a crawl for 45–140ms — a classic "hitlag" trick layered on top of screen shake and hit-flash so the heaviest moments read as heavier than routine hits, without ever fully freezing input.
+- **Danger vignette**: a full-screen ember-red vignette fades in once HP drops below 35% and breaks into an urgent pulse below 15%, so mortal danger is readable at a glance instead of requiring a glance at the corner HP bar mid-fight.
 
 ## 6. Enemies
 
