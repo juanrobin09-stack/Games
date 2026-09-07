@@ -1,6 +1,6 @@
 import { nextEntityId } from '@/entities/EntityId';
 
-export type ObstacleVisual = 'tree' | 'rock' | 'pillar' | 'rubble' | 'brazier' | 'crystal' | 'statue';
+export type ObstacleVisual = 'tree' | 'rock' | 'pillar' | 'rubble' | 'brazier' | 'crystal' | 'statue' | 'merchantStall' | 'shrine';
 
 export class Obstacle {
   readonly id = nextEntityId();
@@ -19,6 +19,6 @@ export class Obstacle {
     this.visual = visual;
     this.seed = Math.random() * 1000;
     this.blocksProjectiles = opts?.blocksProjectiles ?? (visual === 'pillar' || visual === 'statue' || visual === 'rock');
-    this.lit = opts?.lit ?? (visual === 'brazier' || visual === 'crystal');
+    this.lit = opts?.lit ?? (visual === 'brazier' || visual === 'crystal' || visual === 'merchantStall' || visual === 'shrine');
   }
 }

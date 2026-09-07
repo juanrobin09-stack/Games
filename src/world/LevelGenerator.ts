@@ -275,9 +275,17 @@ export function populateRoomContent(room: Room, zone: ZoneDefinition, opts: Spaw
       scatterObstacles(room, rng, zone.index, rng.int(1, 2));
       break;
     }
+    case 'shop': {
+      room.obstacles.push(new Obstacle(ROOM_WIDTH / 2, ROOM_HEIGHT / 2, 26, 'merchantStall'));
+      scatterObstacles(room, rng, zone.index, rng.int(1, 2));
+      break;
+    }
+    case 'event': {
+      room.obstacles.push(new Obstacle(ROOM_WIDTH / 2, ROOM_HEIGHT / 2, 22, 'shrine'));
+      scatterObstacles(room, rng, zone.index, rng.int(1, 2));
+      break;
+    }
     case 'start':
-    case 'shop':
-    case 'event':
     case 'boss':
     default:
       scatterObstacles(room, rng, zone.index, rng.int(0, 2));
