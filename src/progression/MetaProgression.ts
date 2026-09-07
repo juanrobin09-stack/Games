@@ -109,7 +109,11 @@ export class MetaProgression {
     if (opts.died) this.data.stats.totalDeaths++;
     if (opts.bossDefeated) this.data.stats.bossesDefeated++;
     this.data.stats.totalEmbersCollected += opts.embersCollected;
-    if (opts.bossDefeated && (this.data.stats.bestTimeSeconds === null || opts.timeSeconds < this.data.stats.bestTimeSeconds)) {
+    if (
+      opts.bossDefeated &&
+      Number.isFinite(opts.timeSeconds) &&
+      (this.data.stats.bestTimeSeconds === null || opts.timeSeconds < this.data.stats.bestTimeSeconds)
+    ) {
       this.data.stats.bestTimeSeconds = opts.timeSeconds;
     }
     this.save();
