@@ -147,7 +147,7 @@ damageMult  = 1 + zoneIndex × 0.22 + corruption × 0.35
 extraEnemies = floor(zoneIndex × 0.6 + corruption × 1.6)
 ```
 
-`corruption = min(1, runMinutes / 14)` — the **darkness pressure** meter shown in the HUD. It never insta-kills the player; it just makes dawdling progressively more dangerous, giving a soft push toward the zone's heart rather than a hard timer.
+`corruption = min(1, runMinutes / 14)` — the **darkness pressure** meter shown in the HUD, reinforced by a slow-fading shadow-toned screen vignette so the pressure is felt ambiently, not just read off a corner bar. It never insta-kills the player; it just makes dawdling progressively more dangerous, giving a soft push toward the zone's heart rather than a hard timer.
 
 ## 10. Level Generation
 
