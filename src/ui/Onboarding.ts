@@ -1,6 +1,6 @@
 import type { HUD } from '@/ui/HUD';
-import type { RunState } from '@/progression/RunState';
 import type { InputMode } from '@/core/Input';
+import { meta } from '@/progression/MetaProgression';
 
 const HINTS_DESKTOP: Record<string, string> = {
   move: 'Use <strong>WASD</strong> to move — aim with your mouse.',
@@ -26,14 +26,15 @@ const HINTS_SHARED: Record<string, string> = {
   boss: 'Watch for the red glow before an attack lands — that is your window to dodge.',
 };
 
-/** Shows each contextual hint once per first-ever playthrough, then goes silent for good. */
+/** Shows each contextual hint once, ever, across every run — persisted in the save
+ * file so a hint tied to a room type the player hasn't reached yet (chest/shop/boss)
+ * still appears the first time they actually encounter it, even in a later run. */
 export class Onboarding {
-  constructor(private hud: HUD, private run: RunState, private active: boolean, private mode: InputMode = 'desktop') {}
+  constructor(private hud: HUD, private mode: InputMode = 'desktop') {}
 
   show(key: string): void {
-    if (!this.active) return;
-    if (this.run.tutorialHintsShown.has(key)) return;
-    this.run.tutorialHintsShown.add(key);
+    if (meta.hasSeenHint(key)) return;
+    meta.markHintSeen(key);
     const modeHints = this.mode === 'touch' ? HINTS_TOUCH : HINTS_DESKTOP;
     const text = modeHints[key] ?? HINTS_SHARED[key];
     if (text) this.hud.showToast(text);

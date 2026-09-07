@@ -104,7 +104,8 @@ export class Player {
     return this.activeSynergies.has(id);
   }
 
-  addUpgrade(def: UpgradeDefinition): void {
+  /** Applies the upgrade and returns the IDs of any synergy that just became active for the first time. */
+  addUpgrade(def: UpgradeDefinition): string[] {
     const existing = this.upgrades.find((u) => u.def.id === def.id);
     if (existing) {
       if (!def.maxStacks || existing.stacks < def.maxStacks) existing.stacks++;
@@ -112,8 +113,10 @@ export class Player {
       this.upgrades.push({ def, stacks: 1 });
     }
     const hpRatio = this.hp / Math.max(1, this.stats.maxHp);
+    const before = new Set(this.activeSynergies);
     this.recomputeStats();
     this.hp = Math.min(this.stats.maxHp, Math.max(this.hp, this.stats.maxHp * hpRatio));
+    return Array.from(this.activeSynergies).filter((id) => !before.has(id));
   }
 
   get weapon() {

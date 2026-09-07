@@ -38,7 +38,7 @@ export class ShopUI {
       el('div', { class: 'screen-subtitle' }, ['"Everything has a price, Warden. Choose wisely."']),
       this.embersEl,
       this.listEl,
-      el('div', { class: 'button-row' }, [this.rerollBtn, el('button', { class: 'btn primary', onClick: this.callbacks.onClose }, ['Leave'])]),
+      el('div', { class: 'button-row' }, [this.rerollBtn, el('button', { class: 'btn primary', onClick: () => this.leave() }, ['Leave'])]),
     ]);
     this.root.appendChild(panel);
     this.renderList();
@@ -84,6 +84,11 @@ export class ShopUI {
       playSfx('shopError');
     }
     this.renderList();
+  }
+
+  private leave(): void {
+    this.destroy();
+    this.callbacks.onClose();
   }
 
   private reroll(): void {

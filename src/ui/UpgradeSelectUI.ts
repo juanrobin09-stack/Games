@@ -20,8 +20,8 @@ export class UpgradeSelectUI {
             if (button.disabled) return;
             cards.forEach((c) => (c.disabled = true));
             playSfx('upgradeChoose');
+            this.destroy();
             callbacks.onChoose(def);
-            window.setTimeout(() => this.destroy(), 160);
           },
         },
         [

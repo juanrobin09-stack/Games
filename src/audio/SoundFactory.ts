@@ -96,6 +96,7 @@ export type SfxId =
   | 'abilityEmberBurst'
   | 'abilityStormstep'
   | 'abilityWardingSigil'
+  | 'synergyFormed'
   | 'pickupEmber'
   | 'pickupSoulAsh'
   | 'pickupHeart'
@@ -182,6 +183,14 @@ const players: Record<SfxId, () => void> = {
     if (!d) return;
     tone(d, { freq: 220, freqEnd: 440, type: 'sine', duration: 0.5, volume: 0.16 });
     tone(d, { freq: 330, freqEnd: 660, type: 'sine', duration: 0.5, volume: 0.1, delay: 0.05 });
+  },
+  synergyFormed: () => {
+    const d = audio.sfxDestination;
+    if (!d) return;
+    tone(d, { freq: 392, type: 'sine', duration: 0.5, volume: 0.14 });
+    tone(d, { freq: 587.33, type: 'sine', duration: 0.55, volume: 0.13, delay: 0.09 });
+    tone(d, { freq: 784, type: 'triangle', duration: 0.7, volume: 0.12, delay: 0.18 });
+    tone(d, { freq: 1568, type: 'sine', duration: 0.5, volume: 0.06, delay: 0.22 });
   },
   pickupEmber: () => {
     const d = audio.sfxDestination;

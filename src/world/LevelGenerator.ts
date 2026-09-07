@@ -102,29 +102,38 @@ export function generateZoneLayout(zone: ZoneDefinition, rng: Random): ZoneLayou
     return taken;
   };
 
-  // Combat must always get a fair share of the flexible rooms — reserve its
-  // minimum first, then spend whatever remains on specials in priority order
-  // (elite > shop > event > chest > rest > a 2nd event/chest for bigger
-  // zones). This guarantees small zones never degrade to zero plain fights,
-  // which a purely sequential "take N of each" allocation could do.
-  const minCombat = Math.max(1, Math.floor(others.length * 0.4));
-  let specialBudget = Math.max(0, others.length - minCombat);
-  const spend = (predicate: (r: Room) => boolean, type: Room['type']): void => {
-    if (specialBudget <= 0) return;
-    const taken = takeFrom(shuffled, predicate, 1);
-    if (taken.length > 0) {
-      taken[0].type = type;
-      specialBudget--;
-    }
+  // Elite, shop and chest are the three room types that most directly serve
+  // "the player should always have interesting choices" — a risk/reward
+  // fight, a currency sink, and a guaranteed upgrade. They're reserved first,
+  // unconditionally, so a small or unlucky zone layout can never starve a
+  // whole run of a shop or a chest. Whatever remains is split between a
+  // guaranteed combat minimum and secondary specials (event/rest/a bonus
+  // 2nd event or chest for bigger zones); any leftover room defaults to combat.
+  const ALWAYS = () => true;
+  const takeOne = (predicate: (r: Room) => boolean, type: Room['type']): void => {
+    let taken = takeFrom(shuffled, predicate, 1);
+    if (taken.length === 0 && predicate !== ALWAYS) taken = takeFrom(shuffled, ALWAYS, 1);
+    if (taken.length > 0) taken[0].type = type;
   };
 
-  spend((r) => r.distanceFromStart >= 2, 'elite');
-  spend(() => true, 'shop');
-  spend(() => true, 'event');
-  spend(() => true, 'chest');
-  spend(() => true, 'rest');
-  spend(() => true, 'event');
-  spend(() => true, 'chest');
+  takeOne((r) => r.distanceFromStart >= 2, 'elite');
+  takeOne(ALWAYS, 'shop');
+  takeOne(ALWAYS, 'chest');
+
+  const minCombat = Math.max(1, Math.floor(shuffled.length * 0.5));
+  let bonusBudget = Math.max(0, shuffled.length - minCombat);
+  const spendBonus = (type: Room['type']): void => {
+    if (bonusBudget <= 0) return;
+    const taken = takeFrom(shuffled, ALWAYS, 1);
+    if (taken.length > 0) {
+      taken[0].type = type;
+      bonusBudget--;
+    }
+  };
+  spendBonus('event');
+  spendBonus('rest');
+  spendBonus('event');
+  spendBonus('chest');
 
   return { zone, rooms, startKey: start.key, endKey: endRoom.key };
 }

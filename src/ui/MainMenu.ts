@@ -2,11 +2,20 @@ import { el } from '@/ui/dom';
 import { Palette } from '@/rendering/Palette';
 
 export interface MainMenuCallbacks {
-  onPlay: () => void;
+  onPlay: (seed?: number) => void;
   onUpgrades: () => void;
   onArmory: () => void;
   onSettings: () => void;
   onCredits: () => void;
+}
+
+function parseSeedInput(raw: string): number | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  // Accept a raw number, or the base-36 label shown on end screens (e.g. "K3F1Z").
+  if (/^\d+$/.test(trimmed)) return Math.floor(Number(trimmed)) % 1_000_000_000;
+  const fromBase36 = parseInt(trimmed, 36);
+  return Number.isFinite(fromBase36) && fromBase36 >= 0 ? fromBase36 : undefined;
 }
 
 interface EmberMote {
@@ -32,15 +41,26 @@ export class MainMenu {
     this.canvas = el('canvas', { class: 'main-menu-canvas' });
     this.ctx = this.canvas.getContext('2d')!;
 
+    const urlSeed = new URLSearchParams(window.location.search).get('seed') ?? '';
+    const seedInput = el('input', {
+      type: 'text',
+      class: 'seed-input',
+      placeholder: 'Seed (optional)',
+      value: urlSeed,
+      maxlength: '12',
+      'aria-label': 'Run seed',
+    }) as HTMLInputElement;
+
     const content = el('div', { class: 'main-menu-content' }, [
       el('h1', { class: 'game-title' }, ['EMBERFALL']),
       el('div', { class: 'game-subtitle' }, ['Last Light']),
       el('div', { class: 'main-menu-buttons' }, [
-        el('button', { class: 'btn primary', onClick: callbacks.onPlay }, ['Play']),
+        el('button', { class: 'btn primary', onClick: () => callbacks.onPlay(parseSeedInput(seedInput.value)) }, ['Play']),
         el('button', { class: 'btn', onClick: callbacks.onUpgrades }, ['Upgrades']),
         el('button', { class: 'btn', onClick: callbacks.onArmory }, ['Armory']),
         el('button', { class: 'btn', onClick: callbacks.onSettings }, ['Settings']),
         el('button', { class: 'btn ghost', onClick: callbacks.onCredits }, ['Credits']),
+        seedInput,
       ]),
     ]);
 

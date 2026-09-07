@@ -115,9 +115,13 @@ export class MetaProgression {
     this.save();
   }
 
-  markTutorialSeen(): void {
-    if (this.data.tutorialSeen) return;
-    this.data.tutorialSeen = true;
+  hasSeenHint(key: string): boolean {
+    return this.data.hintsShown.includes(key);
+  }
+
+  markHintSeen(key: string): void {
+    if (this.hasSeenHint(key)) return;
+    this.data.hintsShown.push(key);
     this.save();
   }
 }

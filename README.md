@@ -21,8 +21,9 @@ explore → fight → loot → upgrade → push your luck → reach the zone's h
 - **Full combat kit**: melee/ranged weapon swap, a dodge with i-frames, and 3 special abilities, all with real hit detection, knockback, crits, and status effects.
 - **7 enemy types** (6 base + 1 unlockable) with distinct silhouettes, AI behaviors, and attacks, plus an elite variant system.
 - **A 3-phase boss fight** — The Ashen Colossus — with telegraphed attacks, adds, and an environmental hazard phase.
-- **Deterministic seeded procedural generation**: every run's room graph, loot, and enemy placement is reproducible from its seed (shown on the end screen).
-- **22 in-run upgrades** across 5 rarities, **5 cross-upgrade synergies**, and a full **permanent meta-progression** tree (10 stat nodes + 6 unlocks) spent with Soul Ash between runs.
+- **Deterministic seeded procedural generation**: every run's room graph, loot, and enemy placement is reproducible from its seed. The seed is shown on the end screen, and can be typed back into the main menu's seed field (or passed as a `?seed=` URL query param) to replay or share an exact layout — handy for reporting a specific bug.
+- **22 in-run upgrades** across 5 rarities, **5 cross-upgrade synergies** (visibly announced with a banner and a distinct chime the moment a pair activates), and a full **permanent meta-progression** tree (10 stat nodes + 6 unlocks) spent with Soul Ash between runs. The pause menu's "Your Build" screen lists every upgrade collected and synergy currently active mid-run.
+- **Weighty combat feedback**: crits, Ember Burst, elite kills, and boss-phase beats trigger a brief real-time hit-stop on top of the existing screen shake / hit-flash / damage numbers, tied to the screen-shake accessibility toggle.
 - **3 weapons, 3 abilities, 7 enemies** — two weapons, two abilities, and one enemy type are unlockable via the Armory.
 - **Procedural audio**: every sound effect and the ambient score are synthesized live with the Web Audio API — no audio files.
 - **Procedural visuals**: canvas-drawn silhouettes, a pooled particle system, and a two-layer Canvas2D lighting model (ambient darkness + additive glow sources).

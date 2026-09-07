@@ -50,7 +50,9 @@ export class HUD {
   private bossDots!: HTMLElement;
   private toastArea!: HTMLElement;
   private phaseBanner!: HTMLElement;
+  private synergyBanner!: HTMLElement;
   private timerLabel!: HTMLElement;
+  private toastTimers: number[] = [];
 
   constructor(container: HTMLElement) {
     this.root = this.build();
@@ -78,6 +80,7 @@ export class HUD {
     this.bossDots = el('div', { class: 'hud-boss-phase-dots' });
     this.toastArea = el('div', { class: 'hud-toast-area' });
     this.phaseBanner = el('div', { class: 'hud-phase-banner' });
+    this.synergyBanner = el('div', { class: 'hud-synergy-banner' });
     this.timerLabel = el('span', {}, ['0:00']);
 
     this.bossBar = el('div', { class: 'hud-boss-bar' }, [
@@ -123,6 +126,7 @@ export class HUD {
       this.bossBar,
       this.toastArea,
       this.phaseBanner,
+      this.synergyBanner,
     ]);
   }
 
@@ -175,11 +179,13 @@ export class HUD {
   showToast(text: string, durationMs = 4200): void {
     const toast = el('div', { class: 'hud-toast', html: text });
     this.toastArea.appendChild(toast);
-    window.setTimeout(() => {
+    const fadeTimer = window.setTimeout(() => {
       toast.style.transition = 'opacity 0.4s ease';
       toast.style.opacity = '0';
-      window.setTimeout(() => toast.remove(), 420);
+      const removeTimer = window.setTimeout(() => toast.remove(), 420);
+      this.toastTimers.push(removeTimer);
     }, durationMs);
+    this.toastTimers.push(fadeTimer);
   }
 
   showPhaseBanner(text: string): void {
@@ -187,6 +193,16 @@ export class HUD {
     this.phaseBanner.classList.remove('showing');
     void this.phaseBanner.offsetWidth;
     this.phaseBanner.classList.add('showing');
+  }
+
+  showSynergyBanner(name: string, description: string): void {
+    this.synergyBanner.innerHTML = '';
+    this.synergyBanner.appendChild(el('div', { class: 'synergy-label' }, ['Synergy Formed']));
+    this.synergyBanner.appendChild(el('div', { class: 'synergy-name' }, [name]));
+    this.synergyBanner.appendChild(el('div', { class: 'synergy-desc' }, [description]));
+    this.synergyBanner.classList.remove('showing');
+    void this.synergyBanner.offsetWidth;
+    this.synergyBanner.classList.add('showing');
   }
 
   update(data: HudFrameData): void {
@@ -253,6 +269,8 @@ export class HUD {
   }
 
   destroy(): void {
+    this.toastTimers.forEach((id) => window.clearTimeout(id));
+    this.toastTimers.length = 0;
     this.root.remove();
   }
 }

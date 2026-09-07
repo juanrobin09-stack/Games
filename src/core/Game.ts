@@ -2,6 +2,7 @@ import { Renderer } from '@/rendering/Renderer';
 import { Camera } from '@/core/Camera';
 import { InputManager } from '@/core/Input';
 import { GameState, GameStateMachine } from '@/core/GameState';
+import { HitStopController } from '@/core/HitStop';
 import { gameEvents } from '@/core/GameEvents';
 import { ParticleSystem } from '@/rendering/ParticleSystem';
 import { LightingSystem } from '@/rendering/Lighting';
@@ -37,6 +38,7 @@ import { rollUpgradeChoices, pickUpgradeAtLeastRarity } from '@/progression/Upgr
 import { applyModifiers } from '@/data/stats';
 import { createBaseStats, RARITY_ORDER, RARITY_COLORS, type Rarity, type UpgradeDefinition, type UpgradeIconId, type EventOption } from '@/data/types';
 import { ZONES } from '@/data/zones';
+import { getSynergy } from '@/data/synergies';
 import { WORLD_EVENTS, getWorldEvent } from '@/data/events';
 import { Random } from '@/utils/Random';
 import { clamp, formatNumber } from '@/utils/MathUtils';
@@ -95,6 +97,7 @@ export class Game {
   private input: InputManager;
   private particles = new ParticleSystem(600);
   private lighting = new LightingSystem();
+  private hitStop = new HitStopController();
   private combat: CombatSystem;
   private stateMachine = new GameStateMachine();
   private enemyGrid = new SpatialGrid<Enemy>(80, (e) => ({ x: e.x, y: e.y, radius: e.radius }));
@@ -103,6 +106,7 @@ export class Game {
   private touchControls: TouchControls | null = null;
   private onboarding: Onboarding | null = null;
   private modalScreen: Destroyable | null = null;
+  private rewardPopups: RewardPopup[] = [];
 
   private player: Player | null = null;
   private run: RunState | null = null;
@@ -120,7 +124,7 @@ export class Game {
     this.renderer = new Renderer(canvas);
     this.input = new InputManager(canvas);
     this.camera.zoom = 1.5;
-    this.combat = new CombatSystem(this.particles, this.camera);
+    this.combat = new CombatSystem(this.particles, this.camera, this.hitStop);
     this.combat.onDamageDealtToEnemy = (amount) => this.run?.recordDamageDealt(amount);
     this.combat.onDamageDealtToPlayer = (amount) => this.run?.recordDamageTaken(amount);
 
@@ -134,14 +138,21 @@ export class Game {
 
   // ------------------------------------------------------------ Bootstrapping
   private bindGlobalHandlers(): void {
+    // audio.unlock() is safe to call repeatedly — after the first real init it just
+    // resumes a suspended AudioContext (e.g. after the tab was backgrounded), so it
+    // must NOT be gated behind a one-shot flag. Only music.start() is one-shot.
     const unlock = () => {
-      if (this.audioUnlocked) return;
-      this.audioUnlocked = true;
       audio.unlock();
-      music.start();
+      if (!this.audioUnlocked) {
+        this.audioUnlocked = true;
+        music.start();
+      }
     };
     window.addEventListener('pointerdown', unlock, { once: false });
     window.addEventListener('keydown', unlock, { once: false });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') audio.unlock();
+    });
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Backquote') this.toggleDebug();
     });
@@ -184,6 +195,7 @@ export class Game {
     audio.setMuted(s.muted);
     this.particles.setQuality(s.particleQuality);
     this.camera.shakeEnabled = s.screenShake;
+    this.hitStop.enabled = s.screenShake;
     document.body.classList.toggle('reduced-motion', s.reducedMotion);
     document.body.classList.toggle('high-contrast', s.highContrast);
     document.documentElement.style.setProperty('--ui-scale', String(s.textScale));
@@ -207,7 +219,7 @@ export class Game {
     this.closeModal();
     this.stateMachine.set(GameState.MAIN_MENU);
     this.modalScreen = new MainMenu(this.uiRoot, {
-      onPlay: () => this.startNewRun(),
+      onPlay: (seed) => this.startNewRun(seed),
       onUpgrades: () => this.showMetaMenu('upgrades'),
       onArmory: () => this.showMetaMenu('armory'),
       onSettings: () => this.showSettingsStandalone(),
@@ -234,11 +246,13 @@ export class Game {
   }
 
   // ------------------------------------------------------------ Run lifecycle
-  private startNewRun(): void {
+  private startNewRun(seed?: number): void {
     this.closeModal();
+    this.rewardPopups.forEach((p) => p.destroy());
+    this.rewardPopups.length = 0;
     this.stateMachine.set(GameState.RUN_START);
 
-    this.run = new RunState();
+    this.run = new RunState(seed);
     const baseStats = applyModifiers(createBaseStats(), meta.getPermanentStatModifiers());
     this.player = new Player(baseStats);
     this.player.reset(ROOM_WIDTH / 2, ROOM_HEIGHT / 2);
@@ -255,7 +269,7 @@ export class Game {
     if (this.input.mode === 'touch') {
       this.touchControls = new TouchControls(this.uiRoot, this.input, { onPause: () => this.pauseGame() });
     }
-    this.onboarding = new Onboarding(this.hud, this.run, !meta.data.tutorialSeen, this.input.mode);
+    this.onboarding = new Onboarding(this.hud, this.input.mode);
 
     const weapons = Array.from(new Set(['emberBlade', ...meta.getUnlockedWeaponIds()]));
     const abilities = Array.from(new Set(['emberBurst', ...meta.getUnlockedAbilityIds()]));
@@ -292,10 +306,10 @@ export class Game {
       timeSeconds: run.elapsedSeconds(),
       embersCollected: run.stats.embersCollected,
     });
-    meta.markTutorialSeen();
-
     this.hud?.destroy();
     this.hud = null;
+    this.rewardPopups.forEach((p) => p.destroy());
+    this.rewardPopups.length = 0;
     this.touchControls?.destroy();
     this.touchControls = null;
     this.closeModal();
@@ -319,7 +333,7 @@ export class Game {
     if (!this.stateMachine.is(GameState.EXPLORATION, GameState.COMBAT, GameState.BOSS)) return;
     this.stateMachine.push(GameState.PAUSED);
     playSfx('uiClick');
-    this.modalScreen = new PauseMenu(this.uiRoot, meta.data.settings, {
+    this.modalScreen = new PauseMenu(this.uiRoot, this.player!, meta.data.settings, {
       onResume: () => this.resumeGame(),
       onAbandon: () => {
         this.closeModal();
@@ -452,7 +466,7 @@ export class Game {
     const owned = new Set(player.upgrades.map((u) => u.def.id));
     const def = pickUpgradeAtLeastRarity(rng, chest.tier, meta.getUnlockedGateIds(), owned);
     chest.rewardDef = def;
-    player.addUpgrade(def);
+    this.grantUpgrade(def);
     this.run!.recordUpgrade(def.id);
   }
 
@@ -465,13 +479,14 @@ export class Game {
     this.modalScreen = new ShopUI(this.uiRoot, offers, {
       getEmbers: () => this.run!.embers,
       onBuyUpgrade: (offer) => {
-        if (!offer.upgrade) return false;
+        if (!offer.upgrade || offer.purchased) return false;
         if (!this.run!.spendEmbers(offer.cost)) return false;
-        this.player!.addUpgrade(offer.upgrade);
+        this.grantUpgrade(offer.upgrade);
         this.run!.recordUpgrade(offer.upgrade.id);
         return true;
       },
       onBuyHeal: (offer) => {
+        if (offer.purchased) return false;
         if (!this.run!.spendEmbers(offer.cost)) return false;
         this.player!.heal(this.player!.stats.maxHp * HEAL_AMOUNT_RATIO);
         spawnHealSparkle(this.particles, this.player!.x, this.player!.y);
@@ -534,7 +549,7 @@ export class Game {
         const rng = Random.fromString(`${run.seed}:eventupgrade:${room.key}:${option.id}`);
         const owned = new Set(player.upgrades.map((u) => u.def.id));
         const def = pickUpgradeAtLeastRarity(rng, minRarity, meta.getUnlockedGateIds(), owned);
-        player.addUpgrade(def);
+        this.grantUpgrade(def);
         run.recordUpgrade(def.id);
         this.showReward(def, 'The Merchant');
         break;
@@ -545,7 +560,7 @@ export class Game {
         const rng = Random.fromString(`${run.seed}:eventupgrade:${room.key}:${option.id}`);
         const owned = new Set(player.upgrades.map((u) => u.def.id));
         const def = pickUpgradeAtLeastRarity(rng, 'rare', meta.getUnlockedGateIds(), owned);
-        player.addUpgrade(def);
+        this.grantUpgrade(def);
         run.recordUpgrade(def.id);
         this.showReward(def, 'The Dying Flame');
         break;
@@ -573,7 +588,7 @@ export class Game {
   }
 
   private showReward(def: UpgradeDefinition, label: string): void {
-    new RewardPopup(this.uiRoot, def, label);
+    this.rewardPopups.push(new RewardPopup(this.uiRoot, def, label));
   }
 
   private useRest(room: Room): void {
@@ -614,6 +629,7 @@ export class Game {
     const owned = new Set(player.upgrades.map((u) => u.def.id));
     const choices = rollUpgradeChoices(rng, 3, luck, meta.getUnlockedGateIds(), owned);
     playSfx('roomCleared');
+    if (choices.length === 0) return;
     this.onboarding?.show('upgrade');
     this.modalScreen = new UpgradeSelectUI(this.uiRoot, choices, {
       onChoose: (def) => {
@@ -623,9 +639,22 @@ export class Game {
     });
   }
 
+  /** Single funnel for granting an upgrade to the player so newly-formed synergies are always announced, wherever the upgrade came from. */
+  private grantUpgrade(def: UpgradeDefinition): void {
+    const player = this.player!;
+    const newSynergies = player.addUpgrade(def);
+    for (let i = 0; i < newSynergies.length; i++) {
+      const syn = getSynergy(newSynergies[i]);
+      window.setTimeout(() => {
+        this.hud?.showSynergyBanner(syn.name, syn.description);
+        playSfx('synergyFormed');
+      }, i * 900);
+    }
+  }
+
   private chooseUpgrade(def: UpgradeDefinition): void {
     const player = this.player!;
-    player.addUpgrade(def);
+    this.grantUpgrade(def);
     this.run!.recordUpgrade(def.id);
     gameEvents.emit('upgradeChosen', { upgrade: def });
     spawnLevelUpBurst(this.particles, player.x, player.y);
@@ -724,9 +753,10 @@ export class Game {
 
   // ------------------------------------------------------------ Main loop
   private loop = (time: number): void => {
-    const dt = Math.min(0.05, (time - this.lastTime) / 1000);
+    const rawDt = Math.min(0.05, (time - this.lastTime) / 1000);
     this.lastTime = time;
-    this.fps = this.fps + (1 / Math.max(dt, 0.0001) - this.fps) * 0.1;
+    this.fps = this.fps + (1 / Math.max(rawDt, 0.0001) - this.fps) * 0.1;
+    const dt = this.hitStop.apply(rawDt);
 
     this.update(dt);
     this.render();
@@ -794,6 +824,7 @@ export class Game {
         combat: this.combat,
         particles: this.particles,
         camera: this.camera,
+        hitStop: this.hitStop,
         runMinutes: run.elapsedMinutes(),
       });
       resolveAgainstWalls(this.boss, walls);
@@ -874,7 +905,7 @@ export class Game {
     player.moveInputY = move.y;
 
     const playerScreen = this.camera.worldToScreen(player.x, player.y);
-    player.facing = this.input.getAimAngle(playerScreen.x, playerScreen.y, player.facing);
+    player.facing = this.input.getAimAngle(playerScreen.x, playerScreen.y);
 
     if (this.input.isAttackHeld() && player.canAttack()) this.performAttack();
     if (this.input.wasPressed('dodge') && player.canDodge()) this.performDodge();

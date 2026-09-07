@@ -3,6 +3,7 @@ import { Enemy } from '@/entities/Enemy';
 import { Projectile, type ProjectileOptions } from '@/entities/Projectile';
 import type { Obstacle } from '@/entities/Obstacle';
 import type { Camera } from '@/core/Camera';
+import type { HitStopController } from '@/core/HitStop';
 import type { ParticleSystem } from '@/rendering/ParticleSystem';
 import { createDamageNumber, updateDamageNumbers, type DamageNumber } from '@/combat/DamageNumber';
 import { spawnHitImpact, spawnDeathBurst, spawnEmberBurstVfx } from '@/rendering/ParticlePresets';
@@ -36,7 +37,7 @@ export class CombatSystem {
   onDamageDealtToEnemy: ((amount: number) => void) | null = null;
   onDamageDealtToPlayer: ((amount: number) => void) | null = null;
 
-  constructor(private particles: ParticleSystem, private camera: Camera) {}
+  constructor(private particles: ParticleSystem, private camera: Camera, private hitStop: HitStopController) {}
 
   reset(): void {
     this.projectiles.length = 0;
@@ -228,6 +229,7 @@ export class CombatSystem {
     }
     spawnEmberBurstVfx(this.particles, player.x, player.y, radius);
     this.camera.addShake(11, 0.3);
+    this.hitStop.trigger(0.06, 0.05);
     playSfx('abilityEmberBurst');
   }
 
@@ -273,6 +275,7 @@ export class CombatSystem {
       if (crit) {
         gameEvents.emit('critHit', { x: enemy.x, y: enemy.y });
         this.camera.addShake(NORMAL_SHAKE + CRIT_SHAKE_BONUS, 0.15);
+        this.hitStop.trigger(0.045, 0.08);
       }
       if (enemy.def.isElite) this.camera.addShake(2, 0.08);
     }
@@ -294,7 +297,10 @@ export class CombatSystem {
   private onEnemyDeath(player: Player, enemy: Enemy): void {
     spawnDeathBurst(this.particles, enemy.x, enemy.y, enemy.def.accentColor);
     playSfx(enemy.def.isElite ? 'eliteDeath' : 'enemyDeath');
-    if (enemy.def.isElite) this.camera.addShake(ELITE_SHAKE, 0.35);
+    if (enemy.def.isElite) {
+      this.camera.addShake(ELITE_SHAKE, 0.35);
+      this.hitStop.trigger(0.08, 0.04);
+    }
     const lightHealing = player.hasSynergy('lightHealing') && (!!enemy.burn || enemy.def.isElite);
     gameEvents.emit('enemyKilled', { enemy, x: enemy.x, y: enemy.y, wasElite: !!enemy.def.isElite });
     if (lightHealing && Math.random() < 0.4) {

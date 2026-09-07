@@ -69,6 +69,10 @@ export class Boss extends Enemy {
   private enterState(state: BossState): void {
     this.bossState = state;
     this.bossStateTimer = 0;
+    // Only reset on a fresh entry from chooseNextAttack — the mid-combo continuation
+    // (see the 'telegraphCombo' case) advances comboStep without calling enterState,
+    // so an interrupted combo (e.g. a phase transition) can't leave a stale step behind.
+    if (state === 'telegraphCombo') this.comboStep = 0;
   }
 
   private hpRatio(): number {
@@ -176,7 +180,7 @@ export class Boss extends Enemy {
         this.vx = 0;
         this.vy = 0;
         if (this.bossStateTimer >= 0.6) {
-          this.pendingSummonCount = this.phase >= 3 ? 2 : 2;
+          this.pendingSummonCount = this.phase >= 3 ? 3 : 2;
           this.enterState('recover');
         }
         break;
@@ -217,10 +221,12 @@ export class Boss extends Enemy {
       }
       return;
     }
-    if (roll < 0.3) {
+    if (roll < 0.18) {
+      this.enterState('summoning');
+    } else if (roll < 0.42) {
       this.enterState('telegraphCombo');
     } else if (dist < 170) {
-      this.enterState(roll < 0.65 ? 'telegraphShockwave' : 'telegraphSlam');
+      this.enterState(roll < 0.75 ? 'telegraphShockwave' : 'telegraphSlam');
     } else {
       this.enterState('telegraphProjectile');
     }

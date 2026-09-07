@@ -69,10 +69,12 @@ function runMeleeLike(enemy: Enemy, ctx: EnemyAIContext, speed: number): void {
       if (enemy.stateTimer >= enemy.def.telegraphTime) enemy.setState('attack');
       break;
     case 'attack':
-      if (enemy.stateTimer >= 0.16) enemy.setState('cooldown');
+      if (enemy.stateTimer >= 0.16) {
+        enemy.attackCooldownTimer = enemy.def.attackCooldown;
+        enemy.setState('cooldown');
+      }
       break;
     case 'cooldown':
-      enemy.attackCooldownTimer = enemy.def.attackCooldown;
       if (enemy.stateTimer >= 0.12) enemy.setState('chase');
       break;
     case 'stagger':
@@ -98,10 +100,12 @@ function runRangedLike(enemy: Enemy, ctx: EnemyAIContext, speed: number, preferr
       if (enemy.stateTimer >= enemy.def.telegraphTime) enemy.setState('attack');
       break;
     case 'attack':
-      if (enemy.stateTimer >= 0.1) enemy.setState('cooldown');
+      if (enemy.stateTimer >= 0.1) {
+        enemy.attackCooldownTimer = enemy.def.attackCooldown;
+        enemy.setState('cooldown');
+      }
       break;
     case 'cooldown':
-      enemy.attackCooldownTimer = enemy.def.attackCooldown;
       if (enemy.stateTimer >= 0.2) {
         if (canVanish && Math.random() < 0.55) {
           enemy.setState('vanished');
@@ -146,10 +150,12 @@ function runStalker(enemy: Enemy, ctx: EnemyAIContext): void {
       if (enemy.stateTimer >= enemy.def.telegraphTime) enemy.setState('attack');
       break;
     case 'attack':
-      if (enemy.stateTimer >= 0.14) enemy.setState('cooldown');
+      if (enemy.stateTimer >= 0.14) {
+        enemy.attackCooldownTimer = enemy.def.attackCooldown;
+        enemy.setState('cooldown');
+      }
       break;
     case 'cooldown':
-      enemy.attackCooldownTimer = enemy.def.attackCooldown;
       if (enemy.stateTimer >= 0.15) {
         enemy.setState(Math.random() < 0.6 ? 'vanished' : 'chase');
       }
@@ -177,14 +183,13 @@ function runStalker(enemy: Enemy, ctx: EnemyAIContext): void {
 function runElite(enemy: Enemy, ctx: EnemyAIContext): void {
   const { dist, dx, dy } = distanceTo(enemy, ctx.player);
   const speed = enemy.def.moveSpeed;
-  const meleeRange = 70;
   switch (enemy.state) {
     case 'spawning':
       if (enemy.stateTimer > 0.4) enemy.setState('chase');
       break;
     case 'chase':
       maintainRange(enemy, dx, dy, dist, speed, 150);
-      if (enemy.attackCooldownTimer <= 0 && dist <= (dist < meleeRange + 20 ? meleeRange : enemy.def.attackRange)) {
+      if (enemy.attackCooldownTimer <= 0 && dist <= enemy.def.attackRange) {
         enemy.setState('windup');
         enemy.vx = 0;
         enemy.vy = 0;
@@ -195,10 +200,12 @@ function runElite(enemy: Enemy, ctx: EnemyAIContext): void {
       if (enemy.stateTimer >= enemy.def.telegraphTime) enemy.setState('attack');
       break;
     case 'attack':
-      if (enemy.stateTimer >= 0.18) enemy.setState('cooldown');
+      if (enemy.stateTimer >= 0.18) {
+        enemy.attackCooldownTimer = enemy.def.attackCooldown * 0.85;
+        enemy.setState('cooldown');
+      }
       break;
     case 'cooldown':
-      enemy.attackCooldownTimer = enemy.def.attackCooldown * 0.85;
       if (enemy.stateTimer >= 0.25) enemy.setState('chase');
       break;
     case 'stagger':

@@ -31,9 +31,14 @@ export interface SaveData {
   unlocked: string[];
   settings: SaveSettings;
   stats: SaveStats;
-  tutorialSeen: boolean;
+  hintsShown: string[];
   lastSeed: string | null;
 }
+
+/** Every onboarding hint key that ever existed under the old single "tutorialSeen"
+ * flag, used only to migrate legacy saves (see migrateSave) without re-flooding
+ * returning players with hints they've already seen. */
+const LEGACY_HINT_KEYS = ['move', 'attack', 'ability', 'dodge', 'interact', 'upgrade', 'chest', 'shop', 'corruption', 'boss'];
 
 function defaultSettings(): SaveSettings {
   return {
@@ -70,7 +75,7 @@ export function defaultSave(): SaveData {
     unlocked: ['emberBlade', 'emberBurst'],
     settings: defaultSettings(),
     stats: defaultStats(),
-    tutorialSeen: false,
+    hintsShown: [],
     lastSeed: null,
   };
 }
@@ -111,7 +116,7 @@ function sanitizeStats(raw: unknown): SaveStats {
     totalKills: Math.max(0, Math.floor(num(r.totalKills, base.totalKills))),
     totalDeaths: Math.max(0, Math.floor(num(r.totalDeaths, base.totalDeaths))),
     bossesDefeated: Math.max(0, Math.floor(num(r.bossesDefeated, base.bossesDefeated))),
-    bestTimeSeconds: typeof r.bestTimeSeconds === 'number' ? r.bestTimeSeconds : null,
+    bestTimeSeconds: typeof r.bestTimeSeconds === 'number' && Number.isFinite(r.bestTimeSeconds) ? r.bestTimeSeconds : null,
     totalEmbersCollected: Math.max(0, Math.floor(num(r.totalEmbersCollected, base.totalEmbersCollected))),
     totalSoulAshEarned: Math.max(0, Math.floor(num(r.totalSoulAshEarned, base.totalSoulAshEarned))),
   };
@@ -138,6 +143,16 @@ export function migrateSave(raw: unknown): SaveData {
     }
   }
   const unlocked = Array.isArray(r.unlocked) ? r.unlocked.filter((x): x is string => typeof x === 'string') : base.unlocked;
+  let hintsShown: string[];
+  if (Array.isArray(r.hintsShown)) {
+    hintsShown = r.hintsShown.filter((x): x is string => typeof x === 'string');
+  } else if (bool(r.tutorialSeen, false)) {
+    // Migrating a pre-hintsShown save that had completed onboarding: treat every
+    // legacy hint as already seen so returning players aren't hint-flooded.
+    hintsShown = [...LEGACY_HINT_KEYS];
+  } else {
+    hintsShown = [];
+  }
   return {
     version: SAVE_VERSION,
     soulAsh: Math.max(0, Math.floor(num(r.soulAsh, base.soulAsh))),
@@ -145,7 +160,7 @@ export function migrateSave(raw: unknown): SaveData {
     unlocked: unlocked.length > 0 ? Array.from(new Set([...unlocked, 'emberBlade', 'emberBurst'])) : base.unlocked,
     settings: sanitizeSettings(r.settings),
     stats: sanitizeStats(r.stats),
-    tutorialSeen: bool(r.tutorialSeen, base.tutorialSeen),
+    hintsShown,
     lastSeed: typeof r.lastSeed === 'string' ? r.lastSeed : null,
   };
 }

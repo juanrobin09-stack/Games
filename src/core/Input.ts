@@ -130,8 +130,15 @@ export class InputManager {
     this.mouseRightPending = false;
   }
 
+  /**
+   * All getters below read keyboard/mouse AND touch state unconditionally and
+   * merge them, rather than gating on `mode` — on hybrid hardware (touchscreen
+   * laptops), a single incidental touch must never silently disable mouse/
+   * keyboard for the rest of the run (or vice versa). `mode` only decides
+   * which on-screen control hints/overlay to display, never which input is read.
+   */
   getMoveVector(): Vector2 {
-    if (this.mode === 'touch') return this.touchMove.clone();
+    if (this.touchMove.lengthSq() > 0.01) return this.touchMove.clone();
     let x = 0;
     let y = 0;
     if (this.keysDown.has('KeyW') || this.keysDown.has('ArrowUp')) y -= 1;
@@ -143,26 +150,20 @@ export class InputManager {
     return v;
   }
 
-  getAimAngle(originScreenX: number, originScreenY: number, facingFallback: number): number {
-    if (this.mode === 'touch') {
-      if (this.touchAim !== null) return this.touchAim;
-      const mv = this.touchMove;
-      if (mv.lengthSq() > 0.02) return Math.atan2(mv.y, mv.x);
-      return facingFallback;
-    }
+  getAimAngle(originScreenX: number, originScreenY: number): number {
+    if (this.touchAim !== null) return this.touchAim;
+    if (this.touchMove.lengthSq() > 0.02) return Math.atan2(this.touchMove.y, this.touchMove.x);
     return Math.atan2(this.mouseScreen.y - originScreenY, this.mouseScreen.x - originScreenX);
   }
 
   isAttackHeld(): boolean {
-    return this.mode === 'touch' ? this.touchAttackHeld : this.mouseDown;
+    return this.touchAttackHeld || this.mouseDown;
   }
 
   wasPressed(action: InputAction): boolean {
-    if (this.mode === 'touch') {
-      if (action === 'ability' && this.touchAbilityPending) return true;
-      if (action === 'dodge' && this.touchDodgePending) return true;
-      if (action === 'interact' && this.touchInteractPending) return true;
-    }
+    if (action === 'ability' && this.touchAbilityPending) return true;
+    if (action === 'dodge' && this.touchDodgePending) return true;
+    if (action === 'interact' && this.touchInteractPending) return true;
     return this.framePressed.has(action);
   }
 

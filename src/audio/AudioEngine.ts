@@ -50,7 +50,6 @@ export class AudioEngine {
       if (this.ctx && this.ctx.state === 'suspended') void this.ctx.resume();
       return;
     }
-    this.unlocked = true;
     try {
       const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       this.ctx = new Ctx();
@@ -63,8 +62,9 @@ export class AudioEngine {
       this._noiseBuffer = this.buildNoiseBuffer(this.ctx);
       this.applySettings();
       void this.ctx.resume();
+      this.unlocked = true;
     } catch (err) {
-      console.warn('[Audio] Web Audio unavailable, continuing muted.', err);
+      console.warn('[Audio] Web Audio unavailable — will retry on the next user gesture.', err);
     }
   }
 

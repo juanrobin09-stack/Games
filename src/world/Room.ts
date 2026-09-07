@@ -61,7 +61,7 @@ export class Room {
       this.cleared = true;
       return true;
     }
-    if (this.spawnedContent && this.enemies.every((e) => !e.alive)) {
+    if (this.spawnedContent && this.enemies.length > 0 && this.enemies.every((e) => !e.alive)) {
       this.cleared = true;
       return true;
     }
@@ -111,7 +111,7 @@ export class Room {
     if (hasN) {
       walls.push({ x: 0, y: 0, width: ROOM_WIDTH / 2 - half, height: t });
       walls.push({ x: ROOM_WIDTH / 2 + half, y: 0, width: ROOM_WIDTH / 2 - half, height: t });
-      if (includeDoorBarriers) walls.push({ x: ROOM_WIDTH / 2 - half, y: 0, width: DOOR_WIDTH, height: t * 0.5 });
+      if (includeDoorBarriers) walls.push({ x: ROOM_WIDTH / 2 - half, y: 0, width: DOOR_WIDTH, height: t });
     } else {
       walls.push({ x: 0, y: 0, width: ROOM_WIDTH, height: t });
     }
@@ -119,7 +119,7 @@ export class Room {
     if (hasS) {
       walls.push({ x: 0, y: ROOM_HEIGHT - t, width: ROOM_WIDTH / 2 - half, height: t });
       walls.push({ x: ROOM_WIDTH / 2 + half, y: ROOM_HEIGHT - t, width: ROOM_WIDTH / 2 - half, height: t });
-      if (includeDoorBarriers) walls.push({ x: ROOM_WIDTH / 2 - half, y: ROOM_HEIGHT - t * 0.5, width: DOOR_WIDTH, height: t * 0.5 });
+      if (includeDoorBarriers) walls.push({ x: ROOM_WIDTH / 2 - half, y: ROOM_HEIGHT - t, width: DOOR_WIDTH, height: t });
     } else {
       walls.push({ x: 0, y: ROOM_HEIGHT - t, width: ROOM_WIDTH, height: t });
     }
@@ -127,7 +127,7 @@ export class Room {
     if (hasW) {
       walls.push({ x: 0, y: 0, width: t, height: ROOM_HEIGHT / 2 - half });
       walls.push({ x: 0, y: ROOM_HEIGHT / 2 + half, width: t, height: ROOM_HEIGHT / 2 - half });
-      if (includeDoorBarriers) walls.push({ x: 0, y: ROOM_HEIGHT / 2 - half, width: t * 0.5, height: DOOR_WIDTH });
+      if (includeDoorBarriers) walls.push({ x: 0, y: ROOM_HEIGHT / 2 - half, width: t, height: DOOR_WIDTH });
     } else {
       walls.push({ x: 0, y: 0, width: t, height: ROOM_HEIGHT });
     }
@@ -135,7 +135,7 @@ export class Room {
     if (hasE) {
       walls.push({ x: ROOM_WIDTH - t, y: 0, width: t, height: ROOM_HEIGHT / 2 - half });
       walls.push({ x: ROOM_WIDTH - t, y: ROOM_HEIGHT / 2 + half, width: t, height: ROOM_HEIGHT / 2 - half });
-      if (includeDoorBarriers) walls.push({ x: ROOM_WIDTH - t * 0.5, y: ROOM_HEIGHT / 2 - half, width: t * 0.5, height: DOOR_WIDTH });
+      if (includeDoorBarriers) walls.push({ x: ROOM_WIDTH - t, y: ROOM_HEIGHT / 2 - half, width: t, height: DOOR_WIDTH });
     } else {
       walls.push({ x: ROOM_WIDTH - t, y: 0, width: t, height: ROOM_HEIGHT });
     }

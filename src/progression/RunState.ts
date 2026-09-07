@@ -26,7 +26,6 @@ export class RunState {
   layouts: ZoneLayout[];
   currentRoomKey: string;
   usedEventIds = new Set<string>();
-  tutorialHintsShown = new Set<string>();
   stats: RunStats;
   ended = false;
 

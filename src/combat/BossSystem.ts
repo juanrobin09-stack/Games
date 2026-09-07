@@ -4,6 +4,7 @@ import type { Room } from '@/world/Room';
 import type { CombatSystem } from '@/combat/CombatSystem';
 import type { ParticleSystem } from '@/rendering/ParticleSystem';
 import type { Camera } from '@/core/Camera';
+import type { HitStopController } from '@/core/HitStop';
 import { Enemy } from '@/entities/Enemy';
 import { getEnemyDefinition } from '@/data/enemies';
 import { getDifficultyFactors } from '@/world/Difficulty';
@@ -19,6 +20,7 @@ export interface BossSystemContext {
   combat: CombatSystem;
   particles: ParticleSystem;
   camera: Camera;
+  hitStop: HitStopController;
   runMinutes: number;
 }
 
@@ -28,7 +30,7 @@ const SUMMON_POOL_BY_PHASE: Record<number, string> = {
 };
 
 export function resolveBossPendingActions(boss: Boss, ctx: BossSystemContext): void {
-  const { player, combat, particles, camera } = ctx;
+  const { player, combat, particles, camera, hitStop } = ctx;
 
   if (boss.introJustStarted) {
     boss.introJustStarted = false;
@@ -39,6 +41,7 @@ export function resolveBossPendingActions(boss: Boss, ctx: BossSystemContext): v
     boss.phaseJustChanged = false;
     playSfx('bossPhase');
     camera.addShake(16, 0.6);
+    hitStop.trigger(0.1, 0.04);
     spawnEmberBurstVfx(particles, boss.x, boss.y, 180);
     gameEvents.emit('bossPhaseChanged', { phase: boss.phase });
   }
@@ -128,6 +131,7 @@ export function resolveBossPendingActions(boss: Boss, ctx: BossSystemContext): v
     spawnDeathBurst(particles, boss.x, boss.y, Palette.ember6);
     playSfx('bossDeath');
     camera.addShake(20, 0.8);
+    hitStop.trigger(0.14, 0.03);
     gameEvents.emit('bossDefeated', {});
   }
 }

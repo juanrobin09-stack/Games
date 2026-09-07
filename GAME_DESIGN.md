@@ -70,6 +70,7 @@ Base stats: 100 HP, 0.4 HP/s regen, 190 move speed, 5% crit chance, 1.5× crit d
 - **Crits** roll at `critChance` (stat + weapon bonus) and multiply damage by `critDamage`. A crit landed on an enemy mid-windup **interrupts** its attack (except elites/boss) — a skill reward for aggressive, well-timed play.
 - **Dodge** grants full invulnerability for its duration (~0.22s, scaled by `dodgeCooldownMult`) and a directional burst of speed.
 - **Contact damage**: non-telegraphed touch damage from a chasing enemy, capped to once per 0.6s per enemy, so standing in a crowd chips rather than melts you — the *real* threat is always the telegraphed attack.
+- **Hit-stop**: crits, Ember Burst, elite kills, and boss-phase/death beats briefly slow the whole simulation (not just the visuals) to a crawl for 45–140ms — a classic "hitlag" trick layered on top of screen shake and hit-flash so the heaviest moments read as heavier than routine hits, without ever fully freezing input.
 
 ## 6. Enemies
 
@@ -117,7 +118,7 @@ Void Scythe (weapon), Solar Spear (weapon), Stormstep (ability), Warding Sigil (
 
 ### Synergies (5)
 
-Detected automatically from the *tags* on owned upgrades — no separate synergy currency, they just activate:
+Detected automatically from the *tags* on owned upgrades — no separate synergy currency, they just activate. The instant one does, a banner names it over a distinct chime so the moment reads as a discovery rather than a silent stat change; the pause menu's "Your Build" screen also lists every synergy currently active alongside every upgrade collected so far this run.
 
 - **Ember & Critical** — crits have a 35% chance to detonate a small Ember explosion.
 - **Ash & Fire** — burning enemies take +40% damage from all sources.
@@ -149,7 +150,7 @@ extraEnemies = floor(zoneIndex × 0.6 + corruption × 1.6)
 
 ## 10. Level Generation
 
-A randomized-growth spanning tree starting from the entry room guarantees every room is reachable (no cycles, no unreachable rooms, no unsolvable seed). The single farthest room from the entrance becomes the zone's **heart** (zones 1–2) or **boss** room (zone 3). The remaining rooms are assigned by a priority budget rather than fixed counts: **at least 40% are reserved as plain combat rooms first**, and only the leftover budget is spent — in order — on one **elite** (never adjacent to the entrance), one **shop**, one **event**, one **chest**, one **rest**, then a second **event** and **chest** if a bigger zone still has room left. This guarantees every zone has a healthy amount of straightforward combat regardless of its total room count, while still trying to fit in every special room type. Rooms with enemies **lock** their doors until cleared; every other room type is always open.
+A randomized-growth spanning tree starting from the entry room guarantees every room is reachable (no cycles, no unreachable rooms, no unsolvable seed). The single farthest room from the entrance becomes the zone's **heart** (zones 1–2) or **boss** room (zone 3). The remaining rooms are assigned in two passes rather than fixed counts. First, one **elite** (never adjacent to the entrance), one **shop**, and one **chest** are reserved unconditionally — these three are guaranteed in every zone regardless of how small or unlucky its layout turns out, since a zone with no shop or no chest would silently starve the player of upgrades. Whatever rooms remain are then split roughly in half between a guaranteed **combat** minimum and secondary specials (**event**, **rest**, then a bonus second **event**/**chest** for bigger zones); any leftover defaults to combat. Rooms with enemies **lock** their doors until cleared; every other room type is always open.
 
 ## 11. Boss: The Ashen Colossus
 

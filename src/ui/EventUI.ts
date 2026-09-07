@@ -23,8 +23,8 @@ export class EventUI {
             if (button.disabled) return;
             buttons.forEach((b) => (b.disabled = true));
             playSfx('eventChoice');
+            this.destroy();
             callbacks.onChoose(opt);
-            window.setTimeout(() => this.destroy(), 160);
           },
         },
         [

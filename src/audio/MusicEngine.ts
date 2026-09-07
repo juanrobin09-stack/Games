@@ -166,6 +166,7 @@ export class MusicEngine {
       }
     });
     this.droneGain?.gain.setTargetAtTime(0, t, 0.2);
+    this.tensionGain?.gain.setTargetAtTime(0, t, 0.2);
     this.started = false;
   }
 }

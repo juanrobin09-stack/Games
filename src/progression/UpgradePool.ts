@@ -10,7 +10,10 @@ export function rollUpgradeChoices(
   unlockedTiers: Set<string>,
   exclude: Set<string> = new Set()
 ): UpgradeDefinition[] {
-  const pool = UPGRADES.filter((u) => (!u.requiresUnlock || unlockedTiers.has(u.requiresUnlock)) && !exclude.has(u.id));
+  const gated = (u: UpgradeDefinition) => !u.requiresUnlock || unlockedTiers.has(u.requiresUnlock);
+  let pool = UPGRADES.filter((u) => gated(u) && !exclude.has(u.id));
+  if (pool.length === 0) pool = UPGRADES.filter(gated);
+  if (pool.length === 0) pool = UPGRADES;
   const chosen: UpgradeDefinition[] = [];
   const used = new Set<string>();
   let attempts = 0;
