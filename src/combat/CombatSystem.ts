@@ -6,7 +6,7 @@ import type { Camera } from '@/core/Camera';
 import type { HitStopController } from '@/core/HitStop';
 import type { ParticleSystem } from '@/rendering/ParticleSystem';
 import { createDamageNumber, updateDamageNumbers, type DamageNumber } from '@/combat/DamageNumber';
-import { spawnHitImpact, spawnDeathBurst, spawnEmberBurstVfx } from '@/rendering/ParticlePresets';
+import { spawnHitImpact, spawnDeathBurst, spawnEmberBurstVfx, spawnPerfectDodgeBurst } from '@/rendering/ParticlePresets';
 import { Palette } from '@/rendering/Palette';
 import { playSfx } from '@/audio/SoundFactory';
 import { gameEvents } from '@/core/GameEvents';
@@ -318,8 +318,11 @@ export class CombatSystem {
     const wasDodging = player.isDodging;
     const result = player.takeDamage(baseDamage);
     if (result.blocked) {
-      if (wasDodging) player.triggerPerfectDodge();
-      else if (result.shieldConsumed) playSfx('shieldBreak');
+      if (wasDodging) {
+        player.triggerPerfectDodge();
+        spawnPerfectDodgeBurst(this.particles, player.x, player.y);
+        playSfx('perfectDodge');
+      } else if (result.shieldConsumed) playSfx('shieldBreak');
       return false;
     }
     if (opts.knockbackForce) {

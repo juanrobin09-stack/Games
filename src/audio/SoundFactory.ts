@@ -93,6 +93,7 @@ export type SfxId =
   | 'impactLight'
   | 'impactCrit'
   | 'dodge'
+  | 'perfectDodge'
   | 'abilityEmberBurst'
   | 'abilityStormstep'
   | 'abilityWardingSigil'
@@ -164,6 +165,13 @@ const players: Record<SfxId, () => void> = {
     if (!d) return;
     noise(d, { duration: 0.18, filterType: 'bandpass', freq: 1800, freqEnd: 300, volume: 0.16, Q: 0.8 });
     tone(d, { freq: 700, freqEnd: 260, type: 'sine', duration: 0.15, volume: 0.1 });
+  },
+  perfectDodge: () => {
+    const d = audio.sfxDestination;
+    if (!d) return;
+    tone(d, { freq: 900, freqEnd: 1500, type: 'sine', duration: 0.12, volume: 0.14 });
+    tone(d, { freq: 1500, freqEnd: 2100, type: 'sine', duration: 0.14, volume: 0.09, delay: 0.04 });
+    noise(d, { duration: 0.1, filterType: 'highpass', freq: 3000, volume: 0.08 });
   },
   abilityEmberBurst: () => {
     const d = audio.sfxDestination;

@@ -687,6 +687,21 @@ body.high-contrast {
   100% { opacity: 0; transform: translate(-50%, -12px); }
 }
 
+.hud-danger-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 50%, rgba(120, 10, 10, 0) 55%, rgba(150, 15, 10, 0.9) 100%);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+.hud-danger-vignette.pulsing {
+  animation: dangerPulse 1.05s ease-in-out infinite;
+}
+@keyframes dangerPulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 0.32; }
+}
+
 /* ================= Screens (menu/modal shells) ================= */
 .screen-overlay {
   position: absolute;

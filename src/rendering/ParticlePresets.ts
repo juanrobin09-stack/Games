@@ -178,6 +178,28 @@ export function spawnMagicSparkle(ps: ParticleSystem, x: number, y: number, colo
   });
 }
 
+export function spawnPerfectDodgeBurst(ps: ParticleSystem, x: number, y: number): void {
+  ps.burst(12, () => {
+    const angle = rand(0, Math.PI * 2);
+    const speed = rand(60, 140);
+    return {
+      x,
+      y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      gravity: 0,
+      drag: 3.2,
+      size: rand(1.5, 3.2),
+      color: Palette.soulBright,
+      endColor: Palette.bg1,
+      alpha: 0.95,
+      life: rand(0.25, 0.45),
+      glow: true,
+      shape: 'circle',
+    };
+  });
+}
+
 export function spawnHealSparkle(ps: ParticleSystem, x: number, y: number): void {
   ps.burst(10, () => ({
     x: x + rand(-14, 14),

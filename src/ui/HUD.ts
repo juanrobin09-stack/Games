@@ -52,6 +52,7 @@ export class HUD {
   private phaseBanner!: HTMLElement;
   private synergyBanner!: HTMLElement;
   private timerLabel!: HTMLElement;
+  private dangerVignette!: HTMLElement;
   private toastTimers: number[] = [];
 
   constructor(container: HTMLElement) {
@@ -81,6 +82,7 @@ export class HUD {
     this.toastArea = el('div', { class: 'hud-toast-area' });
     this.phaseBanner = el('div', { class: 'hud-phase-banner' });
     this.synergyBanner = el('div', { class: 'hud-synergy-banner' });
+    this.dangerVignette = el('div', { class: 'hud-danger-vignette' });
     this.timerLabel = el('span', {}, ['0:00']);
 
     this.bossBar = el('div', { class: 'hud-boss-bar' }, [
@@ -127,6 +129,7 @@ export class HUD {
       this.toastArea,
       this.phaseBanner,
       this.synergyBanner,
+      this.dangerVignette,
     ]);
   }
 
@@ -209,6 +212,12 @@ export class HUD {
     const hpRatio = clamp(data.player.hp / Math.max(1, data.player.stats.maxHp), 0, 1);
     this.hpFill.style.transform = `scaleX(${hpRatio})`;
     this.hpLabel.textContent = `${Math.ceil(data.player.hp)} / ${Math.ceil(data.player.stats.maxHp)}`;
+
+    const dangerStart = 0.35;
+    const criticalStart = 0.15;
+    const dangerOpacity = data.player.alive ? clamp((dangerStart - hpRatio) / dangerStart, 0, 1) * 0.55 : 0;
+    this.dangerVignette.style.opacity = dangerOpacity.toFixed(2);
+    this.dangerVignette.classList.toggle('pulsing', data.player.alive && hpRatio > 0 && hpRatio <= criticalStart);
 
     this.shieldRow.innerHTML = '';
     for (let i = 0; i < data.player.shieldCharges; i++) {
