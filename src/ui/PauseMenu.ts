@@ -102,7 +102,7 @@ export class PauseMenu {
         this.renderMain();
       },
       onChange: this.callbacks.onSettingsChange,
-    });
+    }, true);
   }
 
   destroy(): void {

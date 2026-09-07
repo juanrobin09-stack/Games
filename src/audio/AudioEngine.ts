@@ -15,6 +15,7 @@ export class AudioEngine {
   private masterGain: GainNode | null = null;
   private musicGain: GainNode | null = null;
   private sfxGain: GainNode | null = null;
+  private limiter: DynamicsCompressorNode | null = null;
   private _noiseBuffer: AudioBuffer | null = null;
   private unlocked = false;
 
@@ -56,9 +57,20 @@ export class AudioEngine {
       this.masterGain = this.ctx.createGain();
       this.musicGain = this.ctx.createGain();
       this.sfxGain = this.ctx.createGain();
+      // Every SFX/music voice shares this bus with no per-voice ducking, so a
+      // pile-up of simultaneous hits (multi-target cleave, elite death, boss
+      // adds) can sum past 0dB and hard-clip at the destination. A brickwall
+      // limiter on the final bus catches that without coloring normal levels.
+      this.limiter = this.ctx.createDynamicsCompressor();
+      this.limiter.threshold.setValueAtTime(-6, this.ctx.currentTime);
+      this.limiter.knee.setValueAtTime(0, this.ctx.currentTime);
+      this.limiter.ratio.setValueAtTime(20, this.ctx.currentTime);
+      this.limiter.attack.setValueAtTime(0.003, this.ctx.currentTime);
+      this.limiter.release.setValueAtTime(0.25, this.ctx.currentTime);
       this.musicGain.connect(this.masterGain);
       this.sfxGain.connect(this.masterGain);
-      this.masterGain.connect(this.ctx.destination);
+      this.masterGain.connect(this.limiter);
+      this.limiter.connect(this.ctx.destination);
       this._noiseBuffer = this.buildNoiseBuffer(this.ctx);
       this.applySettings();
       void this.ctx.resume();

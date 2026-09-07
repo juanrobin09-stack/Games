@@ -697,6 +697,10 @@ body.high-contrast {
   background: radial-gradient(ellipse at 50% 30%, #1a1420 0%, #07060a 78%);
   overflow-y: auto;
   padding: 3vh 4vw;
+  /* Must outrank .touch-controls (z-index: 5), which otherwise stays alive
+     for the whole run and — via its own explicit z-index — paints above any
+     modal appended after it regardless of DOM order. */
+  z-index: 10;
 }
 .screen-overlay.modal-backdrop {
   background: rgba(5, 4, 8, 0.72);
