@@ -70,15 +70,16 @@ export class Camera {
     return y + this.shakeOffset.y;
   }
 
-  worldToScreen(x: number, y: number): Vector2 {
-    return new Vector2(
+  /** Pass `out` to reuse a scratch Vector2 in a hot per-frame loop instead of allocating one per call. */
+  worldToScreen(x: number, y: number, out = new Vector2()): Vector2 {
+    return out.set(
       (x - this.renderX) * this.zoom + this.width / 2,
       (y - this.renderY) * this.zoom + this.height / 2
     );
   }
 
-  screenToWorld(x: number, y: number): Vector2 {
-    return new Vector2(
+  screenToWorld(x: number, y: number, out = new Vector2()): Vector2 {
+    return out.set(
       (x - this.width / 2) / this.zoom + this.renderX,
       (y - this.height / 2) / this.zoom + this.renderY
     );

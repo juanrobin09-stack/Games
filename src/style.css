@@ -702,6 +702,14 @@ body.high-contrast {
   50% { opacity: 0.32; }
 }
 
+.hud-corruption-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 50%, rgba(74, 61, 99, 0) 45%, rgba(74, 61, 99, 0.85) 100%);
+  opacity: 0;
+  transition: opacity 1.2s ease;
+}
+
 /* ================= Screens (menu/modal shells) ================= */
 .screen-overlay {
   position: absolute;

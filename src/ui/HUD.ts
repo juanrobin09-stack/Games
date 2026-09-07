@@ -53,6 +53,7 @@ export class HUD {
   private synergyBanner!: HTMLElement;
   private timerLabel!: HTMLElement;
   private dangerVignette!: HTMLElement;
+  private corruptionVignette!: HTMLElement;
   private toastTimers: number[] = [];
 
   constructor(container: HTMLElement) {
@@ -83,6 +84,7 @@ export class HUD {
     this.phaseBanner = el('div', { class: 'hud-phase-banner' });
     this.synergyBanner = el('div', { class: 'hud-synergy-banner' });
     this.dangerVignette = el('div', { class: 'hud-danger-vignette' });
+    this.corruptionVignette = el('div', { class: 'hud-corruption-vignette' });
     this.timerLabel = el('span', {}, ['0:00']);
 
     this.bossBar = el('div', { class: 'hud-boss-bar' }, [
@@ -129,6 +131,7 @@ export class HUD {
       this.toastArea,
       this.phaseBanner,
       this.synergyBanner,
+      this.corruptionVignette,
       this.dangerVignette,
     ]);
   }
@@ -237,6 +240,7 @@ export class HUD {
     this.zoneLabel.textContent = `${data.zoneName} · ${data.roomLabel}`;
     this.timerLabel.textContent = formatTime(data.elapsedSeconds);
     this.corruptionFill.style.width = `${Math.round(data.corruption * 100)}%`;
+    this.corruptionVignette.style.opacity = (clamp(data.corruption, 0, 1) * 0.4).toFixed(2);
 
     const abilityCooldownRatio =
       data.player.ability.cooldown > 0 ? clamp(data.player.abilityCooldownTimer / data.player.ability.cooldown, 0, 1) : 0;

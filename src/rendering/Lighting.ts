@@ -1,5 +1,6 @@
 import type { Camera } from '@/core/Camera';
 import { rgba } from '@/rendering/Palette';
+import { Vector2 } from '@/utils/Vector2';
 
 export interface LightSource {
   x: number;
@@ -19,6 +20,7 @@ const MAX_LIGHTS = 48;
  */
 export class LightingSystem {
   private lights: LightSource[] = [];
+  private readonly scratchScreen = new Vector2();
   ambientDarkness = 0.4;
   enabled = true;
 
@@ -42,7 +44,7 @@ export class LightingSystem {
 
     ctx.globalCompositeOperation = 'lighter';
     for (const light of this.lights) {
-      const screen = camera.worldToScreen(light.x, light.y);
+      const screen = camera.worldToScreen(light.x, light.y, this.scratchScreen);
       const r = light.radius * camera.zoom;
       if (screen.x < -r || screen.x > width + r || screen.y < -r || screen.y > height + r) continue;
       const grad = ctx.createRadialGradient(screen.x, screen.y, 0, screen.x, screen.y, r);

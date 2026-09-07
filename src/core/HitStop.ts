@@ -12,9 +12,12 @@ export class HitStopController {
   enabled = true;
 
   trigger(durationSeconds: number, strength: number): void {
-    if (!this.enabled || durationSeconds <= this.timer) return;
-    this.timer = durationSeconds;
-    this.strength = strength;
+    if (!this.enabled) return;
+    const isLonger = durationSeconds > this.timer;
+    const isStronger = strength < this.strength;
+    if (!isLonger && !isStronger) return;
+    this.timer = Math.max(durationSeconds, this.timer);
+    this.strength = Math.min(strength, this.strength);
   }
 
   /** Call once per frame with the real (unscaled) delta time; returns the delta to actually simulate with. */
