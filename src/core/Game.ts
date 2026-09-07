@@ -107,6 +107,7 @@ export class Game {
   private onboarding: Onboarding | null = null;
   private modalScreen: Destroyable | null = null;
   private rewardPopups: RewardPopup[] = [];
+  private synergyBannerTimers: number[] = [];
 
   private player: Player | null = null;
   private run: RunState | null = null;
@@ -250,6 +251,8 @@ export class Game {
     this.closeModal();
     this.rewardPopups.forEach((p) => p.destroy());
     this.rewardPopups.length = 0;
+    this.synergyBannerTimers.forEach((id) => window.clearTimeout(id));
+    this.synergyBannerTimers.length = 0;
     this.stateMachine.set(GameState.RUN_START);
 
     this.run = new RunState(seed);
@@ -310,6 +313,8 @@ export class Game {
     this.hud = null;
     this.rewardPopups.forEach((p) => p.destroy());
     this.rewardPopups.length = 0;
+    this.synergyBannerTimers.forEach((id) => window.clearTimeout(id));
+    this.synergyBannerTimers.length = 0;
     this.touchControls?.destroy();
     this.touchControls = null;
     this.closeModal();
@@ -645,10 +650,11 @@ export class Game {
     const newSynergies = player.addUpgrade(def);
     for (let i = 0; i < newSynergies.length; i++) {
       const syn = getSynergy(newSynergies[i]);
-      window.setTimeout(() => {
+      const timer = window.setTimeout(() => {
         this.hud?.showSynergyBanner(syn.name, syn.description);
         playSfx('synergyFormed');
       }, i * 900);
+      this.synergyBannerTimers.push(timer);
     }
   }
 
@@ -806,6 +812,7 @@ export class Game {
       updateEnemyAI(enemy, aiCtx);
       if (isAttackTriggerFrame(enemy, prevState)) resolveAttackTrigger(enemy, aiCtx);
       enemy.update(dt);
+      if (!enemy.alive) this.combat.onEnemyDeath(player, enemy);
       resolveAgainstWalls(enemy, walls);
       resolveAgainstObstacles(enemy, room.obstacles);
     }
@@ -818,6 +825,7 @@ export class Game {
         if (this.bossIntroTimer <= 0 && !this.boss.introDone) this.boss.beginFight();
       }
       this.boss.tick(dt, player, room.bounds);
+      if (!this.boss.alive) this.combat.onEnemyDeath(player, this.boss);
       resolveBossPendingActions(this.boss, {
         player,
         room,

@@ -294,7 +294,12 @@ export class CombatSystem {
     playSfx('impactCrit', { throttleMs: 0 });
   }
 
-  private onEnemyDeath(player: Player, enemy: Enemy): void {
+  /** Centralizes the loot/VFX/SFX/stats/event fallout of an enemy dying, however it
+   * died (direct hit here, or a damage-over-time tick discovered in Game's update
+   * loop) — every death must go through this exactly once. */
+  onEnemyDeath(player: Player, enemy: Enemy): void {
+    if (enemy.deathHandled) return;
+    enemy.deathHandled = true;
     spawnDeathBurst(this.particles, enemy.x, enemy.y, enemy.def.accentColor);
     playSfx(enemy.def.isElite ? 'eliteDeath' : 'enemyDeath');
     if (enemy.def.isElite) {

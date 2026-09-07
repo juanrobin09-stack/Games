@@ -36,6 +36,9 @@ export class Enemy {
   maxHp: number;
   alive = true;
   deathTimer = 0;
+  /** Set once CombatSystem.onEnemyDeath has processed this death (loot/VFX/SFX/events),
+   * regardless of whether it died to a direct hit or a damage-over-time tick. */
+  deathHandled = false;
 
   state: EnemyState = 'spawning';
   stateTimer = 0;
