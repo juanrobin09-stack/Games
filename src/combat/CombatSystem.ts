@@ -30,6 +30,7 @@ export interface DamageOptions {
 const ELITE_SHAKE = 9;
 const NORMAL_SHAKE = 4;
 const CRIT_SHAKE_BONUS = 3;
+const HIT_ARC_COVERAGE = 0.75;
 
 export class CombatSystem {
   projectiles: Projectile[] = [];
@@ -48,7 +49,13 @@ export class CombatSystem {
   performMeleeAttack(player: Player, enemies: Enemy[]): MeleeAttackResult {
     const weapon = player.weapon;
     const range = weapon.range * player.stats.rangeMult;
-    const halfArc = ((weapon.arcDegrees ?? 100) * Math.PI) / 180 / 2;
+    // The hit check runs once, instantly, the moment the swing starts (attackFacingLock
+    // is set then) — but the blade sprite only reaches that angle by sweeping across the
+    // full arcDegrees over the swing's duration, so at t=0 it's still sitting at one edge
+    // of the nominal arc. Checking the full arc would land hits on the far edge before the
+    // blade is anywhere near it; HIT_ARC_COVERAGE narrows the checked cone so a hit always
+    // corresponds to roughly where the blade actually is early in its swing.
+    const halfArc = ((weapon.arcDegrees ?? 100) * HIT_ARC_COVERAGE * Math.PI) / 180 / 2;
     let hitCount = 0;
     let anyCrit = false;
 

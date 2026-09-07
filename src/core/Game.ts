@@ -1006,7 +1006,7 @@ export class Game {
 
     this.renderer.clear(zone.palette.wall);
     this.camera.setViewport(this.renderer.width, this.renderer.height);
-    drawRoomBackground(ctx, room, zone, this.camera, time);
+    drawRoomBackground(ctx, room, zone, this.camera, time, player.x, player.y);
 
     if (room.type === 'boss' && this.boss && this.boss.phase === 3) {
       for (const meteor of this.boss.meteorTargets) drawMeteorTelegraph(ctx, meteor, this.camera);

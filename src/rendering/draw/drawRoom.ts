@@ -1,24 +1,89 @@
-import type { Room } from '@/world/Room';
+import type { Room, Direction } from '@/world/Room';
 import { ROOM_WIDTH, ROOM_HEIGHT, WALL_THICKNESS, DOOR_WIDTH } from '@/world/Room';
 import type { ZoneDefinition } from '@/data/types';
 import type { Camera } from '@/core/Camera';
 import type { ParticleSystem } from '@/rendering/ParticleSystem';
-import { hashJitter } from '@/rendering/DrawUtils';
-import { rgba } from '@/rendering/Palette';
+import { hashJitter, roundedRectPath } from '@/rendering/DrawUtils';
+import { rgba, mixColor, Palette } from '@/rendering/Palette';
 
 const DIRS = ['N', 'S', 'E', 'W'] as const;
 
-function doorScreenRect(dir: (typeof DIRS)[number]): { x: number; y: number; w: number; h: number } {
-  const t = WALL_THICKNESS;
-  switch (dir) {
-    case 'N':
-      return { x: ROOM_WIDTH / 2 - DOOR_WIDTH / 2, y: 0, w: DOOR_WIDTH, h: t };
-    case 'S':
-      return { x: ROOM_WIDTH / 2 - DOOR_WIDTH / 2, y: ROOM_HEIGHT - t, w: DOOR_WIDTH, h: t };
-    case 'W':
-      return { x: 0, y: ROOM_HEIGHT / 2 - DOOR_WIDTH / 2, w: t, h: DOOR_WIDTH };
-    case 'E':
-      return { x: ROOM_WIDTH - t, y: ROOM_HEIGHT / 2 - DOOR_WIDTH / 2, w: t, h: DOOR_WIDTH };
+/** World-space rotation that maps "canonical" door-local +Y (into the room) onto
+ * the correct world direction for each wall the door sits on. */
+const DOOR_ROTATION: Record<Direction, number> = { N: 0, S: Math.PI, W: -Math.PI / 2, E: Math.PI / 2 };
+
+/**
+ * Draws one door in canonical local space: origin at the door's center, +X along
+ * the wall (the door's width), +Y pointing INTO the room. The caller rotates this
+ * into place per direction (see DOOR_ROTATION) so the geometry only has to be
+ * authored once. `approach` is 0..1, how close the player currently is to this door.
+ */
+function drawDoorCanonical(
+  ctx: CanvasRenderingContext2D,
+  scale: number,
+  zone: ZoneDefinition,
+  locked: boolean,
+  pulse: number,
+  approach: number
+): void {
+  const hw = (DOOR_WIDTH / 2) * scale;
+  const ht = (WALL_THICKNESS / 2) * scale;
+  const stateColor = locked ? Palette.blood : zone.palette.accent;
+
+  // Depth recess: the passage floor, fading to near-black toward the far/outer
+  // edge — nothing exists beyond it (only the current room ever simulates), so a
+  // fade to darkness is the honest representation of "you can't see that far yet".
+  const recess = ctx.createLinearGradient(0, -ht, 0, ht);
+  recess.addColorStop(0, Palette.void);
+  recess.addColorStop(0.55, zone.palette.wall);
+  recess.addColorStop(1, zone.palette.floor);
+  ctx.fillStyle = recess;
+  ctx.fillRect(-hw, -ht, hw * 2, ht * 2);
+
+  // Jambs: two carved posts straddling the opening's edges, giving it a worked,
+  // built silhouette instead of a raw hole in the wall.
+  const jambW = 9 * scale;
+  const jambOuter = ht + 9 * scale;
+  for (const side of [-1, 1]) {
+    const cx = side * hw;
+    const grad = ctx.createLinearGradient(cx - jambW, 0, cx + jambW, 0);
+    grad.addColorStop(0, zone.palette.wall);
+    grad.addColorStop(0.5, zone.palette.wallTop);
+    grad.addColorStop(1, zone.palette.wall);
+    ctx.fillStyle = grad;
+    roundedRectPath(ctx, cx - jambW, -jambOuter, jambW * 2, jambOuter * 2, 3 * scale);
+    ctx.fill();
+  }
+
+  // Lintel: a bright sliver along the room-facing lip, as if catching ambient light.
+  ctx.strokeStyle = rgba(zone.palette.wallTop, 0.8);
+  ctx.lineWidth = Math.max(1, 2 * scale);
+  ctx.beginPath();
+  ctx.moveTo(-hw + jambW, ht - 1 * scale);
+  ctx.lineTo(hw - jambW, ht - 1 * scale);
+  ctx.stroke();
+
+  // State glow: spills asymmetrically into the room, brighter and wider when the
+  // player is close by — a passage that visibly "notices" you approaching it.
+  const glowStrength = (locked ? 0.5 : 0.4) * pulse * (1 + approach * 0.6);
+  const glowRadius = (locked ? 70 : 85) * scale * (1 + approach * 0.25);
+  const glow = ctx.createRadialGradient(0, ht * 0.6, 0, 0, ht * 0.6, glowRadius);
+  glow.addColorStop(0, rgba(stateColor, glowStrength));
+  glow.addColorStop(0.5, rgba(stateColor, glowStrength * 0.35));
+  glow.addColorStop(1, rgba(stateColor, 0));
+  ctx.fillStyle = glow;
+  ctx.fillRect(-hw * 3, -ht * 2, hw * 6, (ht + glowRadius) * 2);
+
+  if (locked) {
+    // A sealed, barred passage — a shape cue that doesn't rely on color alone.
+    ctx.strokeStyle = rgba(mixColor(Palette.void, Palette.blood, 0.4), 0.85);
+    ctx.lineWidth = Math.max(1.5, 3 * scale);
+    for (const bx of [-hw * 0.45, 0, hw * 0.45]) {
+      ctx.beginPath();
+      ctx.moveTo(bx, -ht);
+      ctx.lineTo(bx, ht);
+      ctx.stroke();
+    }
   }
 }
 
@@ -27,7 +92,9 @@ export function drawRoomBackground(
   room: Room,
   zone: ZoneDefinition,
   camera: Camera,
-  time: number
+  time: number,
+  playerX: number,
+  playerY: number
 ): void {
   const topLeft = camera.worldToScreen(0, 0);
   const scale = camera.zoom;
@@ -62,24 +129,21 @@ export function drawRoomBackground(
   ctx.fillRect(topLeft.x, topLeft.y, ROOM_WIDTH * scale, t * 0.35);
   ctx.fillRect(topLeft.x, topLeft.y, t * 0.35, ROOM_HEIGHT * scale);
 
+  const locked = room.locked;
+  const pulse = 0.55 + Math.sin(time * (locked ? 6 : 2.2)) * 0.25;
+  const APPROACH_RADIUS = 260;
   for (const dir of DIRS) {
-    const hasDoor = room.doors.has(dir);
-    const rect = doorScreenRect(dir);
-    const sx = topLeft.x + rect.x * scale;
-    const sy = topLeft.y + rect.y * scale;
-    const sw = rect.w * scale;
-    const sh = rect.h * scale;
-    if (hasDoor) {
-      ctx.fillStyle = zone.palette.floor;
-      ctx.fillRect(sx, sy, sw, sh);
-      const locked = room.locked;
-      const pulse = 0.55 + Math.sin(time * (locked ? 6 : 2.2)) * 0.25;
-      ctx.fillStyle = rgba(locked ? '#c0392b' : zone.palette.accent, pulse * (locked ? 0.55 : 0.4));
-      ctx.fillRect(sx, sy, sw, sh);
-      ctx.strokeStyle = rgba(locked ? '#c0392b' : zone.palette.accent, 0.7);
-      ctx.lineWidth = 2;
-      ctx.strokeRect(sx + 1, sy + 1, sw - 2, sh - 2);
-    }
+    if (!room.doors.has(dir)) continue;
+    const center = room.doorCenter(dir);
+    const screenCenter = camera.worldToScreen(center.x, center.y);
+    const distToPlayer = Math.hypot(center.x - playerX, center.y - playerY);
+    const approach = Math.max(0, 1 - distToPlayer / APPROACH_RADIUS);
+
+    ctx.save();
+    ctx.translate(screenCenter.x, screenCenter.y);
+    ctx.rotate(DOOR_ROTATION[dir]);
+    drawDoorCanonical(ctx, scale, zone, locked, pulse, approach);
+    ctx.restore();
   }
 
   ctx.restore();

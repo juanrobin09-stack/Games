@@ -150,8 +150,13 @@ export function drawPlayer(ctx: CanvasRenderingContext2D, player: Player, screen
   }
   ctx.save();
   ctx.rotate(weaponAngle);
-  ctx.translate(10, 0);
-  drawWeapon(ctx, weapon, weapon.kind === 'melee' ? 34 : 40, swingProgress);
+  const armOffset = 10;
+  ctx.translate(armOffset, 0);
+  // Melee blade length is derived from the weapon's actual (stat-scaled) range so the
+  // sprite always reaches exactly as far as the hitbox does — armOffset (above) and the
+  // blade tip's own +4 extension (drawWeapon's path) are both part of that total reach.
+  const meleeLength = Math.max(20, weapon.range * player.stats.rangeMult - armOffset - 4);
+  drawWeapon(ctx, weapon, weapon.kind === 'melee' ? meleeLength : 40, swingProgress);
   ctx.restore();
 
   // --- Hit flash overlay ---
