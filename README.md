@@ -47,7 +47,7 @@ The game detects touch input automatically and swaps the on-screen control schem
 
 ## Installation & running
 
-Requirements: Node.js 18+.
+Requirements: Node.js 20.19+ or 22.12+ (required by Vite 8).
 
 ```bash
 npm install
