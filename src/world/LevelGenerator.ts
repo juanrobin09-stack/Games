@@ -165,6 +165,19 @@ function scatterObstacles(room: Room, rng: Random, zoneIndex: number, count: num
   }
 }
 
+/**
+ * A room's single "landmark" object (chest, brazier, stall, shrine) used to sit
+ * dead-center — which, for rooms whose N/S or E/W doors are both open, put it
+ * squarely on the straight line between them and blocked the room's most direct
+ * traversal. Offsetting on both axes keeps it visually central (and still the
+ * obvious, single point of interest) while actually clearing both centerlines.
+ */
+function landmarkPosition(rng: Random): { x: number; y: number } {
+  const offsetX = rng.pick([-1, 1]) * rng.range(90, 160);
+  const offsetY = rng.pick([-1, 1]) * rng.range(60, 110);
+  return { x: ROOM_WIDTH / 2 + offsetX, y: ROOM_HEIGHT / 2 + offsetY };
+}
+
 function randomSpawnPosition(rng: Random, avoidCenterRadius = 150): { x: number; y: number } {
   const margin = WALL_THICKNESS + 70;
   let x = 0;
@@ -267,21 +280,25 @@ export function populateRoomContent(room: Room, zone: ZoneDefinition, opts: Spaw
     case 'chest': {
       scatterObstacles(room, rng, zone.index, rng.int(1, 3));
       const tier = rollRarity(rng, opts.rarityLuck);
-      room.chest = new Chest(ROOM_WIDTH / 2, ROOM_HEIGHT / 2, tier);
+      const pos = landmarkPosition(rng);
+      room.chest = new Chest(pos.x, pos.y, tier);
       break;
     }
     case 'rest': {
-      room.obstacles.push(new Obstacle(ROOM_WIDTH / 2, ROOM_HEIGHT / 2, 20, 'brazier'));
+      const pos = landmarkPosition(rng);
+      room.obstacles.push(new Obstacle(pos.x, pos.y, 20, 'brazier'));
       scatterObstacles(room, rng, zone.index, rng.int(1, 2));
       break;
     }
     case 'shop': {
-      room.obstacles.push(new Obstacle(ROOM_WIDTH / 2, ROOM_HEIGHT / 2, 26, 'merchantStall'));
+      const pos = landmarkPosition(rng);
+      room.obstacles.push(new Obstacle(pos.x, pos.y, 26, 'merchantStall'));
       scatterObstacles(room, rng, zone.index, rng.int(1, 2));
       break;
     }
     case 'event': {
-      room.obstacles.push(new Obstacle(ROOM_WIDTH / 2, ROOM_HEIGHT / 2, 22, 'shrine'));
+      const pos = landmarkPosition(rng);
+      room.obstacles.push(new Obstacle(pos.x, pos.y, 22, 'shrine'));
       scatterObstacles(room, rng, zone.index, rng.int(1, 2));
       break;
     }

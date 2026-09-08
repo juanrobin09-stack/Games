@@ -16,6 +16,7 @@ import { drawObstacle } from '@/rendering/draw/drawObstacle';
 import { drawBoss, drawMeteorTelegraph } from '@/rendering/draw/drawBoss';
 import { drawDamageNumbers } from '@/rendering/draw/drawDamageNumbers';
 import { drawRoomBackground, drawRoomVignette, spawnZoneAmbientParticle } from '@/rendering/draw/drawRoom';
+import { clearRoomTextureCache } from '@/rendering/RoomTexture';
 import { spawnChestOpenBurst, spawnDodgeTrail, spawnHealSparkle, spawnLevelUpBurst } from '@/rendering/ParticlePresets';
 import { audio } from '@/audio/AudioEngine';
 import { music } from '@/audio/MusicEngine';
@@ -265,6 +266,7 @@ export class Game {
     startRoom.visited = true;
     startRoom.spawnedContent = true;
     this.particles.clear();
+    clearRoomTextureCache();
     this.combat.reset();
 
     this.hud = new HUD(this.uiRoot);
@@ -439,18 +441,26 @@ export class Game {
     const player = this.player!;
     const room = run.currentRoom;
     const centerDist = Math.hypot(player.x - ROOM_WIDTH / 2, player.y - ROOM_HEIGHT / 2);
+    // Shop/event/rest interactions track their own landmark obstacle's position
+    // (like chest already does below), not the room's raw center point — the
+    // landmark itself is offset off-center so it doesn't sit on the straight
+    // line between opposite doors (see LevelGenerator's landmarkPosition).
+    const landmarkDist = (visual: string): number => {
+      const o = room.obstacles.find((ob) => ob.visual === visual);
+      return o ? Math.hypot(player.x - o.x, player.y - o.y) : Infinity;
+    };
 
     if (room.type === 'chest' && room.chest && room.chest.canInteract) {
       const d = Math.hypot(player.x - room.chest.x, player.y - room.chest.y);
       if (d < 75) return { label: 'Open Chest', action: () => this.openChest(room) };
     }
-    if (room.type === 'shop' && centerDist < 110) {
+    if (room.type === 'shop' && landmarkDist('merchantStall') < 110) {
       return { label: 'Browse Wares', action: () => this.openShopRoom(room) };
     }
-    if (room.type === 'event' && !room.eventResolved && centerDist < 110) {
+    if (room.type === 'event' && !room.eventResolved && landmarkDist('shrine') < 110) {
       return { label: 'Investigate', action: () => this.openEvent(room) };
     }
-    if (room.type === 'rest' && !room.restUsed && centerDist < 110) {
+    if (room.type === 'rest' && !room.restUsed && landmarkDist('brazier') < 110) {
       return { label: 'Rest at the Brazier', action: () => this.useRest(room) };
     }
     if (room.type === 'heart' && room.cleared && centerDist < 110 && !run.isFinalZone()) {

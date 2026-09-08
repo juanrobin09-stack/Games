@@ -3,22 +3,60 @@ import { ROOM_WIDTH, ROOM_HEIGHT, WALL_THICKNESS, DOOR_WIDTH } from '@/world/Roo
 import type { ZoneDefinition } from '@/data/types';
 import type { Camera } from '@/core/Camera';
 import type { ParticleSystem } from '@/rendering/ParticleSystem';
-import { hashJitter, roundedRectPath } from '@/rendering/DrawUtils';
+import { hashJitter } from '@/rendering/DrawUtils';
 import { rgba, mixColor, Palette } from '@/rendering/Palette';
+import { getWallStrip } from '@/rendering/RoomTexture';
 
 const DIRS = ['N', 'S', 'E', 'W'] as const;
+/** Center of each corner's wall-overlap square (inset half a thickness in from
+ * the true corner point, not centered ON it — the block must sit fully inside
+ * the N/S and E/W strips' own footprint, not straddle out past the wall into
+ * the void beyond it). */
+const CORNERS: { x: number; y: number }[] = [
+  { x: WALL_THICKNESS / 2, y: WALL_THICKNESS / 2 },
+  { x: ROOM_WIDTH - WALL_THICKNESS / 2, y: WALL_THICKNESS / 2 },
+  { x: WALL_THICKNESS / 2, y: ROOM_HEIGHT - WALL_THICKNESS / 2 },
+  { x: ROOM_WIDTH - WALL_THICKNESS / 2, y: ROOM_HEIGHT - WALL_THICKNESS / 2 },
+];
 
 /** World-space rotation that maps "canonical" door-local +Y (into the room) onto
  * the correct world direction for each wall the door sits on. */
 const DOOR_ROTATION: Record<Direction, number> = { N: 0, S: Math.PI, W: -Math.PI / 2, E: Math.PI / 2 };
 
 /**
- * Draws one door in canonical local space: origin at the door's center, +X along
- * the wall (the door's width), +Y pointing INTO the room. The caller rotates this
- * into place per direction (see DOOR_ROTATION) so the geometry only has to be
- * authored once. `approach` is 0..1, how close the player currently is to this door.
+ * The N/S and E/W wall strips are baked independently, so at each room corner
+ * whichever strip is drawn last simply overwrites the other's corner pixels —
+ * not wrong, but not the deliberate, chunkier corner stone real masonry has
+ * either. This is cheap enough (4 blocks) to draw fresh every frame rather than
+ * bake, tying the two strips together at the joint.
  */
-function drawDoorCanonical(
+function drawCornerStone(ctx: CanvasRenderingContext2D, screenX: number, screenY: number, size: number, zone: ZoneDefinition, seed: number): void {
+  const grad = ctx.createRadialGradient(screenX - size * 0.2, screenY - size * 0.2, 0, screenX, screenY, size * 0.9);
+  grad.addColorStop(0, mixColor(zone.palette.wallTop, '#fffaf0', 0.12));
+  grad.addColorStop(0.65, zone.palette.wallTop);
+  grad.addColorStop(1, zone.palette.wall);
+  ctx.fillStyle = grad;
+  ctx.fillRect(screenX - size / 2, screenY - size / 2, size, size);
+  ctx.strokeStyle = rgba(zone.palette.wall, 0.6);
+  ctx.lineWidth = Math.max(1, size * 0.04);
+  ctx.strokeRect(screenX - size / 2, screenY - size / 2, size, size);
+  if (hashJitter(seed, 999) > 0.5) {
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(screenX - size * 0.3, screenY - size * 0.1);
+    ctx.lineTo(screenX + size * 0.1, screenY + size * 0.35);
+    ctx.stroke();
+  }
+}
+
+/**
+ * Draws the door's dynamic state on top of the room's baked masonry (which already
+ * contains the opening itself, its jambs and threshold debris — see RoomTexture.ts).
+ * Only the parts that actually change frame to frame live here: the locked/unlocked
+ * glow (pulsing, brighter as the player approaches) and the sealed-door bars.
+ */
+function drawDoorOverlay(
   ctx: CanvasRenderingContext2D,
   scale: number,
   zone: ZoneDefinition,
@@ -30,41 +68,6 @@ function drawDoorCanonical(
   const ht = (WALL_THICKNESS / 2) * scale;
   const stateColor = locked ? Palette.blood : zone.palette.accent;
 
-  // Depth recess: the passage floor, fading to near-black toward the far/outer
-  // edge — nothing exists beyond it (only the current room ever simulates), so a
-  // fade to darkness is the honest representation of "you can't see that far yet".
-  const recess = ctx.createLinearGradient(0, -ht, 0, ht);
-  recess.addColorStop(0, Palette.void);
-  recess.addColorStop(0.55, zone.palette.wall);
-  recess.addColorStop(1, zone.palette.floor);
-  ctx.fillStyle = recess;
-  ctx.fillRect(-hw, -ht, hw * 2, ht * 2);
-
-  // Jambs: two carved posts straddling the opening's edges, giving it a worked,
-  // built silhouette instead of a raw hole in the wall.
-  const jambW = 9 * scale;
-  const jambOuter = ht + 9 * scale;
-  for (const side of [-1, 1]) {
-    const cx = side * hw;
-    const grad = ctx.createLinearGradient(cx - jambW, 0, cx + jambW, 0);
-    grad.addColorStop(0, zone.palette.wall);
-    grad.addColorStop(0.5, zone.palette.wallTop);
-    grad.addColorStop(1, zone.palette.wall);
-    ctx.fillStyle = grad;
-    roundedRectPath(ctx, cx - jambW, -jambOuter, jambW * 2, jambOuter * 2, 3 * scale);
-    ctx.fill();
-  }
-
-  // Lintel: a bright sliver along the room-facing lip, as if catching ambient light.
-  ctx.strokeStyle = rgba(zone.palette.wallTop, 0.8);
-  ctx.lineWidth = Math.max(1, 2 * scale);
-  ctx.beginPath();
-  ctx.moveTo(-hw + jambW, ht - 1 * scale);
-  ctx.lineTo(hw - jambW, ht - 1 * scale);
-  ctx.stroke();
-
-  // State glow: spills asymmetrically into the room, brighter and wider when the
-  // player is close by — a passage that visibly "notices" you approaching it.
   const glowStrength = (locked ? 0.5 : 0.4) * pulse * (1 + approach * 0.6);
   const glowRadius = (locked ? 70 : 85) * scale * (1 + approach * 0.25);
   const glow = ctx.createRadialGradient(0, ht * 0.6, 0, 0, ht * 0.6, glowRadius);
@@ -103,8 +106,30 @@ export function drawRoomBackground(
   ctx.fillStyle = zone.palette.floor;
   ctx.fillRect(topLeft.x, topLeft.y, ROOM_WIDTH * scale, ROOM_HEIGHT * scale);
 
-  ctx.fillStyle = zone.palette.floorAccent;
   const seed = room.gridX * 7919 + room.gridY * 104729;
+
+  // Large flagstone seams — a coarser grid than the wall's masonry, giving the
+  // floor its own distinct scale of texture rather than reading as one flat plane.
+  ctx.strokeStyle = rgba(zone.palette.wall, 0.35);
+  ctx.lineWidth = Math.max(1, 1.4 * scale);
+  const cols = 6;
+  const rows = 4;
+  for (let c = 1; c < cols; c++) {
+    const x = topLeft.x + (c / cols) * ROOM_WIDTH * scale + hashJitter(seed, c + 200) * 14 * scale;
+    ctx.beginPath();
+    ctx.moveTo(x, topLeft.y);
+    ctx.lineTo(x, topLeft.y + ROOM_HEIGHT * scale);
+    ctx.stroke();
+  }
+  for (let r = 1; r < rows; r++) {
+    const y = topLeft.y + (r / rows) * ROOM_HEIGHT * scale + hashJitter(seed, r + 260) * 14 * scale;
+    ctx.beginPath();
+    ctx.moveTo(topLeft.x, y);
+    ctx.lineTo(topLeft.x + ROOM_WIDTH * scale, y);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = zone.palette.floorAccent;
   for (let i = 0; i < 16; i++) {
     const jx = hashJitter(seed, i * 2);
     const jy = hashJitter(seed, i * 2 + 1);
@@ -118,16 +143,43 @@ export function drawRoomBackground(
   }
   ctx.globalAlpha = 1;
 
-  const t = WALL_THICKNESS * scale;
-  ctx.fillStyle = zone.palette.wall;
-  ctx.fillRect(topLeft.x, topLeft.y, ROOM_WIDTH * scale, t);
-  ctx.fillRect(topLeft.x, topLeft.y + ROOM_HEIGHT * scale - t, ROOM_WIDTH * scale, t);
-  ctx.fillRect(topLeft.x, topLeft.y, t, ROOM_HEIGHT * scale);
-  ctx.fillRect(topLeft.x + ROOM_WIDTH * scale - t, topLeft.y, t, ROOM_HEIGHT * scale);
+  // Sparse debris hugging the walls — small chips knocked loose from the masonry.
+  const margin = WALL_THICKNESS + 60;
+  for (let i = 0; i < 10; i++) {
+    const edge = Math.floor(hashJitter(seed, i + 400) * 4);
+    const along = hashJitter(seed, i + 450);
+    let wx: number, wy: number;
+    if (edge === 0) { wx = along * ROOM_WIDTH; wy = margin * hashJitter(seed, i + 470); }
+    else if (edge === 1) { wx = along * ROOM_WIDTH; wy = ROOM_HEIGHT - margin * hashJitter(seed, i + 480); }
+    else if (edge === 2) { wx = margin * hashJitter(seed, i + 490); wy = along * ROOM_HEIGHT; }
+    else { wx = ROOM_WIDTH - margin * hashJitter(seed, i + 495); wy = along * ROOM_HEIGHT; }
+    const sx = topLeft.x + wx * scale;
+    const sy = topLeft.y + wy * scale;
+    const r = (2 + hashJitter(seed, i + 500) * 3.5) * scale;
+    ctx.globalAlpha = 0.35 + hashJitter(seed, i + 510) * 0.25;
+    ctx.fillStyle = mixColor(zone.palette.wall, '#000000', 0.1);
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, r, r * 0.65, hashJitter(seed, i + 520) * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
 
-  ctx.fillStyle = zone.palette.wallTop;
-  ctx.fillRect(topLeft.x, topLeft.y, ROOM_WIDTH * scale, t * 0.35);
-  ctx.fillRect(topLeft.x, topLeft.y, t * 0.35, ROOM_HEIGHT * scale);
+  const t = WALL_THICKNESS * scale;
+  const roomKey = room.key;
+  const nStrip = getWallStrip(roomKey, zone, 'N', room.doors.has('N'));
+  ctx.drawImage(nStrip, topLeft.x, topLeft.y, ROOM_WIDTH * scale, t);
+  const sStrip = getWallStrip(roomKey, zone, 'S', room.doors.has('S'));
+  ctx.drawImage(sStrip, topLeft.x, topLeft.y + ROOM_HEIGHT * scale - t, ROOM_WIDTH * scale, t);
+  const wStrip = getWallStrip(roomKey, zone, 'W', room.doors.has('W'));
+  ctx.drawImage(wStrip, topLeft.x, topLeft.y, t, ROOM_HEIGHT * scale);
+  const eStrip = getWallStrip(roomKey, zone, 'E', room.doors.has('E'));
+  ctx.drawImage(eStrip, topLeft.x + ROOM_WIDTH * scale - t, topLeft.y, t, ROOM_HEIGHT * scale);
+
+  CORNERS.forEach((corner, i) => {
+    const sx = topLeft.x + corner.x * scale;
+    const sy = topLeft.y + corner.y * scale;
+    drawCornerStone(ctx, sx, sy, t, zone, seed + i * 37);
+  });
 
   const locked = room.locked;
   const pulse = 0.55 + Math.sin(time * (locked ? 6 : 2.2)) * 0.25;
@@ -142,7 +194,7 @@ export function drawRoomBackground(
     ctx.save();
     ctx.translate(screenCenter.x, screenCenter.y);
     ctx.rotate(DOOR_ROTATION[dir]);
-    drawDoorCanonical(ctx, scale, zone, locked, pulse, approach);
+    drawDoorOverlay(ctx, scale, zone, locked, pulse, approach);
     ctx.restore();
   }
 
