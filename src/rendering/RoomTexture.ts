@@ -2,6 +2,7 @@ import { ROOM_WIDTH, ROOM_HEIGHT, WALL_THICKNESS, DOOR_WIDTH } from '@/world/Roo
 import type { ZoneDefinition } from '@/data/types';
 import { Random } from '@/utils/Random';
 import { mixColor } from '@/rendering/Palette';
+import { paintWallSwatch, paintJambSwatch, tintSwatch } from '@/rendering/StoneAsset';
 
 /**
  * Bakes the fussy, expensive-to-redraw part of a room's presentation — individual
@@ -80,12 +81,22 @@ function drawBlockFace(
   const inset = 2.2;
   const bw = Math.max(0, w - inset * 2);
   const bh = Math.max(0, h - inset * 2);
-  const grad = ctx.createLinearGradient(0, y, 0, y + h);
-  grad.addColorStop(0, jitterColor(mixColor(topColor, '#fffaf0', 0.1), rng, 0.14));
-  grad.addColorStop(0.55, jitterColor(topColor, rng, 0.16));
-  grad.addColorStop(1, jitterColor(mixColor(topColor, baseColor, 0.55), rng, 0.14));
-  ctx.fillStyle = grad;
-  ctx.fillRect(x + inset, y + inset, bw, bh);
+
+  // Fill the block with a resampled swatch of the real reference photograph
+  // (see StoneAsset.ts), then shift its hue toward the zone palette while
+  // keeping its own photographic shading — falling back to the previous
+  // procedural gradient only if the asset hasn't finished loading yet.
+  const painted = paintWallSwatch(ctx, x + inset, y + inset, bw, bh, rng.next(), rng.bool(0.5));
+  if (painted) {
+    tintSwatch(ctx, x + inset, y + inset, bw, bh, topColor, 0.4);
+  } else {
+    const grad = ctx.createLinearGradient(0, y, 0, y + h);
+    grad.addColorStop(0, jitterColor(mixColor(topColor, '#fffaf0', 0.1), rng, 0.14));
+    grad.addColorStop(0.55, jitterColor(topColor, rng, 0.16));
+    grad.addColorStop(1, jitterColor(mixColor(topColor, baseColor, 0.55), rng, 0.14));
+    ctx.fillStyle = grad;
+    ctx.fillRect(x + inset, y + inset, bw, bh);
+  }
 
   // A brighter top-edge highlight per block, as if each one catches a sliver of ambient light.
   if (bh > 3) {
@@ -194,19 +205,28 @@ function bakeDoorStrip(canvas: HTMLCanvasElement, length: number, thickness: num
   // rough coursing on either side and tall enough to read as a real threshold.
   const jambW = 15 * SUPERSAMPLE;
   const jambProtrusion = 10 * SUPERSAMPLE;
-  for (const gx of [gapStart, gapEnd - jambW]) {
-    const grad = ctx.createLinearGradient(gx, 0, gx + jambW, 0);
-    grad.addColorStop(0, zone.palette.wall);
-    grad.addColorStop(0.5, mixColor(zone.palette.wallTop, '#ffffff', 0.12));
-    grad.addColorStop(1, zone.palette.wall);
-    ctx.fillStyle = grad;
-    ctx.fillRect(gx, -jambProtrusion * 0.3, jambW, thickness + jambProtrusion);
+  const jambY = -jambProtrusion * 0.3;
+  const jambH = thickness + jambProtrusion;
+  for (const [gx, flip] of [[gapStart, false], [gapEnd - jambW, true]] as const) {
+    // The same source pillar-and-torch swatch is mirrored for the far jamb,
+    // so a doorway reads as one deliberately-built, symmetric threshold.
+    const painted = paintJambSwatch(ctx, gx, jambY, jambW, jambH, flip);
+    if (painted) {
+      tintSwatch(ctx, gx, jambY, jambW, jambH, zone.palette.wallTop, 0.35);
+    } else {
+      const grad = ctx.createLinearGradient(gx, 0, gx + jambW, 0);
+      grad.addColorStop(0, zone.palette.wall);
+      grad.addColorStop(0.5, mixColor(zone.palette.wallTop, '#ffffff', 0.12));
+      grad.addColorStop(1, zone.palette.wall);
+      ctx.fillStyle = grad;
+      ctx.fillRect(gx, jambY, jambW, jambH);
+    }
     // Two or three horizontal seams so the jamb itself reads as stacked stone, not a monolith.
     ctx.strokeStyle = 'rgba(0,0,0,0.35)';
     ctx.lineWidth = 1;
     const seams = rng.int(2, 3);
     for (let s = 1; s <= seams; s++) {
-      const sy = -jambProtrusion * 0.3 + ((thickness + jambProtrusion) / (seams + 1)) * s;
+      const sy = jambY + (jambH / (seams + 1)) * s;
       ctx.beginPath();
       ctx.moveTo(gx, sy);
       ctx.lineTo(gx + jambW, sy);

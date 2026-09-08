@@ -1,5 +1,8 @@
 import '@/style.css';
 import { Game } from '@/core/Game';
+import { preloadStoneAsset } from '@/rendering/StoneAsset';
+
+preloadStoneAsset();
 
 function boot(): void {
   const canvas = document.getElementById('game-canvas');

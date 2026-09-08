@@ -6,6 +6,7 @@ import type { ParticleSystem } from '@/rendering/ParticleSystem';
 import { hashJitter } from '@/rendering/DrawUtils';
 import { rgba, mixColor, Palette } from '@/rendering/Palette';
 import { getWallStrip } from '@/rendering/RoomTexture';
+import { paintCornerSwatch, tintSwatch } from '@/rendering/StoneAsset';
 
 const DIRS = ['N', 'S', 'E', 'W'] as const;
 /** Center of each corner's wall-overlap square (inset half a thickness in from
@@ -31,15 +32,22 @@ const DOOR_ROTATION: Record<Direction, number> = { N: 0, S: Math.PI, W: -Math.PI
  * bake, tying the two strips together at the joint.
  */
 function drawCornerStone(ctx: CanvasRenderingContext2D, screenX: number, screenY: number, size: number, zone: ZoneDefinition, seed: number): void {
-  const grad = ctx.createRadialGradient(screenX - size * 0.2, screenY - size * 0.2, 0, screenX, screenY, size * 0.9);
-  grad.addColorStop(0, mixColor(zone.palette.wallTop, '#fffaf0', 0.12));
-  grad.addColorStop(0.65, zone.palette.wallTop);
-  grad.addColorStop(1, zone.palette.wall);
-  ctx.fillStyle = grad;
-  ctx.fillRect(screenX - size / 2, screenY - size / 2, size, size);
+  const dx = screenX - size / 2;
+  const dy = screenY - size / 2;
+  const painted = paintCornerSwatch(ctx, dx, dy, size, size, hashJitter(seed, 777));
+  if (painted) {
+    tintSwatch(ctx, dx, dy, size, size, zone.palette.wallTop, 0.4);
+  } else {
+    const grad = ctx.createRadialGradient(screenX - size * 0.2, screenY - size * 0.2, 0, screenX, screenY, size * 0.9);
+    grad.addColorStop(0, mixColor(zone.palette.wallTop, '#fffaf0', 0.12));
+    grad.addColorStop(0.65, zone.palette.wallTop);
+    grad.addColorStop(1, zone.palette.wall);
+    ctx.fillStyle = grad;
+    ctx.fillRect(dx, dy, size, size);
+  }
   ctx.strokeStyle = rgba(zone.palette.wall, 0.6);
   ctx.lineWidth = Math.max(1, size * 0.04);
-  ctx.strokeRect(screenX - size / 2, screenY - size / 2, size, size);
+  ctx.strokeRect(dx, dy, size, size);
   if (hashJitter(seed, 999) > 0.5) {
     ctx.strokeStyle = 'rgba(0,0,0,0.3)';
     ctx.lineWidth = 1;
@@ -174,6 +182,34 @@ export function drawRoomBackground(
   ctx.drawImage(wStrip, topLeft.x, topLeft.y, t, ROOM_HEIGHT * scale);
   const eStrip = getWallStrip(roomKey, zone, 'E', room.doors.has('E'));
   ctx.drawImage(eStrip, topLeft.x + ROOM_WIDTH * scale - t, topLeft.y, t, ROOM_HEIGHT * scale);
+
+  // A soft contact shadow hugging each wall's inner edge, so the floor reads
+  // as genuinely meeting a heavy stone wall rather than butting into a flat
+  // seam between two independently-drawn textures.
+  const shadow = 16 * scale;
+  let edgeGrad = ctx.createLinearGradient(0, topLeft.y + t, 0, topLeft.y + t + shadow);
+  edgeGrad.addColorStop(0, 'rgba(0,0,0,0.38)');
+  edgeGrad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = edgeGrad;
+  ctx.fillRect(topLeft.x + t, topLeft.y + t, ROOM_WIDTH * scale - t * 2, shadow);
+
+  edgeGrad = ctx.createLinearGradient(0, topLeft.y + ROOM_HEIGHT * scale - t, 0, topLeft.y + ROOM_HEIGHT * scale - t - shadow);
+  edgeGrad.addColorStop(0, 'rgba(0,0,0,0.38)');
+  edgeGrad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = edgeGrad;
+  ctx.fillRect(topLeft.x + t, topLeft.y + ROOM_HEIGHT * scale - t - shadow, ROOM_WIDTH * scale - t * 2, shadow);
+
+  edgeGrad = ctx.createLinearGradient(topLeft.x + t, 0, topLeft.x + t + shadow, 0);
+  edgeGrad.addColorStop(0, 'rgba(0,0,0,0.38)');
+  edgeGrad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = edgeGrad;
+  ctx.fillRect(topLeft.x + t, topLeft.y + t, shadow, ROOM_HEIGHT * scale - t * 2);
+
+  edgeGrad = ctx.createLinearGradient(topLeft.x + ROOM_WIDTH * scale - t, 0, topLeft.x + ROOM_WIDTH * scale - t - shadow, 0);
+  edgeGrad.addColorStop(0, 'rgba(0,0,0,0.38)');
+  edgeGrad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = edgeGrad;
+  ctx.fillRect(topLeft.x + ROOM_WIDTH * scale - t - shadow, topLeft.y + t, shadow, ROOM_HEIGHT * scale - t * 2);
 
   CORNERS.forEach((corner, i) => {
     const sx = topLeft.x + corner.x * scale;
