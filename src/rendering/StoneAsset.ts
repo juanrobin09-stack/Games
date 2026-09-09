@@ -1,5 +1,6 @@
 import wallTextureUrl from '@/assets/textures/ancient-wall.png';
 import { rgba } from '@/rendering/Palette';
+import { computeLevels, applyLevels, type Levels } from '@/rendering/ImageLevels';
 
 /**
  * The one real photographic asset in the game: a painted top-down stone wall
@@ -58,6 +59,20 @@ export function stoneAssetReady(): boolean {
   return ready;
 }
 
+const levelsCache = new Map<StoneRegion, Levels>();
+
+/** Each region's brightness range is only measured once (on first use) and
+ * reused for every block drawn from it — a shared, consistent "exposure"
+ * rather than every individual block auto-leveling itself differently. */
+function regionLevels(source: HTMLImageElement, region: StoneRegion): Levels {
+  let levels = levelsCache.get(region);
+  if (!levels) {
+    levels = computeLevels(source, region);
+    levelsCache.set(region, levels);
+  }
+  return levels;
+}
+
 /** Paints a randomized horizontal window of `region` (mirrored if `flip`) into
  * the destination rect, clipped to it. `jitter01` (0..1) picks where within
  * the region's width that window starts — callers pass a seeded value so a
@@ -90,6 +105,15 @@ function paintSwatch(
     ctx.drawImage(source, sx, region.y, sw, region.h, dx, dy, dw, dh);
   }
   ctx.restore();
+
+  // The source photo is lit almost entirely by its own torches — everywhere
+  // else in frame (which is most of where these regions sample from) sits
+  // far below a legible brightness by the artist's own design. Left as-is,
+  // that bakes in as a near-black void once tiled outside the one spot the
+  // torches actually lit. Stretching each region's own measured brightness
+  // range back up to something legible reveals the real relative detail
+  // that's there (block edges, mortar, cracks) instead of flat dark noise.
+  applyLevels(ctx, dx, dy, dw, dh, regionLevels(source, region));
   return true;
 }
 

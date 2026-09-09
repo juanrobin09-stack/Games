@@ -58,7 +58,7 @@ function layBlocks(
   paint: (x: number, w: number) => void
 ): void {
   let x = 0;
-  while (x < length - 2) {
+  while (x < length) {
     const w = Math.min(rng.range(minW, maxW), length - x);
     paint(x, w);
     x += w;
@@ -75,51 +75,46 @@ function drawBlockFace(
   baseColor: string,
   topColor: string
 ): void {
-  // Real masonry reads as light stone faces separated by dark recessed mortar —
-  // the inset gap (left unpainted, showing the dark base fill through) is the
-  // mortar groove, so the block itself should be predominantly the *lighter*
-  // wallTop tone, not the dark wall tone (which stays reserved for the grooves
-  // and shadowed undersides). Getting this the other way round is what made an
-  // earlier pass of this texture read as a nearly flat, invisible dark smear.
-  const inset = 2.2;
-  const bw = Math.max(0, w - inset * 2);
-  const bh = Math.max(0, h - inset * 2);
-
-  // Fill the block with a resampled swatch of the real reference photograph
-  // (see StoneAsset.ts), then shift its hue toward the zone palette while
-  // keeping its own photographic shading — falling back to the previous
-  // procedural gradient only if the asset hasn't finished loading yet.
-  const painted = paintWallSwatch(ctx, x + inset, y + inset, bw, bh, rng.next(), rng.bool(0.5));
+  // Every block fills its FULL rect edge-to-edge — no inset gap. An earlier
+  // version inset each block a couple of px to let the strip's flat dark
+  // base fill show through as a "mortar groove," but against real
+  // photographic stone that flat, textureless sliver reads as a void — a
+  // hole in the wall — rather than a joint, especially once neighboring
+  // blocks are themselves detailed photo material. Coverage is guaranteed by
+  // construction now (adjacent blocks' full rects touch exactly, since
+  // layBlocks lays them out with zero spacing); the seam is suggested purely
+  // by a thin stroke drawn on top at the very end, never by leaving a gap.
+  const painted = paintWallSwatch(ctx, x, y, w, h, rng.next(), rng.bool(0.5));
   if (painted) {
-    tintSwatch(ctx, x + inset, y + inset, bw, bh, topColor, 0.4);
+    tintSwatch(ctx, x, y, w, h, topColor, 0.4);
   } else {
     const grad = ctx.createLinearGradient(0, y, 0, y + h);
     grad.addColorStop(0, jitterColor(mixColor(topColor, '#fffaf0', 0.1), rng, 0.14));
     grad.addColorStop(0.55, jitterColor(topColor, rng, 0.16));
     grad.addColorStop(1, jitterColor(mixColor(topColor, baseColor, 0.55), rng, 0.14));
     ctx.fillStyle = grad;
-    ctx.fillRect(x + inset, y + inset, bw, bh);
+    ctx.fillRect(x, y, w, h);
   }
 
   // A brighter top-edge highlight per block, as if each one catches a sliver of ambient light.
-  if (bh > 3) {
+  if (h > 3) {
     ctx.fillStyle = `rgba(255,255,255,${0.1 + rng.next() * 0.08})`;
-    ctx.fillRect(x + inset, y + inset, bw, Math.min(2.5, bh * 0.2));
+    ctx.fillRect(x, y, w, Math.min(2.5, h * 0.2));
   }
   // A soft shadow along the bottom edge, deepening the groove below each block.
-  if (bh > 4) {
+  if (h > 4) {
     ctx.fillStyle = 'rgba(0,0,0,0.22)';
-    ctx.fillRect(x + inset, y + inset + bh - Math.min(2.5, bh * 0.16), bw, Math.min(2.5, bh * 0.16));
+    ctx.fillRect(x, y + h - Math.min(2.5, h * 0.16), w, Math.min(2.5, h * 0.16));
   }
 
   // Occasional chipped corner — a tiny dark wedge, never on every block.
-  if (rng.bool(0.22) && bw > 10 && bh > 10) {
+  if (rng.bool(0.22) && w > 10 && h > 10) {
     const corner = rng.pick([0, 1, 2, 3]);
-    const cs = Math.min(bw, bh) * rng.range(0.15, 0.3);
+    const cs = Math.min(w, h) * rng.range(0.15, 0.3);
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.beginPath();
-    const cx = corner % 2 === 0 ? x + inset : x + inset + bw;
-    const cy = corner < 2 ? y + inset : y + inset + bh;
+    const cx = corner % 2 === 0 ? x : x + w;
+    const cy = corner < 2 ? y : y + h;
     const sx = corner % 2 === 0 ? 1 : -1;
     const sy = corner < 2 ? 1 : -1;
     ctx.moveTo(cx, cy);
@@ -128,6 +123,14 @@ function drawBlockFace(
     ctx.closePath();
     ctx.fill();
   }
+
+  // The mortar joint itself: a thin stroke along the block's own boundary,
+  // drawn last so it sits on top of the fill and every overlay above. Two
+  // adjacent blocks each stroke the same shared edge, which just doubles a
+  // hairline rather than leaving either side unpainted.
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+  ctx.lineWidth = 1.6;
+  ctx.strokeRect(x + 0.8, y + 0.8, Math.max(0, w - 1.6), Math.max(0, h - 1.6));
 }
 
 function drawCracks(ctx: CanvasRenderingContext2D, w: number, h: number, rng: Random, count: number): void {
@@ -342,7 +345,7 @@ function bakeFloor(canvas: HTMLCanvasElement, zone: ZoneDefinition, rng: Random)
       const dh = Math.max(4, jitterH - gap * 2);
       if (dx + dw < 0 || dx > w || dy + dh < 0 || dy > h) continue;
 
-      const painted = paintFloorSwatch(ctx, dx, dy, dw, dh, rng.next(), rng.next(), rng.bool(0.5));
+      const painted = paintFloorSwatch(ctx, dx, dy, dw, dh, rng.next(), rng.next(), rng.next(), rng.bool(0.5), rng.bool(0.35));
       if (painted) {
         tintSwatch(ctx, dx, dy, dw, dh, zone.palette.floor, 0.32);
         // Faint flat shading per slab — real uneven flagstone rarely sits at

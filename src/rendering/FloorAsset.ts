@@ -1,17 +1,30 @@
 import floorShopUrl from '@/assets/textures/floor-and-shop.png';
+import { computeLevels, applyLevels, type Levels } from '@/rendering/ImageLevels';
 
 /**
  * The second real photographic asset: one reference image whose left half is
  * a top-down flagstone floor and whose right half is a sheet of individual
  * shop props (see ShopAsset.ts, which reuses this same loaded image rather
- * than fetching it twice). Only the floor half is sampled here, from a band
- * along its lower portion chosen to stay clear of the image's own baked-in
- * central torchlight hotspot — tiling a copy of *that* would fight the
- * game's real dynamic lighting with a second, static highlight in whatever
- * position the tile happens to land.
+ * than fetching it twice). Only the floor half is sampled here, from two
+ * separate bands (top and bottom of the panel) — using two spatially
+ * distinct sources, on top of the per-slab position/mirror jitter already
+ * applied in RoomTexture.ts's bakeFloor, is what keeps a room's floor from
+ * reading as the same handful of recognizable chunks tiled in a visible
+ * pattern, which a single narrow band can't avoid no matter how much you
+ * jitter within it.
  */
 
-const FLOOR_BAND = { x: 15, y: 500, w: 845, h: 370 };
+interface FloorRegion {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+const FLOOR_BANDS: FloorRegion[] = [
+  { x: 15, y: 520, w: 845, h: 340 },
+  { x: 15, y: 20, w: 845, h: 250 },
+];
 
 let img: HTMLImageElement | null = null;
 let ready = false;
@@ -40,37 +53,56 @@ export function floorAssetImage(): HTMLImageElement | null {
   return ready ? img : null;
 }
 
-/** Paints a randomized window of the floor band (mirrored if `flip`) into the
- * destination rect, clipped to it. Returns false (paints nothing) if the
- * source image isn't loaded yet. */
+const levelsCache = new Map<FloorRegion, Levels>();
+
+function regionLevels(source: HTMLImageElement, region: FloorRegion): Levels {
+  let levels = levelsCache.get(region);
+  if (!levels) {
+    levels = computeLevels(source, region);
+    levelsCache.set(region, levels);
+  }
+  return levels;
+}
+
+/** Paints a randomized window of one of the two floor bands (mirrored on
+ * either/both axes) into the destination rect, clipped to it. `bandPick`
+ * (0..1) chooses which band; the crop is deliberately smaller relative to
+ * the destination than a naive fill would use, so there's real room to
+ * reposition it within the band — a crop nearly as big as the band itself
+ * barely moves between draws no matter how the jitter is randomized.
+ * Returns false (paints nothing) if the source image isn't loaded yet. */
 export function paintFloorSwatch(
   ctx: CanvasRenderingContext2D,
   dx: number,
   dy: number,
   dw: number,
   dh: number,
+  bandPick: number,
   jitterX: number,
   jitterY: number,
-  flip: boolean
+  flipH: boolean,
+  flipV: boolean
 ): boolean {
   const source = floorAssetImage();
   if (!source) return false;
-  const sw = Math.min(FLOOR_BAND.w, Math.max(dw * 0.9, 60));
-  const sh = Math.min(FLOOR_BAND.h, Math.max(dh * 0.9, 60));
-  const sx = FLOOR_BAND.x + jitterX * Math.max(0, FLOOR_BAND.w - sw);
-  const sy = FLOOR_BAND.y + jitterY * Math.max(0, FLOOR_BAND.h - sh);
+  const region = FLOOR_BANDS[bandPick < 0.5 ? 0 : 1];
+  const sw = Math.min(region.w, Math.max(dw * 0.55, 90));
+  const sh = Math.min(region.h, Math.max(dh * 0.55, 90));
+  const sx = region.x + jitterX * Math.max(0, region.w - sw);
+  const sy = region.y + jitterY * Math.max(0, region.h - sh);
 
   ctx.save();
   ctx.beginPath();
   ctx.rect(dx, dy, dw, dh);
   ctx.clip();
-  if (flip) {
-    ctx.translate(dx + dw, dy);
-    ctx.scale(-1, 1);
-    ctx.drawImage(source, sx, sy, sw, sh, 0, 0, dw, dh);
-  } else {
-    ctx.drawImage(source, sx, sy, sw, sh, dx, dy, dw, dh);
-  }
+  ctx.translate(dx + dw / 2, dy + dh / 2);
+  ctx.scale(flipH ? -1 : 1, flipV ? -1 : 1);
+  ctx.drawImage(source, sx, sy, sw, sh, -dw / 2, -dh / 2, dw, dh);
   ctx.restore();
+
+  // Same reasoning as StoneAsset.ts: the source photo is only really lit
+  // right around its own torch glow, so a crop from elsewhere in frame
+  // needs its brightness stretched back up or it bakes in as a dark void.
+  applyLevels(ctx, dx, dy, dw, dh, regionLevels(source, region));
   return true;
 }
