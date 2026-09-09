@@ -330,14 +330,18 @@ function drawBlightbloat(ctx: CanvasRenderingContext2D, e: Enemy): void {
     [-0.1, 0.05, 0.12],
     [0.42, 0.25, 0.11],
   ];
+  // All five pustules in ONE path and one fill: a shadowBlur fill is a whole
+  // blur pass, so five separate fills were five passes per bloat per frame.
   ctx.shadowColor = Palette.fungus;
   ctx.shadowBlur = 6 + swellT * 10;
   ctx.fillStyle = swellT > 0.5 ? Palette.fungusBright : Palette.fungus;
+  ctx.beginPath();
   for (const [sx, sy, ss] of spots) {
-    ctx.beginPath();
-    ctx.arc(sx * r, sy * r, ss * r * (1 + swellT * 0.5), 0, TAU);
-    ctx.fill();
+    const pr = ss * r * (1 + swellT * 0.5);
+    ctx.moveTo(sx * r + pr, sy * r);
+    ctx.arc(sx * r, sy * r, pr, 0, TAU);
   }
+  ctx.fill();
   ctx.shadowBlur = 0;
   // What's left of the Hollow it grew from: a small skull leaning out the front.
   const hx = Math.cos(e.facing) * r * 0.78;

@@ -5,8 +5,7 @@ import type { Camera } from '@/core/Camera';
 import type { ParticleSystem } from '@/rendering/ParticleSystem';
 import { hashJitter } from '@/rendering/DrawUtils';
 import { rgba, mixColor, Palette } from '@/rendering/Palette';
-import { getWallStrip, getFloorTexture } from '@/rendering/RoomTexture';
-import { paintCornerSwatch, tintSwatch } from '@/rendering/StoneAsset';
+import { getWallStrip, getFloorTexture, getCornerStone } from '@/rendering/RoomTexture';
 
 const DIRS = ['N', 'S', 'E', 'W'] as const;
 /** Center of each corner's wall-overlap square (inset half a thickness in from
@@ -23,40 +22,6 @@ const CORNERS: { x: number; y: number }[] = [
 /** World-space rotation that maps "canonical" door-local +Y (into the room) onto
  * the correct world direction for each wall the door sits on. */
 const DOOR_ROTATION: Record<Direction, number> = { N: 0, S: Math.PI, W: -Math.PI / 2, E: Math.PI / 2 };
-
-/**
- * The N/S and E/W wall strips are baked independently, so at each room corner
- * whichever strip is drawn last simply overwrites the other's corner pixels —
- * not wrong, but not the deliberate, chunkier corner stone real masonry has
- * either. This is cheap enough (4 blocks) to draw fresh every frame rather than
- * bake, tying the two strips together at the joint.
- */
-function drawCornerStone(ctx: CanvasRenderingContext2D, screenX: number, screenY: number, size: number, zone: ZoneDefinition, seed: number): void {
-  const dx = screenX - size / 2;
-  const dy = screenY - size / 2;
-  const painted = paintCornerSwatch(ctx, dx, dy, size, size, hashJitter(seed, 777));
-  if (painted) {
-    tintSwatch(ctx, dx, dy, size, size, zone.palette.wallTop, 0.4);
-  } else {
-    const grad = ctx.createRadialGradient(screenX - size * 0.2, screenY - size * 0.2, 0, screenX, screenY, size * 0.9);
-    grad.addColorStop(0, mixColor(zone.palette.wallTop, '#fffaf0', 0.12));
-    grad.addColorStop(0.65, zone.palette.wallTop);
-    grad.addColorStop(1, zone.palette.wall);
-    ctx.fillStyle = grad;
-    ctx.fillRect(dx, dy, size, size);
-  }
-  ctx.strokeStyle = rgba(zone.palette.wall, 0.6);
-  ctx.lineWidth = Math.max(1, size * 0.04);
-  ctx.strokeRect(dx, dy, size, size);
-  if (hashJitter(seed, 999) > 0.5) {
-    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(screenX - size * 0.3, screenY - size * 0.1);
-    ctx.lineTo(screenX + size * 0.1, screenY + size * 0.35);
-    ctx.stroke();
-  }
-}
 
 /**
  * Draws the door's dynamic state on top of the room's baked masonry (which already
@@ -182,10 +147,14 @@ export function drawRoomBackground(
   ctx.fillStyle = edgeGrad;
   ctx.fillRect(topLeft.x + ROOM_WIDTH * scale - t - shadow, topLeft.y + t, shadow, ROOM_HEIGHT * scale - t * 2);
 
+  // The N/S and E/W strips are baked independently, so at each corner
+  // whichever is drawn last just overwrites the other's pixels; the baked
+  // corner stone (RoomTexture.getCornerStone) ties the joint together.
   CORNERS.forEach((corner, i) => {
     const sx = topLeft.x + corner.x * scale;
     const sy = topLeft.y + corner.y * scale;
-    drawCornerStone(ctx, sx, sy, t, zone, seed + i * 37);
+    const stone = getCornerStone(room.key, zone, i, seed + i * 37);
+    ctx.drawImage(stone, sx - t / 2, sy - t / 2, t, t);
   });
 
   const locked = room.locked;

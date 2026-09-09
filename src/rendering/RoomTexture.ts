@@ -2,8 +2,9 @@ import { ROOM_WIDTH, ROOM_HEIGHT, WALL_THICKNESS, DOOR_WIDTH } from '@/world/Roo
 import type { ZoneDefinition } from '@/data/types';
 import { Random } from '@/utils/Random';
 import { mixColor, rgba } from '@/rendering/Palette';
-import { paintWallSwatch, paintJambSwatch, tintSwatch } from '@/rendering/StoneAsset';
+import { paintWallSwatch, paintJambSwatch, paintCornerSwatch, tintSwatch } from '@/rendering/StoneAsset';
 import { paintFloorSwatch } from '@/rendering/FloorAsset';
+import { hashJitter } from '@/rendering/DrawUtils';
 
 /**
  * Bakes the fussy, expensive-to-redraw part of a room's presentation — individual
@@ -20,9 +21,10 @@ import { paintFloorSwatch } from '@/rendering/FloorAsset';
  */
 
 const SUPERSAMPLE = 2;
-// 4 wall strips + 1 floor per room now share this cache, so the limit is
-// bumped from the original 32 (4/room) to keep roughly the same room headroom.
-const MAX_CACHE_ENTRIES = 40;
+// 4 wall strips + 1 floor + 4 corner stones per room share this cache, so the
+// limit is sized for roughly eight rooms' worth of entries (the floors are
+// the only heavy ones; a corner stone is a 92px square).
+const MAX_CACHE_ENTRIES = 72;
 
 type WallOrientation = 'horizontal' | 'vertical';
 
@@ -545,6 +547,58 @@ function bakeFloor(canvas: HTMLCanvasElement, zone: ZoneDefinition, rng: Random)
 
 function floorCacheKey(zoneId: string, roomKey: string): string {
   return `floor:${zoneId}:${roomKey}`;
+}
+
+function remember(key: string, canvas: HTMLCanvasElement): void {
+  if (cache.size >= MAX_CACHE_ENTRIES) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+  cache.set(key, canvas);
+}
+
+/**
+ * One of a room's four corner stones — the chunkier block that ties the two
+ * independently-baked wall strips together at the joint. These used to be
+ * painted fresh every frame straight onto the main canvas, but the levels
+ * stretch inside the corner swatch does a getImageData/putImageData round
+ * trip, which on a GPU-backed canvas is a full pipeline stall — four times
+ * per frame. Baked once per room like everything else, it's a plain blit.
+ */
+export function getCornerStone(roomKey: string, zone: ZoneDefinition, index: number, seed: number): HTMLCanvasElement {
+  const key = `corner:${zone.id}:${roomKey}:${index}`;
+  const existing = cache.get(key);
+  if (existing) return existing;
+
+  const size = WALL_THICKNESS * SUPERSAMPLE;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d', BAKE_CTX)!;
+  const painted = paintCornerSwatch(ctx, 0, 0, size, size, hashJitter(seed, 777));
+  if (painted) {
+    tintSwatch(ctx, 0, 0, size, size, zone.palette.wallTop, 0.4);
+  } else {
+    const grad = ctx.createRadialGradient(size * 0.3, size * 0.3, 0, size / 2, size / 2, size * 0.9);
+    grad.addColorStop(0, mixColor(zone.palette.wallTop, '#fffaf0', 0.12));
+    grad.addColorStop(0.65, zone.palette.wallTop);
+    grad.addColorStop(1, zone.palette.wall);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, size, size);
+  }
+  ctx.strokeStyle = rgba(zone.palette.wall, 0.6);
+  ctx.lineWidth = Math.max(1, size * 0.04);
+  ctx.strokeRect(0, 0, size, size);
+  if (hashJitter(seed, 999) > 0.5) {
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.lineWidth = SUPERSAMPLE;
+    ctx.beginPath();
+    ctx.moveTo(size * 0.2, size * 0.4);
+    ctx.lineTo(size * 0.6, size * 0.85);
+    ctx.stroke();
+  }
+  remember(key, canvas);
+  return canvas;
 }
 
 /** Returns the cached (or freshly baked) floor texture for one room. */
