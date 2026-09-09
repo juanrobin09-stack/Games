@@ -1,7 +1,7 @@
 import { ROOM_WIDTH, ROOM_HEIGHT, WALL_THICKNESS, DOOR_WIDTH } from '@/world/Room';
 import type { ZoneDefinition } from '@/data/types';
 import { Random } from '@/utils/Random';
-import { mixColor } from '@/rendering/Palette';
+import { mixColor, rgba } from '@/rendering/Palette';
 import { paintWallSwatch, paintJambSwatch, tintSwatch } from '@/rendering/StoneAsset';
 import { paintFloorSwatch } from '@/rendering/FloorAsset';
 
@@ -153,14 +153,24 @@ function drawCracks(ctx: CanvasRenderingContext2D, w: number, h: number, rng: Ra
   }
 }
 
-function drawMoss(ctx: CanvasRenderingContext2D, w: number, h: number, rng: Random, count: number): void {
-  for (let i = 0; i < count; i++) {
+/** The base zone's growth colour; zones with a `material` block override it
+ * (the ruins' moss is a cold blue-green rather than the woods' olive). */
+const DEFAULT_MOSS = '#46593a';
+
+function mossFill(zone: ZoneDefinition, alpha: number): string {
+  return rgba(zone.material?.mossColor ?? DEFAULT_MOSS, alpha);
+}
+
+function drawMoss(ctx: CanvasRenderingContext2D, w: number, h: number, rng: Random, count: number, zone: ZoneDefinition): void {
+  const density = zone.material?.mossDensity ?? 1;
+  const total = Math.round(count * density);
+  for (let i = 0; i < total; i++) {
     const x = rng.range(0, w);
     const y = rng.range(h * 0.4, h);
-    const r = rng.range(3, 8);
+    const r = rng.range(3, 8) * (density > 1.5 ? 1.35 : 1);
     const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-    grad.addColorStop(0, 'rgba(70,90,55,0.16)');
-    grad.addColorStop(1, 'rgba(70,90,55,0)');
+    grad.addColorStop(0, mossFill(zone, density > 1.5 ? 0.22 : 0.16));
+    grad.addColorStop(1, mossFill(zone, 0));
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.ellipse(x, y, r, r * 0.6, rng.next() * Math.PI, 0, Math.PI * 2);
@@ -168,21 +178,49 @@ function drawMoss(ctx: CanvasRenderingContext2D, w: number, h: number, rng: Rand
   }
 }
 
+/** Damp seepage on a wall strip: a darker, slightly blue-black stain running
+ * down from a joint. Only zones with `dampPatches` get any. */
+function drawWallSeepage(ctx: CanvasRenderingContext2D, w: number, h: number, rng: Random, count: number): void {
+  for (let i = 0; i < count; i++) {
+    const x = rng.range(0, w);
+    const width = rng.range(10, 26) * SUPERSAMPLE;
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, 'rgba(8,10,20,0)');
+    grad.addColorStop(0.35, `rgba(8,10,20,${rng.range(0.18, 0.3)})`);
+    grad.addColorStop(1, `rgba(8,10,20,${rng.range(0.28, 0.4)})`);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(x - width * 0.25, 0);
+    ctx.lineTo(x + width * 0.25, 0);
+    ctx.lineTo(x + width * 0.5, h);
+    ctx.lineTo(x - width * 0.5, h);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
 /** Full-strip solid wall (no door): a straight run of coursing blocks. */
+/** Every bake canvas gets read back pixel-wise by the levels stretch
+ * (StoneAsset.paintSwatch → applyLevels), so they're all flagged for
+ * frequent readback — otherwise Chrome warns, and round-trips the GPU. */
+const BAKE_CTX: CanvasRenderingContext2DSettings = { willReadFrequently: true };
+
 function bakeSolidStrip(canvas: HTMLCanvasElement, length: number, thickness: number, zone: ZoneDefinition, rng: Random): void {
-  const ctx = canvas.getContext('2d')!;
+  const ctx = canvas.getContext('2d', BAKE_CTX)!;
   ctx.fillStyle = mixColor(zone.palette.wall, '#000000', 0.35);
   ctx.fillRect(0, 0, length, thickness);
   layBlocks(rng, length, 34 * SUPERSAMPLE, 64 * SUPERSAMPLE, (x, w) => {
     drawBlockFace(ctx, x, 0, w, thickness, rng, zone.palette.wall, zone.palette.wallTop);
   });
-  drawCracks(ctx, length, thickness, rng, rng.int(1, 3));
-  drawMoss(ctx, length, thickness, rng, rng.int(1, 3));
+  const crackDensity = zone.material?.crackDensity ?? 1;
+  drawCracks(ctx, length, thickness, rng, Math.round(rng.int(1, 3) * crackDensity));
+  if (zone.material?.dampPatches) drawWallSeepage(ctx, length, thickness, rng, rng.int(1, 3));
+  drawMoss(ctx, length, thickness, rng, rng.int(1, 3), zone);
 }
 
 /** A run of blocks up to a door gap, then chunkier worked jamb stones, then void. */
 function bakeDoorStrip(canvas: HTMLCanvasElement, length: number, thickness: number, zone: ZoneDefinition, rng: Random): void {
-  const ctx = canvas.getContext('2d')!;
+  const ctx = canvas.getContext('2d', BAKE_CTX)!;
   ctx.fillStyle = mixColor(zone.palette.wall, '#000000', 0.35);
   ctx.fillRect(0, 0, length, thickness);
 
@@ -199,9 +237,11 @@ function bakeDoorStrip(canvas: HTMLCanvasElement, length: number, thickness: num
   layBlocks(rng, length - gapEnd, 34 * SUPERSAMPLE, 64 * SUPERSAMPLE, (x, w) => {
     drawBlockFace(ctx, gapEnd + x, 0, w, thickness, rng, zone.palette.wall, zone.palette.wallTop);
   });
-  drawCracks(ctx, gapStart, thickness, rng, rng.int(1, 2));
-  drawCracks(ctx, length - gapEnd, thickness, rng, rng.int(1, 2));
-  drawMoss(ctx, gapStart, thickness, rng, rng.int(0, 2));
+  const crackDensity = zone.material?.crackDensity ?? 1;
+  drawCracks(ctx, gapStart, thickness, rng, Math.round(rng.int(1, 2) * crackDensity));
+  drawCracks(ctx, length - gapEnd, thickness, rng, Math.round(rng.int(1, 2) * crackDensity));
+  if (zone.material?.dampPatches) drawWallSeepage(ctx, gapStart, thickness, rng, rng.int(0, 2));
+  drawMoss(ctx, gapStart, thickness, rng, rng.int(0, 2), zone);
 
   // Void behind the opening — nothing else is ever simulated back there.
   ctx.fillStyle = '#050308';
@@ -258,7 +298,7 @@ function bakeStrip(orientation: WallOrientation, hasDoor: boolean, zone: ZoneDef
   const canvas = document.createElement('canvas');
   canvas.width = orientation === 'horizontal' ? length : thickness;
   canvas.height = orientation === 'horizontal' ? thickness : length;
-  const ctx = canvas.getContext('2d')!;
+  const ctx = canvas.getContext('2d', BAKE_CTX)!;
 
   if (orientation === 'vertical') {
     // Author every strip in canonical horizontal space, then rotate the whole
@@ -375,18 +415,52 @@ function drawSlab(ctx: CanvasRenderingContext2D, dx: number, dy: number, dw: num
   ctx.restore();
 }
 
-function scatterFloorMoss(ctx: CanvasRenderingContext2D, w: number, h: number, rng: Random, count: number): void {
-  for (let i = 0; i < count; i++) {
+function scatterFloorMoss(ctx: CanvasRenderingContext2D, w: number, h: number, rng: Random, count: number, zone: ZoneDefinition): void {
+  const density = zone.material?.mossDensity ?? 1;
+  const total = Math.round(count * density);
+  for (let i = 0; i < total; i++) {
     const x = rng.range(0, w);
     const y = rng.range(0, h);
-    const r = rng.range(5, 14);
+    const r = rng.range(5, 14) * (density > 1.5 ? 1.6 : 1);
     const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-    grad.addColorStop(0, 'rgba(80,100,60,0.22)');
-    grad.addColorStop(1, 'rgba(80,100,60,0)');
+    grad.addColorStop(0, mossFill(zone, density > 1.5 ? 0.3 : 0.22));
+    grad.addColorStop(1, mossFill(zone, 0));
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.ellipse(x, y, r, r * 0.65, rng.next() * Math.PI, 0, Math.PI * 2);
     ctx.fill();
+  }
+}
+
+/** Standing damp: large, soft, slightly blue-black stains where water has
+ * pooled and dried for a century — the ruins' floor is never quite dry. Each
+ * gets a faint pale tide-line at its rim so it reads as a stain, not a shadow. */
+function scatterDampPatches(ctx: CanvasRenderingContext2D, w: number, h: number, rng: Random, count: number): void {
+  for (let i = 0; i < count; i++) {
+    const x = rng.range(w * 0.1, w * 0.9);
+    const y = rng.range(h * 0.1, h * 0.9);
+    const rx = rng.range(55, 150) * SUPERSAMPLE * 0.5;
+    const ry = rx * rng.range(0.55, 0.9);
+    const rot = rng.next() * Math.PI;
+    const alpha = rng.range(0.16, 0.28);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rot);
+    const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+    grad.addColorStop(0, `rgba(8,12,24,${alpha})`);
+    grad.addColorStop(0.75, `rgba(8,12,24,${alpha * 0.8})`);
+    grad.addColorStop(1, 'rgba(8,12,24,0)');
+    ctx.fillStyle = grad;
+    ctx.scale(1, ry / rx);
+    ctx.beginPath();
+    ctx.arc(0, 0, rx, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = `rgba(190,200,220,${rng.range(0.05, 0.09)})`;
+    ctx.lineWidth = 1.2 * SUPERSAMPLE;
+    ctx.beginPath();
+    ctx.arc(0, 0, rx * 0.86, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
   }
 }
 
@@ -424,7 +498,7 @@ function bakeFloor(canvas: HTMLCanvasElement, zone: ZoneDefinition, rng: Random)
   const h = ROOM_HEIGHT * SUPERSAMPLE;
   canvas.width = w;
   canvas.height = h;
-  const ctx = canvas.getContext('2d')!;
+  const ctx = canvas.getContext('2d', BAKE_CTX)!;
 
   // Pale, warm grout base — this is what shows through every gap between
   // slabs, so it must always be a legible, fully opaque stone color, never
@@ -460,9 +534,13 @@ function bakeFloor(canvas: HTMLCanvasElement, zone: ZoneDefinition, rng: Random)
   // Hairline cracks in the same style as the walls, so floor and masonry
   // read as one continuous, ancient, worn material, plus sparse moss and
   // loose rubble scattered across the room rather than only near the walls.
-  drawCracks(ctx, w, h, rng, rng.int(6, 10));
-  scatterFloorMoss(ctx, w, h, rng, rng.int(3, 6));
-  scatterFloorRubble(ctx, w, h, rng, rng.int(2, 4));
+  // A zone's `material` block scales all of it — the ruins are the same
+  // stone, further gone: damper, mossier, more broken.
+  const material = zone.material;
+  if (material?.dampPatches) scatterDampPatches(ctx, w, h, rng, rng.int(Math.max(1, material.dampPatches - 2), material.dampPatches));
+  drawCracks(ctx, w, h, rng, Math.round(rng.int(6, 10) * (material?.crackDensity ?? 1)));
+  scatterFloorMoss(ctx, w, h, rng, rng.int(3, 6), zone);
+  scatterFloorRubble(ctx, w, h, rng, Math.round(rng.int(2, 4) * (material?.rubbleDensity ?? 1)));
 }
 
 function floorCacheKey(zoneId: string, roomKey: string): string {

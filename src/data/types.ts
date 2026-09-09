@@ -136,7 +136,15 @@ export interface SynergyDefinition {
   icon: UpgradeIconId;
 }
 
-export type EnemyBehavior = 'chaser' | 'tank' | 'ranged' | 'heavy' | 'stalker' | 'elite';
+/**
+ * 'bloat'  — closes in, plants itself, swells, and self-detonates into a
+ *            lingering spore cloud (see CombatSystem.detonateBloat). Killing it
+ *            early still leaves a smaller cloud, so WHERE it dies matters.
+ * 'warden' — shield-bearer: heavily reduces damage arriving inside its frontal
+ *            arc, turns slowly, and bashes forward along its facing, after which
+ *            its guard drops for a moment (the flank-or-punish window).
+ */
+export type EnemyBehavior = 'chaser' | 'tank' | 'ranged' | 'heavy' | 'stalker' | 'elite' | 'bloat' | 'warden';
 
 export interface EnemyDefinition {
   id: string;
@@ -159,6 +167,20 @@ export interface EnemyDefinition {
   projectileSpeed?: number;
   vanishDuration?: number;
   isElite?: boolean;
+  /** bloat: radius of the detonation's direct hit, and of the spore cloud it leaves. */
+  burstRadius?: number;
+  cloudRadius?: number;
+  cloudDuration?: number;
+  /** warden: half-angle (radians) of the frontal arc its shield covers. */
+  shieldArc?: number;
+  /** warden: bash lunge speed/duration, and how long its guard stays down afterwards. */
+  bashSpeed?: number;
+  bashDuration?: number;
+  exposedDuration?: number;
+  /** warden: max turn rate in rad/s — slow enough that circling it actually works. */
+  turnRate?: number;
+  /** Heart-room champion: gets a boss-style HP bar and a second phase at half health. */
+  champion?: boolean;
 }
 
 export interface WeaponDefinition {
@@ -190,7 +212,21 @@ export interface AbilityDefinition {
   color: string;
 }
 
-export type RoomType = 'start' | 'combat' | 'elite' | 'chest' | 'shop' | 'event' | 'rest' | 'heart' | 'boss';
+/** 'sanctum' — an opt-in ritual arena (Hollow Ruins): kneel at the circle to lock
+ * the doors and face three waves for a rare-or-better reward. */
+export type RoomType = 'start' | 'combat' | 'elite' | 'chest' | 'shop' | 'event' | 'rest' | 'heart' | 'boss' | 'sanctum';
+
+/** Per-zone knobs for the baked floor/wall material (RoomTexture.ts) — how
+ * much moss, rubble, cracking and damp staining a zone's stone carries, and
+ * what colour its growth is. Every field is a multiplier on the base zone's
+ * density except the colours and the damp-patch count. */
+export interface ZoneMaterial {
+  mossColor: string;
+  mossDensity: number;
+  rubbleDensity: number;
+  crackDensity: number;
+  dampPatches: number;
+}
 
 export interface ZoneDefinition {
   id: string;
@@ -210,6 +246,13 @@ export interface ZoneDefinition {
   enemyPool: string[];
   heartGuardian: string;
   ambientParticle: 'embers' | 'ash' | 'spores' | 'dust';
+  /** LightingSystem ambient darkness while in this zone (default 0.4). */
+  darkness?: number;
+  /** Colour of the zone's living light (fungal growth, the open stairwell). */
+  fungalColor?: string;
+  /** Palette the ambient spore/ash motes are drawn from (defaults to the accent). */
+  sporeColors?: string[];
+  material?: ZoneMaterial;
 }
 
 export interface WorldEventDefinition {
@@ -217,6 +260,8 @@ export interface WorldEventDefinition {
   title: string;
   description: string;
   options: EventOption[];
+  /** When set, the event only ever appears in this zone (and is preferred there). */
+  zoneId?: string;
 }
 
 export interface EventOption {
@@ -235,6 +280,9 @@ export type EventEffectKind =
   | 'gainRandomUpgrade'
   | 'gambleEmbers'
   | 'gainSoulAshNow'
+  | 'gainShieldCharge'
+  | 'gainMaxHp'
+  | 'loseHpForEmbers'
   | 'nothing';
 
 export interface PermanentUpgradeDefinition {

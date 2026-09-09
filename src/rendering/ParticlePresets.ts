@@ -271,6 +271,142 @@ export function spawnChestOpenBurst(ps: ParticleSystem, x: number, y: number, co
   });
 }
 
+// ---------------------------------------------------------------- Hollow Ruins
+
+/** A bloat rupturing: a wet teal puff that hangs, plus a ring the size of the direct hit. */
+export function spawnSporeBurstVfx(ps: ParticleSystem, x: number, y: number, radius: number): void {
+  ps.burst(22, () => {
+    const angle = rand(0, Math.PI * 2);
+    const speed = rand(radius * 0.6, radius * 1.6);
+    return {
+      x,
+      y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 20,
+      gravity: -8,
+      drag: 2.4,
+      size: rand(4, 9),
+      endSize: rand(10, 18),
+      color: Palette.fungus,
+      endColor: Palette.fungusDim,
+      alpha: 0.7,
+      endAlpha: 0,
+      life: rand(0.6, 1.2),
+      glow: true,
+      shape: 'circle',
+    };
+  });
+  ps.spawn({
+    x,
+    y,
+    size: radius * 0.25,
+    endSize: radius,
+    color: Palette.fungusBright,
+    alpha: 0.55,
+    endAlpha: 0,
+    life: 0.32,
+    glow: true,
+    shape: 'ring',
+  });
+}
+
+/** One drifting spore — the slow, upward-curling motes a cloud (or the open stairwell) breathes out. */
+export function spawnSporeMote(ps: ParticleSystem, x: number, y: number): void {
+  ps.spawn({
+    x: x + rand(-4, 4),
+    y: y + rand(-4, 4),
+    vx: rand(-9, 9),
+    vy: rand(-26, -10),
+    gravity: -4,
+    drag: 0.8,
+    size: rand(1.4, 3),
+    endSize: 0.6,
+    color: Math.random() < 0.7 ? Palette.fungusBright : Palette.soulBright,
+    endColor: Palette.fungusDim,
+    alpha: 0.8,
+    endAlpha: 0,
+    life: rand(0.9, 1.8),
+    glow: true,
+    shape: 'circle',
+  });
+}
+
+/** Grey sparks skittering off a warden's raised shield, thrown back toward the attacker. */
+export function spawnShieldSparks(ps: ParticleSystem, x: number, y: number, facing: number): void {
+  ps.burst(7, () => {
+    const angle = facing + rand(-0.9, 0.9);
+    const speed = rand(90, 220);
+    return {
+      x,
+      y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      gravity: 220,
+      drag: 2.6,
+      size: rand(1.5, 2.8),
+      color: '#e8e2f0',
+      endColor: '#5a5568',
+      life: rand(0.18, 0.36),
+      glow: true,
+      shape: 'spark',
+    };
+  });
+}
+
+/** Stone fragments flying off a shattering shield (or a stair seal breaking open). */
+export function spawnStoneChips(ps: ParticleSystem, x: number, y: number, count = 18): void {
+  ps.burst(count, () => {
+    const angle = rand(0, Math.PI * 2);
+    const speed = rand(60, 260);
+    return {
+      x,
+      y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 60,
+      gravity: 420,
+      drag: 1.2,
+      size: rand(2, 5),
+      endSize: 1,
+      color: '#8f8a9e',
+      endColor: '#2a2634',
+      alpha: 0.95,
+      life: rand(0.45, 0.9),
+      shape: Math.random() > 0.5 ? 'square' : 'circle',
+    };
+  });
+}
+
+/** A sanctum candle catching: a soft cold flare that settles into the flame. */
+export function spawnRitualIgnite(ps: ParticleSystem, x: number, y: number): void {
+  ps.spawn({
+    x,
+    y,
+    size: 6,
+    endSize: 34,
+    color: Palette.fungusBright,
+    alpha: 0.7,
+    endAlpha: 0,
+    life: 0.45,
+    glow: true,
+    shape: 'ring',
+  });
+  ps.burst(8, () => ({
+    x: x + rand(-3, 3),
+    y: y + rand(-3, 3),
+    vx: rand(-18, 18),
+    vy: rand(-60, -25),
+    gravity: 20,
+    drag: 1.4,
+    size: rand(1.5, 3),
+    color: Palette.fungusBright,
+    endColor: Palette.soul,
+    alpha: 0.9,
+    life: rand(0.4, 0.8),
+    glow: true,
+    shape: 'circle',
+  }));
+}
+
 export function spawnLevelUpBurst(ps: ParticleSystem, x: number, y: number): void {
   ps.burst(30, (i) => {
     const angle = (i / 30) * Math.PI * 2;

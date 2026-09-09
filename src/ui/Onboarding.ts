@@ -24,6 +24,10 @@ const HINTS_SHARED: Record<string, string> = {
   shop: 'Spend Embers here on upgrades, healing, or a reroll.',
   corruption: 'The longer a zone drags on, the stronger the dark grows. Keep moving.',
   boss: 'Watch for the red glow before an attack lands — that is your window to dodge.',
+  stairs: 'The way down is open. There is no way back up.',
+  warden: 'A Warden’s shield turns aside blows from the front. Circle it — or strike when its guard drops after a bash.',
+  bloat: 'Blightbloats burst. Back away when one swells, and stay out of the spores it leaves.',
+  sanctum: 'A rite sleeps here. Kneel at the circle to wake it — the doors will seal until every wave is down.',
 };
 
 /** Shows each contextual hint once, ever, across every run — persisted in the save

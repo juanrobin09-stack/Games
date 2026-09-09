@@ -174,6 +174,7 @@ export class HUD {
             boss: '#c0392b',
             event: '#7dd35a',
             rest: '#ffab54',
+            sanctum: '#6fe3c4',
           };
           if (tint[room.type]) cell.style.background = tint[room.type];
         }

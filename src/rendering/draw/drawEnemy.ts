@@ -1,6 +1,7 @@
 import type { Enemy } from '@/entities/Enemy';
 import { Palette, rgba, mixColor } from '@/rendering/Palette';
-import { drawSoftShadow, drawGlowCircle, blobPath, hashJitter } from '@/rendering/DrawUtils';
+import { drawSoftShadow, drawGlowCircle, blobPath, hashJitter, roundedRectPath } from '@/rendering/DrawUtils';
+import { TAU } from '@/utils/MathUtils';
 
 const WOBBLE_SEEDS = [0.1, -0.08, 0.14, -0.05, 0.09, -0.12, 0.06, -0.1];
 
@@ -40,14 +41,55 @@ function healthBar(ctx: CanvasRenderingContext2D, enemy: Enemy, radius: number):
 
 function telegraphRing(ctx: CanvasRenderingContext2D, enemy: Enemy, radius: number): void {
   if (enemy.state !== 'windup') return;
-  const t = Math.min(1, enemy.stateTimer / Math.max(0.05, enemy.def.telegraphTime));
+  const telegraphTime = enemy.def.telegraphTime * (enemy.comboStep > 0 ? 0.45 : 1);
+  const t = Math.min(1, enemy.stateTimer / Math.max(0.05, telegraphTime));
   ctx.save();
-  ctx.globalAlpha = 0.5 * t;
-  ctx.strokeStyle = Palette.bloodBright;
-  ctx.lineWidth = 2 + t * 2;
-  ctx.beginPath();
-  ctx.arc(0, 0, enemy.def.attackRange * t, 0, Math.PI * 2);
-  ctx.stroke();
+  if (enemy.def.behavior === 'warden') {
+    // The bash is a line, so its telegraph is one: a lane along the facing
+    // that fills up as the lunge gets closer. Step out of the lane.
+    const len = enemy.def.attackRange + 40;
+    const w = radius * 1.7;
+    ctx.rotate(enemy.facing);
+    const lane = ctx.createLinearGradient(0, 0, len, 0);
+    lane.addColorStop(0, rgba(Palette.bloodBright, 0.7));
+    lane.addColorStop(1, rgba(Palette.bloodBright, 0.12));
+    ctx.globalAlpha = 0.35 + 0.5 * t;
+    ctx.fillStyle = lane;
+    ctx.fillRect(0, -w / 2, len * t, w);
+    ctx.globalAlpha = 0.45 + 0.45 * t;
+    ctx.strokeStyle = Palette.bloodBright;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(0, -w / 2, len, w);
+    ctx.beginPath();
+    ctx.moveTo(len * t, -w / 2);
+    ctx.lineTo(len * t + 10, 0);
+    ctx.lineTo(len * t, w / 2);
+    ctx.stroke();
+  } else if (enemy.def.behavior === 'bloat') {
+    // The burst radius, growing to full as the swell completes — and the
+    // cloud it will leave, in the same cold colour.
+    const R = enemy.def.burstRadius ?? enemy.def.attackRange;
+    const cur = R * (0.4 + 0.6 * t);
+    ctx.fillStyle = rgba(Palette.fungus, 0.14 * t);
+    ctx.beginPath();
+    ctx.arc(0, 0, cur, 0, TAU);
+    ctx.fill();
+    ctx.globalAlpha = 0.35 + 0.45 * t;
+    ctx.strokeStyle = Palette.fungusBright;
+    ctx.lineWidth = 2 + t * 2;
+    ctx.setLineDash([7, 5]);
+    ctx.beginPath();
+    ctx.arc(0, 0, cur, 0, TAU);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  } else {
+    ctx.globalAlpha = 0.5 * t;
+    ctx.strokeStyle = Palette.bloodBright;
+    ctx.lineWidth = 2 + t * 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, enemy.def.attackRange * t, 0, Math.PI * 2);
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
@@ -244,6 +286,241 @@ function drawEmberDevourer(ctx: CanvasRenderingContext2D, e: Enemy): void {
   ctx.shadowBlur = 0;
 }
 
+function drawBlightbloat(ctx: CanvasRenderingContext2D, e: Enemy): void {
+  const r = e.radius;
+  const swelling = e.state === 'windup';
+  const swellT = swelling ? Math.min(1, e.stateTimer / Math.max(0.05, e.def.telegraphTime)) : 0;
+  const strain = swelling ? Math.sin(e.animPhase * 30) * 0.03 * swellT : 0;
+  const scale = (1 + swellT * 0.42 + strain) * (1 + Math.sin(e.animPhase * 3) * 0.04);
+  ctx.save();
+  ctx.scale(scale, scale);
+  ctx.globalCompositeOperation = 'lighter';
+  drawGlowCircle(ctx, 0, 0, r * (1.6 + swellT * 1.2), Palette.fungus, 0.22 + swellT * 0.45);
+  ctx.globalCompositeOperation = 'source-over';
+  // Stubby legs, dragging.
+  ctx.strokeStyle = '#2a3122';
+  ctx.lineWidth = 3;
+  const legPhase = e.animPhase * 6;
+  for (let i = 0; i < 4; i++) {
+    const side = i < 2 ? -1 : 1;
+    const front = i % 2 === 0 ? -1 : 1;
+    const swing = Math.sin(legPhase + i * 1.7) * 3;
+    ctx.beginPath();
+    ctx.moveTo(side * r * 0.5, front * r * 0.35);
+    ctx.lineTo(side * r * 0.95, front * r * 0.55 + swing);
+    ctx.stroke();
+  }
+  // The sac.
+  const grad = ctx.createRadialGradient(-r * 0.3, -r * 0.35, 1, 0, 0, r);
+  grad.addColorStop(0, '#6c7a56');
+  grad.addColorStop(0.7, e.def.color);
+  grad.addColorStop(1, '#232a1c');
+  ctx.fillStyle = grad;
+  blobPath(ctx, 0, 0, r, 9, 0.1, WOBBLE_SEEDS);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.07)';
+  ctx.beginPath();
+  ctx.ellipse(-r * 0.25, -r * 0.3, r * 0.45, r * 0.3, -0.4, 0, TAU);
+  ctx.fill();
+  // Glowing pustules — brighter and bigger the closer it is to bursting.
+  const spots: [number, number, number][] = [
+    [-0.35, -0.1, 0.22],
+    [0.3, -0.25, 0.18],
+    [0.1, 0.35, 0.2],
+    [-0.1, 0.05, 0.12],
+    [0.42, 0.25, 0.11],
+  ];
+  ctx.shadowColor = Palette.fungus;
+  ctx.shadowBlur = 6 + swellT * 10;
+  ctx.fillStyle = swellT > 0.5 ? Palette.fungusBright : Palette.fungus;
+  for (const [sx, sy, ss] of spots) {
+    ctx.beginPath();
+    ctx.arc(sx * r, sy * r, ss * r * (1 + swellT * 0.5), 0, TAU);
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+  // What's left of the Hollow it grew from: a small skull leaning out the front.
+  const hx = Math.cos(e.facing) * r * 0.78;
+  const hy = Math.sin(e.facing) * r * 0.78;
+  ctx.fillStyle = '#2c2c34';
+  ctx.beginPath();
+  ctx.arc(hx, hy, r * 0.3, 0, TAU);
+  ctx.fill();
+  ctx.fillStyle = Palette.fungusBright;
+  ctx.beginPath();
+  ctx.arc(hx - 2.2, hy - 1, 1.3, 0, TAU);
+  ctx.arc(hx + 2.2, hy - 1, 1.3, 0, TAU);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawWarden(ctx: CanvasRenderingContext2D, e: Enemy, champion: boolean): void {
+  const r = e.radius;
+  const guardDown = e.alive && !e.shieldUp;
+  const bashing = e.bashTimer > 0;
+  const stomp = Math.abs(Math.sin(e.animPhase * 4)) * 1.5;
+  ctx.save();
+  ctx.rotate(e.facing);
+
+  if (champion) {
+    // Captain's cloak trailing behind, in the ruins' own violet.
+    const sway = Math.sin(e.animPhase * 2.2) * r * 0.25;
+    ctx.fillStyle = rgba(Palette.soul, e.shieldBroken ? 0.7 : 0.5);
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.5, -r * 0.55);
+    ctx.quadraticCurveTo(-r * 1.8, sway, -r * 0.5, r * 0.55);
+    ctx.closePath();
+    ctx.fill();
+  }
+  // Legs.
+  ctx.fillStyle = '#26222f';
+  ctx.fillRect(-r * 0.45, -r * 0.6, r * 0.38, r * 0.28 + stomp);
+  ctx.fillRect(-r * 0.45, r * 0.32, r * 0.38, r * 0.28 + stomp);
+  // Torso: hunched, armoured, leaning into the shield. Plate reads pale
+  // against the ruins' dark stone, with a rim-light outline so the
+  // silhouette holds up under the zone's heavier darkness.
+  const torso = ctx.createLinearGradient(-r, 0, r, 0);
+  torso.addColorStop(0, '#2b2738');
+  torso.addColorStop(0.5, champion ? '#5a5178' : '#57536a');
+  torso.addColorStop(1, '#3d3a4c');
+  ctx.fillStyle = torso;
+  ctx.beginPath();
+  ctx.ellipse(-r * 0.1, 0, r * 0.85, r * 0.7, 0, 0, TAU);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(214,208,232,0.4)';
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+  // Pauldrons.
+  ctx.fillStyle = champion ? '#7a7096' : '#6f6a84';
+  ctx.beginPath();
+  ctx.arc(-r * 0.15, -r * 0.56, r * 0.32, 0, TAU);
+  ctx.arc(-r * 0.15, r * 0.56, r * 0.32, 0, TAU);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  // Mace arm on the +y side.
+  ctx.fillStyle = '#3a3546';
+  ctx.fillRect(r * 0.2, r * 0.5, r * 0.75, r * 0.16);
+  ctx.fillStyle = '#8b8499';
+  ctx.beginPath();
+  ctx.arc(r * 0.98, r * 0.58, r * 0.22, 0, TAU);
+  ctx.fill();
+  // Helm.
+  ctx.fillStyle = champion ? '#7a7296' : '#77728a';
+  ctx.beginPath();
+  ctx.arc(r * 0.35, 0, r * 0.38, 0, TAU);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  if (champion) {
+    // A broken crown of iron.
+    ctx.fillStyle = '#7a7290';
+    for (const off of [-0.22, 0, 0.22]) {
+      ctx.fillRect(r * 0.1, off * r - 2, r * 0.14, 4);
+    }
+  }
+  const eye = champion ? Palette.soulBright : '#d8d2e8';
+  ctx.fillStyle = eye;
+  ctx.shadowColor = eye;
+  ctx.shadowBlur = champion ? 9 : 4;
+  ctx.fillRect(r * 0.5, -r * 0.14, r * 0.15, r * 0.28);
+  ctx.shadowBlur = 0;
+
+  if (!e.shieldBroken) {
+    // The shield: a door-sized slab of worked stone. Raised, it stands
+    // square across the front; with the guard down it swings out to the -y
+    // side and tilts, leaving the front open.
+    ctx.save();
+    if (guardDown) {
+      ctx.translate(-r * 0.05, -r * 0.95);
+      ctx.rotate(-1.1);
+    } else {
+      ctx.translate(r * 0.74, 0);
+    }
+    const sw = r * 0.42;
+    const sh = r * 2.15;
+    const slab = ctx.createLinearGradient(0, -sh / 2, 0, sh / 2);
+    slab.addColorStop(0, '#7f7998');
+    slab.addColorStop(0.5, '#a49ebb');
+    slab.addColorStop(1, '#5a5470');
+    ctx.fillStyle = slab;
+    roundedRectPath(ctx, -sw / 2, -sh / 2, sw, sh, sw * 0.4);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    ctx.lineWidth = 1.5;
+    roundedRectPath(ctx, -sw / 2, -sh / 2, sw, sh, sw * 0.4);
+    ctx.stroke();
+    // Carved door-lines and a rune.
+    ctx.strokeStyle = rgba(champion ? Palette.soul : '#d2cce4', 0.7);
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(0, -sh * 0.36);
+    ctx.lineTo(0, sh * 0.36);
+    ctx.moveTo(-sw * 0.3, -sh * 0.12);
+    ctx.lineTo(sw * 0.3, -sh * 0.12);
+    ctx.moveTo(-sw * 0.3, sh * 0.12);
+    ctx.lineTo(sw * 0.3, sh * 0.12);
+    ctx.stroke();
+    if (champion && e.hp < e.maxHp * 0.75) {
+      // Cracks spreading as the shatter gets close.
+      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      ctx.moveTo(-sw * 0.4, -sh * 0.3);
+      ctx.lineTo(sw * 0.1, -sh * 0.05);
+      ctx.lineTo(-sw * 0.2, sh * 0.25);
+      ctx.moveTo(sw * 0.35, sh * 0.1);
+      ctx.lineTo(0, sh * 0.32);
+      ctx.stroke();
+    }
+    ctx.restore();
+  } else {
+    // What's left strapped to the arm: a jagged stub.
+    ctx.fillStyle = '#6a6482';
+    ctx.beginPath();
+    ctx.moveTo(r * 0.6, -r * 0.55);
+    ctx.lineTo(r * 0.9, -r * 0.4);
+    ctx.lineTo(r * 0.78, -r * 0.05);
+    ctx.lineTo(r * 0.95, r * 0.2);
+    ctx.lineTo(r * 0.6, r * 0.3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+  }
+
+  if (bashing) {
+    ctx.strokeStyle = 'rgba(220,214,235,0.4)';
+    ctx.lineWidth = 2;
+    for (const off of [-0.5, 0, 0.5]) {
+      ctx.beginPath();
+      ctx.moveTo(-r * 1.1, off * r);
+      ctx.lineTo(-r * 2.2, off * r * 1.3);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+
+  // Guard-down cue, rotation-independent: a bright pulsing ring — "now".
+  if (guardDown && !e.shieldBroken && e.state === 'cooldown') {
+    const p = 0.45 + Math.sin(e.animPhase * 18) * 0.3;
+    ctx.strokeStyle = rgba(Palette.goldBright, p);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 1.18, 0, TAU);
+    ctx.stroke();
+  }
+  if (champion && e.shieldBroken && e.alive) {
+    // Phase two: spores leaking from the cracks.
+    ctx.globalCompositeOperation = 'lighter';
+    drawGlowCircle(ctx, 0, 0, r * 1.5, Palette.fungus, 0.16 + Math.sin(e.animPhase * 5) * 0.06);
+    ctx.globalCompositeOperation = 'source-over';
+  }
+}
+
 const DRAWERS: Record<string, (ctx: CanvasRenderingContext2D, e: Enemy) => void> = {
   ashCrawler: drawAshCrawler,
   hollow: drawHollow,
@@ -252,6 +529,9 @@ const DRAWERS: Record<string, (ctx: CanvasRenderingContext2D, e: Enemy) => void>
   shadowStalker: drawShadowStalker,
   cinderWraith: drawCinderWraith,
   emberDevourer: drawEmberDevourer,
+  blightbloat: drawBlightbloat,
+  hollowWarden: (ctx, e) => drawWarden(ctx, e, false),
+  sunkenWarden: (ctx, e) => drawWarden(ctx, e, true),
 };
 
 export function drawEnemy(ctx: CanvasRenderingContext2D, enemy: Enemy, screenX: number, screenY: number): void {

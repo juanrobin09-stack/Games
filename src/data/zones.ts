@@ -21,23 +21,37 @@ export const ZONES: ZoneDefinition[] = [
     ambientParticle: 'ash',
   },
   {
+    // Level 2. Reached by descending the stairwell in the Ashen Woods' heart
+    // room: a buried city of the same stone, further down and further gone —
+    // colder, damper, darker, lit by what grows on the dead rather than by
+    // fire. Only the Warden's own ember light stays warm.
     id: 'hollowRuins',
     name: 'The Hollow Ruins',
     subtitle: 'Stone remembers what flesh forgets',
     index: 1,
-    roomCount: 9,
+    roomCount: 10,
     palette: {
-      floor: '#282437',
-      floorAccent: '#332c44',
-      wall: '#181420',
-      wallTop: '#4a4260',
-      fog: 'rgba(10,8,16,0.55)',
-      ambient: '#4a4460',
+      floor: '#22213a',
+      floorAccent: '#2c2a48',
+      wall: '#131120',
+      wallTop: '#433c5e',
+      fog: 'rgba(8,7,16,0.6)',
+      ambient: '#3a4a5a',
       accent: '#9b7ed9',
     },
-    enemyPool: ['ashCrawler', 'hollow', 'gravebound', 'shadowStalker', 'cinderWraith'],
-    heartGuardian: 'shadowStalker',
+    enemyPool: ['ashCrawler', 'hollow', 'gravebound', 'shadowStalker', 'cinderWraith', 'blightbloat', 'hollowWarden'],
+    heartGuardian: 'sunkenWarden',
     ambientParticle: 'spores',
+    darkness: 0.5,
+    fungalColor: '#6fe3c4',
+    sporeColors: ['#8de9cf', '#9b7ed9', '#b9f5e2', '#8de9cf'],
+    material: {
+      mossColor: '#3a7062',
+      mossDensity: 2.6,
+      rubbleDensity: 1.8,
+      crackDensity: 1.5,
+      dampPatches: 5,
+    },
   },
   {
     id: 'emberCitadel',

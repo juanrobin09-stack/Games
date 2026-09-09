@@ -103,7 +103,9 @@ export function paintFloorSwatch(
   const scratch = document.createElement('canvas');
   scratch.width = scratchW;
   scratch.height = scratchH;
-  const sctx = scratch.getContext('2d')!;
+  // Read back once for the levels pass: flag it so the browser keeps this
+  // scratch bitmap CPU-side instead of round-tripping through the GPU.
+  const sctx = scratch.getContext('2d', { willReadFrequently: true })!;
   sctx.save();
   sctx.translate(scratchW / 2, scratchH / 2);
   sctx.scale(flipH ? -1 : 1, flipV ? -1 : 1);

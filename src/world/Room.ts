@@ -38,6 +38,11 @@ export class Room {
   eventResolved = false;
   spawnedContent = false;
   restUsed = false;
+  /** Sanctum rite: opt-in wave fight. Doors seal once it starts and stay sealed
+   * until every wave is down (or the player is). */
+  ritualActive = false;
+  ritualWave = 0;
+  ritualWaveTimer = 0;
 
   constructor(gridX: number, gridY: number, type: RoomType) {
     this.gridX = gridX;
@@ -48,10 +53,12 @@ export class Room {
 
   get locked(): boolean {
     if (this.cleared) return false;
+    if (this.type === 'sanctum') return this.ritualActive;
     return this.type === 'combat' || this.type === 'elite' || this.type === 'heart' || this.type === 'boss';
   }
 
   get requiresClearing(): boolean {
+    if (this.type === 'sanctum') return this.ritualActive;
     return this.type === 'combat' || this.type === 'elite' || this.type === 'heart' || this.type === 'boss';
   }
 

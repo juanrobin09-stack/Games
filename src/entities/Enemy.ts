@@ -58,6 +58,39 @@ export class Enemy {
   lastPlayerX = 0;
   lastPlayerY = 0;
 
+  // ---- warden (shield-bearer) state
+  /** Guard is down while > 0 (right after a bash): frontal damage reduction is off. */
+  exposedTimer = 0;
+  /** Champion only: the shield is gone for good once it drops below half health. */
+  shieldBroken = false;
+  /** Remaining bash travel time; velocity stays locked along `facing` while > 0. */
+  bashTimer = 0;
+  bashHitLanded = false;
+  /** Champion second-bash bookkeeping. */
+  comboStep = 0;
+  /** Set by the AI the frame a champion's shield shatters; Game consumes it once. */
+  phaseJustChanged = false;
+  /** Set by the AI when this warden should leave a spore cloud where it stands (phase-2 champion). */
+  pendingCloudRadius = 0;
+
+  // ---- bloat (self-detonating) state
+  /** Set by the AI the frame the swell completes; CombatSystem resolves the burst exactly once. */
+  pendingBurst = false;
+  /** True once the burst went off by itself (vs. the bloat being killed early). */
+  burstDetonated = false;
+
+  /** Warden: is the shield currently turning aside frontal hits? */
+  get shieldUp(): boolean {
+    return (
+      this.alive &&
+      this.def.behavior === 'warden' &&
+      !this.shieldBroken &&
+      this.exposedTimer <= 0 &&
+      this.state !== 'stagger' &&
+      this.state !== 'cooldown'
+    );
+  }
+
   constructor(def: EnemyDefinition, x: number, y: number, hpMult: number, damageMult: number) {
     this.def = def;
     this.x = x;
@@ -120,6 +153,7 @@ export class Enemy {
 
     if (this.attackCooldownTimer > 0) this.attackCooldownTimer -= dt;
     if (this.contactCooldownTimer > 0) this.contactCooldownTimer -= dt;
+    if (this.exposedTimer > 0) this.exposedTimer -= dt;
 
     this.knockbackVx *= Math.max(0, 1 - 8 * dt);
     this.knockbackVy *= Math.max(0, 1 - 8 * dt);

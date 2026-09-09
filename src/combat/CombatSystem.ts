@@ -6,7 +6,15 @@ import type { Camera } from '@/core/Camera';
 import type { HitStopController } from '@/core/HitStop';
 import type { ParticleSystem } from '@/rendering/ParticleSystem';
 import { createDamageNumber, updateDamageNumbers, type DamageNumber } from '@/combat/DamageNumber';
-import { spawnHitImpact, spawnDeathBurst, spawnEmberBurstVfx, spawnPerfectDodgeBurst } from '@/rendering/ParticlePresets';
+import {
+  spawnHitImpact,
+  spawnDeathBurst,
+  spawnEmberBurstVfx,
+  spawnPerfectDodgeBurst,
+  spawnSporeBurstVfx,
+  spawnSporeMote,
+  spawnShieldSparks,
+} from '@/rendering/ParticlePresets';
 import { Palette } from '@/rendering/Palette';
 import { playSfx } from '@/audio/SoundFactory';
 import { gameEvents } from '@/core/GameEvents';
@@ -25,16 +33,41 @@ export interface DamageOptions {
   knockbackForce?: number;
   isAbility?: boolean;
   silent?: boolean;
+  /** Where the hit came from, for a warden's frontal shield check (defaults to the player). */
+  sourceX?: number;
+  sourceY?: number;
+  /** Environmental damage-over-time tick (spore cloud): softer feedback, no knockback. */
+  hazard?: boolean;
+}
+
+/** A lingering floor hazard — currently only the Hollow Ruins' spore clouds. */
+export interface Hazard {
+  kind: 'spores';
+  x: number;
+  y: number;
+  radius: number;
+  timer: number;
+  duration: number;
+  tickDamage: number;
+  tickTimer: number;
+  emitTimer: number;
+  seed: number;
 }
 
 const ELITE_SHAKE = 9;
 const NORMAL_SHAKE = 4;
 const CRIT_SHAKE_BONUS = 3;
 const HIT_ARC_COVERAGE = 0.75;
+/** Damage that gets through a raised warden shield. */
+const SHIELD_DAMAGE_FACTOR = 0.15;
+const HAZARD_TICK_INTERVAL = 0.6;
+/** Hard cap so a long bloat-heavy fight can't pile up clouds without bound. */
+const MAX_HAZARDS = 10;
 
 export class CombatSystem {
   projectiles: Projectile[] = [];
   damageNumbers: DamageNumber[] = [];
+  hazards: Hazard[] = [];
   onDamageDealtToEnemy: ((amount: number) => void) | null = null;
   onDamageDealtToPlayer: ((amount: number) => void) | null = null;
 
@@ -43,6 +76,105 @@ export class CombatSystem {
   reset(): void {
     this.projectiles.length = 0;
     this.damageNumbers.length = 0;
+    this.hazards.length = 0;
+  }
+
+  // ---------------------------------------------------------------- Hazards
+  spawnSporeCloud(x: number, y: number, radius: number, duration: number, tickDamage: number): void {
+    if (this.hazards.length >= MAX_HAZARDS) this.hazards.shift();
+    this.hazards.push({
+      kind: 'spores',
+      x,
+      y,
+      radius,
+      timer: 0,
+      duration,
+      tickDamage,
+      tickTimer: 0.35,
+      emitTimer: 0,
+      seed: Math.random() * 100,
+    });
+  }
+
+  updateHazards(dt: number, player: Player): void {
+    let expired = false;
+    for (const h of this.hazards) {
+      h.timer += dt;
+      if (h.timer >= h.duration) {
+        expired = true;
+        continue;
+      }
+      h.emitTimer -= dt;
+      if (h.emitTimer <= 0) {
+        h.emitTimer = 0.07;
+        const angle = Math.random() * Math.PI * 2;
+        const r = Math.sqrt(Math.random()) * h.radius * 0.9;
+        spawnSporeMote(this.particles, h.x + Math.cos(angle) * r, h.y + Math.sin(angle) * r);
+      }
+      h.tickTimer -= dt;
+      if (h.tickTimer <= 0) {
+        h.tickTimer = HAZARD_TICK_INTERVAL;
+        const dist = Math.hypot(player.x - h.x, player.y - h.y);
+        if (player.alive && dist <= h.radius + player.radius * 0.5) {
+          this.damageEnemyToPlayer(player, h.tickDamage, { hazard: true });
+        }
+      }
+    }
+    if (expired) this.hazards = this.hazards.filter((h) => h.timer < h.duration);
+  }
+
+  /** A bloat's swell finished: direct hit on anyone close, then the cloud.
+   * The body is consumed by the burst — the caller's normal death path
+   * (onEnemyDeath) still runs for loot, but sees `burstDetonated` and skips
+   * the second, smaller "killed early" cloud. */
+  detonateBloat(player: Player, enemy: Enemy): void {
+    enemy.pendingBurst = false;
+    if (!enemy.alive) return;
+    enemy.burstDetonated = true;
+    const radius = enemy.def.burstRadius ?? 90;
+    spawnSporeBurstVfx(this.particles, enemy.x, enemy.y, radius);
+    playSfx('sporeBurst', { throttleMs: 40 });
+    this.camera.addShake(6, 0.2);
+    const dist = Math.hypot(player.x - enemy.x, player.y - enemy.y);
+    if (dist <= radius + player.radius) {
+      this.damageEnemyToPlayer(player, enemy.attackDamage, {
+        knockbackDirX: (player.x - enemy.x) / Math.max(0.01, dist),
+        knockbackDirY: (player.y - enemy.y) / Math.max(0.01, dist),
+        knockbackForce: 230,
+      });
+    }
+    this.spawnSporeCloud(enemy.x, enemy.y, enemy.def.cloudRadius ?? 80, enemy.def.cloudDuration ?? 5, 5 * enemy.difficultyDamageMult);
+    enemy.takeDamage(enemy.hp + 1);
+  }
+
+  /** Wardens flag a cloud where they stand (phase-2 champion bash landings). */
+  consumePendingClouds(enemies: Enemy[]): void {
+    for (const e of enemies) {
+      if (e.pendingCloudRadius <= 0) continue;
+      this.spawnSporeCloud(e.x, e.y, e.pendingCloudRadius, 3.5, 5 * e.difficultyDamageMult);
+      spawnSporeBurstVfx(this.particles, e.x, e.y, e.pendingCloudRadius * 0.6);
+      playSfx('sporeHiss', { throttleMs: 80 });
+      e.pendingCloudRadius = 0;
+    }
+  }
+
+  /** A lunging warden that overlaps the player lands its bash exactly once per lunge. */
+  resolveBashHits(player: Player, enemies: Enemy[]): void {
+    for (const e of enemies) {
+      if (!e.alive || e.bashTimer <= 0 || e.bashHitLanded) continue;
+      const dist = Math.hypot(player.x - e.x, player.y - e.y);
+      if (dist > e.radius + player.radius + 6) continue;
+      e.bashHitLanded = true;
+      const landed = this.damageEnemyToPlayer(player, e.attackDamage, {
+        knockbackDirX: Math.cos(e.facing),
+        knockbackDirY: Math.sin(e.facing),
+        knockbackForce: 300,
+      });
+      if (landed) {
+        this.camera.addShake(9, 0.25);
+        this.hitStop.trigger(0.04, 0.06);
+      }
+    }
   }
 
   // ---------------------------------------------------------------- Player -> Enemy
@@ -174,6 +306,9 @@ export class CombatSystem {
             knockbackDirX: dirX / len,
             knockbackDirY: dirY / len,
             knockbackForce: proj.knockback,
+            // A bolt's "origin" for the shield check is back along its flight, not the player.
+            sourceX: proj.x - Math.cos(proj.angle) * 60,
+            sourceY: proj.y - Math.sin(proj.angle) * 60,
           });
         }
       } else if (circleIntersect(proj, player)) {
@@ -249,7 +384,7 @@ export class CombatSystem {
       if (!enemy.alive) continue;
       const dist = Math.hypot(enemy.x - sigil.x, enemy.y - sigil.y);
       if (dist > radius + enemy.radius) continue;
-      this.damagePlayerToEnemy(player, enemy, dps * dt, false, { isAbility: true, silent: true });
+      this.damagePlayerToEnemy(player, enemy, dps * dt, false, { isAbility: true, silent: true, sourceX: sigil.x, sourceY: sigil.y });
     }
     player.heal(4 * dt);
   }
@@ -259,35 +394,53 @@ export class CombatSystem {
     let dmg = baseDamage * (crit ? player.stats.critDamage : 1);
     const ashFireActive = player.hasSynergy('ashFire') && !!enemy.burn;
     if (ashFireActive) dmg *= 1.4;
+
+    // Warden shield: hits arriving inside the frontal arc are mostly turned
+    // aside — no knockback, no stagger, no burn — and say so loudly, so the
+    // player learns to flank or wait for the guard to drop.
+    let blocked = false;
+    if (enemy.shieldUp) {
+      const sx = opts.sourceX ?? player.x;
+      const sy = opts.sourceY ?? player.y;
+      const toSource = Math.atan2(sy - enemy.y, sx - enemy.x);
+      blocked = Math.abs(angleDiff(enemy.facing, toSource)) <= (enemy.def.shieldArc ?? 1.1);
+    }
+    if (blocked) dmg *= SHIELD_DAMAGE_FACTOR;
     dmg = Math.max(1, dmg);
 
     enemy.takeDamage(dmg);
     this.onDamageDealtToEnemy?.(dmg);
-    if (opts.knockbackForce) {
+    if (opts.knockbackForce && !blocked) {
       enemy.applyKnockback(opts.knockbackDirX ?? 0, opts.knockbackDirY ?? 0, opts.knockbackForce);
     }
-    if (crit && enemy.alive && enemy.state === 'windup' && !enemy.def.isElite) {
+    if (crit && !blocked && enemy.alive && enemy.state === 'windup' && !enemy.def.isElite) {
       enemy.setState('stagger');
     }
 
     if (player.stats.lifesteal > 0) player.heal(dmg * player.stats.lifesteal);
-    if (Math.random() < player.stats.burnChance) enemy.applyBurn(Math.max(2, dmg * 0.16), 3, crit);
+    if (!blocked && Math.random() < player.stats.burnChance) enemy.applyBurn(Math.max(2, dmg * 0.16), 3, crit);
 
     if (!opts.silent) {
-      this.damageNumbers.push(
-        createDamageNumber(enemy.x, enemy.y - enemy.radius, Math.round(dmg).toString(), crit ? Palette.ember6 : '#f4ecdd', crit ? 20 : 15)
-      );
-      spawnHitImpact(this.particles, enemy.x, enemy.y, enemy.def.accentColor, crit);
-      playSfx(crit ? 'impactCrit' : 'impactLight', { throttleMs: 20 });
-      if (crit) {
-        gameEvents.emit('critHit', { x: enemy.x, y: enemy.y });
-        this.camera.addShake(NORMAL_SHAKE + CRIT_SHAKE_BONUS, 0.15);
-        this.hitStop.trigger(0.045, 0.08);
+      if (blocked) {
+        this.damageNumbers.push(createDamageNumber(enemy.x, enemy.y - enemy.radius, Math.round(dmg).toString(), '#8f8a9e', 12));
+        spawnShieldSparks(this.particles, enemy.x + Math.cos(enemy.facing) * enemy.radius * 0.9, enemy.y + Math.sin(enemy.facing) * enemy.radius * 0.9, enemy.facing);
+        playSfx('shieldClang', { throttleMs: 50 });
+      } else {
+        this.damageNumbers.push(
+          createDamageNumber(enemy.x, enemy.y - enemy.radius, Math.round(dmg).toString(), crit ? Palette.ember6 : '#f4ecdd', crit ? 20 : 15)
+        );
+        spawnHitImpact(this.particles, enemy.x, enemy.y, enemy.def.accentColor, crit);
+        playSfx(crit ? 'impactCrit' : 'impactLight', { throttleMs: 20 });
+        if (crit) {
+          gameEvents.emit('critHit', { x: enemy.x, y: enemy.y });
+          this.camera.addShake(NORMAL_SHAKE + CRIT_SHAKE_BONUS, 0.15);
+          this.hitStop.trigger(0.045, 0.08);
+        }
+        if (enemy.def.isElite) this.camera.addShake(2, 0.08);
       }
-      if (enemy.def.isElite) this.camera.addShake(2, 0.08);
     }
 
-    if (crit && player.hasSynergy('emberCritical') && Math.random() < 0.35) {
+    if (crit && !blocked && player.hasSynergy('emberCritical') && Math.random() < 0.35) {
       this.triggerEmberDetonation(enemy.x, enemy.y);
     }
 
@@ -309,6 +462,15 @@ export class CombatSystem {
     enemy.deathHandled = true;
     spawnDeathBurst(this.particles, enemy.x, enemy.y, enemy.def.accentColor);
     playSfx(enemy.def.isElite ? 'eliteDeath' : 'enemyDeath');
+    // A bloat killed before it could swell still ruptures — a smaller, shorter
+    // cloud, but right where it died. Killing it is the right call; killing it
+    // where you want to stand is not.
+    if (enemy.def.behavior === 'bloat' && !enemy.burstDetonated) {
+      const radius = (enemy.def.cloudRadius ?? 80) * 0.7;
+      this.spawnSporeCloud(enemy.x, enemy.y, radius, (enemy.def.cloudDuration ?? 5) * 0.7, 4 * enemy.difficultyDamageMult);
+      spawnSporeBurstVfx(this.particles, enemy.x, enemy.y, radius * 0.8);
+      playSfx('sporeHiss', { throttleMs: 40 });
+    }
     if (enemy.def.isElite) {
       this.camera.addShake(ELITE_SHAKE, 0.35);
       this.hitStop.trigger(0.08, 0.04);
@@ -336,10 +498,18 @@ export class CombatSystem {
       player.vx += (opts.knockbackDirX ?? 0) * opts.knockbackForce;
       player.vy += (opts.knockbackDirY ?? 0) * opts.knockbackForce;
     }
-    this.damageNumbers.push(createDamageNumber(player.x, player.y - player.radius, Math.round(result.taken).toString(), Palette.bloodBright, 16));
-    spawnHitImpact(this.particles, player.x, player.y, Palette.bloodBright, false);
-    playSfx('playerHurt');
-    this.camera.addShake(7, 0.2);
+    if (opts.hazard) {
+      // A cloud tick is pressure, not a blow: quieter, greener, no big shake.
+      this.damageNumbers.push(createDamageNumber(player.x, player.y - player.radius, Math.round(result.taken).toString(), Palette.fungusBright, 13));
+      spawnSporeMote(this.particles, player.x, player.y - 6);
+      playSfx('sporeHiss', { throttleMs: 200 });
+      this.camera.addShake(2.5, 0.12);
+    } else {
+      this.damageNumbers.push(createDamageNumber(player.x, player.y - player.radius, Math.round(result.taken).toString(), Palette.bloodBright, 16));
+      spawnHitImpact(this.particles, player.x, player.y, Palette.bloodBright, false);
+      playSfx('playerHurt');
+      this.camera.addShake(7, 0.2);
+    }
     this.onDamageDealtToPlayer?.(result.taken);
     gameEvents.emit('playerDamaged', { amount: result.taken });
     if (!player.alive) {

@@ -38,3 +38,15 @@ export function clampToRoom(entity: Circular, width: number, height: number): vo
   entity.x = Math.min(Math.max(entity.x, -40), width + 40);
   entity.y = Math.min(Math.max(entity.y, -40), height + 40);
 }
+
+/** Hard guarantee that a body stays on the room's floor (inside the walls).
+ * A last line of defence for enemies only: whatever else pushes one — a
+ * bash into a corner, a teleport, a resolver ejecting it the wrong way — it
+ * can never end up stranded in a wall or outside the room, unreachable. */
+export function clampInsideRoom(entity: Circular, width: number, height: number, wallThickness: number): void {
+  const inset = wallThickness + entity.radius;
+  if (entity.x < inset) entity.x = inset;
+  else if (entity.x > width - inset) entity.x = width - inset;
+  if (entity.y < inset) entity.y = inset;
+  else if (entity.y > height - inset) entity.y = height - inset;
+}

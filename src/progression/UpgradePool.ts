@@ -8,7 +8,8 @@ export function rollUpgradeChoices(
   count: number,
   luck: number,
   unlockedTiers: Set<string>,
-  exclude: Set<string> = new Set()
+  exclude: Set<string> = new Set(),
+  minRarity: Rarity = 'common'
 ): UpgradeDefinition[] {
   const gated = (u: UpgradeDefinition) => !u.requiresUnlock || unlockedTiers.has(u.requiresUnlock);
   let pool = UPGRADES.filter((u) => gated(u) && !exclude.has(u.id));
@@ -19,7 +20,7 @@ export function rollUpgradeChoices(
   let attempts = 0;
   while (chosen.length < count && attempts < count * 25) {
     attempts++;
-    const rarity = rollRarity(rng, luck);
+    const rarity = rollRarity(rng, luck, minRarity);
     const candidates = pool.filter((u) => u.rarity === rarity && !used.has(u.id));
     if (candidates.length === 0) continue;
     const pick = rng.pick(candidates);

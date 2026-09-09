@@ -16,8 +16,19 @@ import { drawObstacle } from '@/rendering/draw/drawObstacle';
 import { drawBoss, drawMeteorTelegraph } from '@/rendering/draw/drawBoss';
 import { drawDamageNumbers } from '@/rendering/draw/drawDamageNumbers';
 import { drawRoomBackground, drawRoomVignette, spawnZoneAmbientParticle } from '@/rendering/draw/drawRoom';
+import { drawHazards } from '@/rendering/draw/drawHazard';
+import { drawSanctumCircle, sanctumCandlePosition, sanctumLitCandles, SANCTUM_CANDLE_COUNT } from '@/rendering/draw/drawSanctum';
 import { clearRoomTextureCache } from '@/rendering/RoomTexture';
-import { spawnChestOpenBurst, spawnDodgeTrail, spawnHealSparkle, spawnLevelUpBurst } from '@/rendering/ParticlePresets';
+import {
+  spawnChestOpenBurst,
+  spawnDodgeTrail,
+  spawnHealSparkle,
+  spawnLevelUpBurst,
+  spawnSporeMote,
+  spawnSporeBurstVfx,
+  spawnStoneChips,
+  spawnRitualIgnite,
+} from '@/rendering/ParticlePresets';
 import { audio } from '@/audio/AudioEngine';
 import { music } from '@/audio/MusicEngine';
 import { playSfx, type SfxId } from '@/audio/SoundFactory';
@@ -28,10 +39,19 @@ import { Pickup } from '@/entities/Pickup';
 import { CombatSystem } from '@/combat/CombatSystem';
 import { resolveBossPendingActions } from '@/combat/BossSystem';
 import { updateEnemyAI, isAttackTriggerFrame, resolveAttackTrigger, applyEnemySeparation, type EnemyAIContext } from '@/ai/EnemyAI';
-import { Room, OPPOSITE, ROOM_WIDTH, ROOM_HEIGHT, type Direction } from '@/world/Room';
-import { populateRoomContent } from '@/world/LevelGenerator';
+import { Room, OPPOSITE, ROOM_WIDTH, ROOM_HEIGHT, WALL_THICKNESS, type Direction } from '@/world/Room';
+import {
+  populateRoomContent,
+  spawnSanctumWave,
+  stairsFootPosition,
+  stairsMouthPosition,
+  SANCTUM_WAVE_COUNT,
+  SANCTUM_RING_RADIUS,
+} from '@/world/LevelGenerator';
 import { getDifficultyFactors, getCorruptionRatio } from '@/world/Difficulty';
-import { resolveAgainstWalls, resolveAgainstObstacles, clampToRoom } from '@/world/Physics';
+import { getEnemyDefinition } from '@/data/enemies';
+import type { Obstacle } from '@/entities/Obstacle';
+import { resolveAgainstWalls, resolveAgainstObstacles, clampToRoom, clampInsideRoom } from '@/world/Physics';
 import { generateShopOffers, makeShopRng, REROLL_COST, HEAL_AMOUNT_RATIO, type ShopOffer } from '@/world/Shop';
 import { RunState } from '@/progression/RunState';
 import { meta } from '@/progression/MetaProgression';
@@ -42,7 +62,7 @@ import { ZONES } from '@/data/zones';
 import { getSynergy } from '@/data/synergies';
 import { WORLD_EVENTS, getWorldEvent } from '@/data/events';
 import { Random } from '@/utils/Random';
-import { clamp, formatNumber } from '@/utils/MathUtils';
+import { clamp, formatNumber, lerp, easeInCubic, easeOutCubic, easeInOutSine } from '@/utils/MathUtils';
 import { SpatialGrid } from '@/utils/Collision';
 import { HUD, type BossHudInfo } from '@/ui/HUD';
 import { MainMenu } from '@/ui/MainMenu';
@@ -76,8 +96,29 @@ function roomTypeLabel(type: Room['type']): string {
     case 'rest': return 'Respite';
     case 'heart': return 'Zone Heart';
     case 'boss': return 'The Colossus';
+    case 'sanctum': return 'Drowned Sanctum';
   }
 }
+
+/**
+ * The scripted walk down (or up) a stairwell between zones. 'out': the player
+ * walks into the well while the screen goes to black; the zone switches at
+ * the end of it; 'in': the screen comes back up on the new zone while the
+ * player steps off the arrival stairs. Input is suspended throughout.
+ */
+interface ZoneTransition {
+  phase: 'out' | 'in';
+  t: number;
+  duration: number;
+  fromX: number;
+  fromY: number;
+  toX: number;
+  toY: number;
+  stairs: Obstacle;
+  sporeTimer: number;
+}
+const DESCENT_OUT_SECONDS = 1.15;
+const DESCENT_IN_SECONDS = 1.35;
 
 function iconForAbility(id: string): UpgradeIconId {
   if (id === 'stormstep') return 'dodge';
@@ -114,6 +155,7 @@ export class Game {
   private run: RunState | null = null;
   private boss: Boss | null = null;
   private bossIntroTimer = 0;
+  private transition: ZoneTransition | null = null;
 
   private lastTime = performance.now();
   private ambientTimer = 0.3;
@@ -133,9 +175,154 @@ export class Game {
     this.applySettings(meta.data.settings);
     this.bindGlobalHandlers();
     this.bindEventBus();
+    this.installDevHooks();
     this.showMainMenu();
 
     requestAnimationFrame(this.loop);
+  }
+
+  /**
+   * Dev-server-only automation surface for the Playwright QA harness (room
+   * teleports, force-clears, state dumps). Compiled out of production builds
+   * entirely — `import.meta.env.DEV` is a build-time constant.
+   */
+  private installDevHooks(): void {
+    if (!import.meta.env.DEV) return;
+    const api = {
+      state: () => {
+        const run = this.run;
+        const player = this.player;
+        if (!run || !player) return { state: this.stateMachine.current, run: false };
+        const room = run.currentRoom;
+        return {
+          state: this.stateMachine.current,
+          run: true,
+          zoneIndex: run.zoneIndex,
+          zoneId: run.currentZoneDef.id,
+          roomKey: room.key,
+          roomType: room.type,
+          doors: Array.from(room.doors),
+          locked: room.locked,
+          cleared: room.cleared,
+          rewardGranted: room.rewardGranted,
+          ritualActive: room.ritualActive,
+          ritualWave: room.ritualWave,
+          player: { x: player.x, y: player.y, hp: player.hp, maxHp: player.stats.maxHp, shield: player.shieldCharges, alive: player.alive },
+          enemies: room.enemies.map((e) => ({
+            id: e.def.id,
+            x: e.x,
+            y: e.y,
+            hp: e.hp,
+            maxHp: e.maxHp,
+            alive: e.alive,
+            state: e.state,
+            facing: e.facing,
+            shieldUp: e.shieldUp,
+            shieldBroken: e.shieldBroken,
+            bashTimer: e.bashTimer,
+            exposed: e.exposedTimer,
+            elite: e.isEliteInstance,
+          })),
+          obstacles: room.obstacles.map((o) => ({ visual: o.visual, x: o.x, y: o.y, radius: o.radius, activated: o.activated, facing: o.facing })),
+          hazards: this.combat.hazards.map((h) => ({ x: h.x, y: h.y, radius: h.radius, timer: h.timer, duration: h.duration })),
+          transition: this.transition ? { phase: this.transition.phase, t: this.transition.t, duration: this.transition.duration } : null,
+          modal: !!this.modalScreen,
+          embers: run.embers,
+          fps: this.fps,
+          particles: this.particles.activeCount,
+          lights: this.lighting.ambientDarkness,
+          interaction: this.getRoomInteraction()?.label ?? null,
+        };
+      },
+      rooms: () => {
+        const run = this.run;
+        if (!run) return [];
+        return Array.from(run.currentLayout.rooms.values()).map((r) => ({
+          key: r.key,
+          type: r.type,
+          doors: Array.from(r.doors),
+          distance: r.distanceFromStart,
+          visited: r.visited,
+          cleared: r.cleared,
+        }));
+      },
+      goto: (key: string) => {
+        const run = this.run;
+        const player = this.player;
+        if (!run || !player) return false;
+        const room = run.currentLayout.rooms.get(key);
+        if (!room) return false;
+        run.currentRoomKey = key;
+        const entry = room.doors.values().next().value as Direction | undefined;
+        const spawn = entry ? room.spawnPointFrom(entry) : { x: ROOM_WIDTH / 2, y: ROOM_HEIGHT / 2 };
+        player.x = spawn.x;
+        player.y = spawn.y;
+        this.enterRoom(room, null);
+        this.camera.snapTo(player.x, player.y);
+        return true;
+      },
+      teleport: (x: number, y: number) => {
+        if (!this.player) return;
+        this.player.x = x;
+        this.player.y = y;
+        this.player.vx = 0;
+        this.player.vy = 0;
+      },
+      killAll: () => {
+        const run = this.run;
+        const player = this.player;
+        if (!run || !player) return 0;
+        let n = 0;
+        for (const e of this.allTargetableEnemies()) {
+          if (!e.alive) continue;
+          if (e instanceof Boss) e.invulnerable = false;
+          e.takeDamage(e.hp + 1);
+          this.combat.onEnemyDeath(player, e);
+          n++;
+        }
+        return n;
+      },
+      damage: (enemyId: string, fraction: number) => {
+        const player = this.player;
+        if (!player) return false;
+        const target = this.allTargetableEnemies().find((e) => e.alive && e.def.id === enemyId);
+        if (!target) return false;
+        target.takeDamage(target.maxHp * fraction);
+        if (!target.alive) this.combat.onEnemyDeath(player, target);
+        return true;
+      },
+      setHp: (hp: number) => {
+        if (this.player) this.player.hp = Math.min(this.player.stats.maxHp, Math.max(1, hp));
+      },
+      fps: () => this.fps,
+      warpZone: (target: number) => {
+        const run = this.run;
+        const player = this.player;
+        if (!run || !player) return false;
+        while (run.zoneIndex < target && !run.isFinalZone()) {
+          const next = run.advanceZone();
+          if (!next.spawnedContent) populateRoomContent(next, run.currentZoneDef, this.spawnOptions());
+        }
+        const arrival = run.currentRoom.obstacles.find((o) => o.visual === 'stairsUp');
+        const foot = arrival ? stairsFootPosition(arrival) : { x: ROOM_WIDTH / 2, y: ROOM_HEIGHT / 2 };
+        player.x = foot.x;
+        player.y = foot.y;
+        this.particles.clear();
+        this.combat.reset();
+        this.camera.snapTo(player.x, player.y);
+        this.syncCombatState();
+        this.hud?.refreshMinimap(run);
+        music.setMood(run.zoneIndex);
+        return true;
+      },
+      interact: () => {
+        const interaction = this.getRoomInteraction();
+        if (!interaction) return null;
+        interaction.action();
+        return interaction.label;
+      },
+    };
+    (window as unknown as { __emberfall: typeof api }).__emberfall = api;
   }
 
   // ------------------------------------------------------------ Bootstrapping
@@ -261,6 +448,8 @@ export class Game {
     this.player = new Player(baseStats);
     this.player.reset(ROOM_WIDTH / 2, ROOM_HEIGHT / 2);
     this.boss = null;
+    this.transition = null;
+    music.setMood(0);
 
     const startRoom = this.run.currentRoom;
     startRoom.visited = true;
@@ -320,7 +509,9 @@ export class Game {
     this.touchControls?.destroy();
     this.touchControls = null;
     this.closeModal();
+    this.transition = null;
     music.setIntensity(0);
+    music.setMood(0);
 
     this.stateMachine.set(victory ? GameState.VICTORY : GameState.DEFEAT);
     if (victory) {
@@ -390,12 +581,18 @@ export class Game {
       player.y = spawn.y;
     }
 
+    // Coming back into an already-cleared heart room: the stairwell stays open.
+    if (room.type === 'heart' && room.cleared) this.openStairs(room, false);
+
     this.syncCombatState();
     this.hud?.refreshMinimap(run);
 
     if (room.type === 'chest') this.onboarding?.show('chest');
     if (room.type === 'shop') this.onboarding?.show('shop');
     if (room.type === 'boss') this.onboarding?.show('boss');
+    if (room.type === 'sanctum') this.onboarding?.show('sanctum');
+    if (room.enemies.some((e) => e.alive && e.def.behavior === 'warden')) this.onboarding?.show('warden');
+    if (room.enemies.some((e) => e.alive && e.def.behavior === 'bloat')) this.onboarding?.show('bloat');
   }
 
   private syncCombatState(): void {
@@ -406,7 +603,9 @@ export class Game {
       music.setIntensity(2);
       return;
     }
-    const active = room.requiresClearing && !room.cleared && room.enemies.some((e) => e.alive);
+    // The sanctum rite stays "in combat" between its waves too — the doors are sealed.
+    const riteRunning = room.type === 'sanctum' && room.ritualActive && !room.cleared;
+    const active = riteRunning || (room.requiresClearing && !room.cleared && room.enemies.some((e) => e.alive));
     if (active) {
       this.stateMachine.set(GameState.COMBAT);
       music.setIntensity(1);
@@ -440,6 +639,7 @@ export class Game {
     const run = this.run!;
     const player = this.player!;
     const room = run.currentRoom;
+    if (this.transition) return null;
     const centerDist = Math.hypot(player.x - ROOM_WIDTH / 2, player.y - ROOM_HEIGHT / 2);
     // Shop/event/rest interactions track their own landmark obstacle's position
     // (like chest already does below), not the room's raw center point — the
@@ -463,9 +663,20 @@ export class Game {
     if (room.type === 'rest' && !room.restUsed && landmarkDist('brazier') < 110) {
       return { label: 'Rest at the Brazier', action: () => this.useRest(room) };
     }
-    if (room.type === 'heart' && room.cleared && centerDist < 110 && !run.isFinalZone()) {
+    if (room.type === 'sanctum' && !room.ritualActive && !room.cleared && centerDist < SANCTUM_RING_RADIUS * 0.65) {
+      return { label: 'Kneel at the Circle', action: () => this.beginRite(room) };
+    }
+    if (room.type === 'heart' && room.cleared && !run.isFinalZone()) {
       const nextName = ZONES[run.zoneIndex + 1]?.name ?? 'the next zone';
-      return { label: `Descend to ${nextName}`, action: () => this.advanceZone() };
+      const stairs = room.obstacles.find((o) => o.visual === 'stairsDown');
+      if (stairs) {
+        if (stairs.activated && Math.hypot(player.x - stairs.x, player.y - stairs.y) < stairs.radius + 72) {
+          return { label: `Descend to ${nextName}`, action: () => this.beginDescent(stairs) };
+        }
+      } else if (centerDist < 110) {
+        // No stairwell in this room (should never happen) — never strand the run.
+        return { label: `Descend to ${nextName}`, action: () => this.advanceZone() };
+      }
     }
     return null;
   }
@@ -522,8 +733,14 @@ export class Game {
     if (room.eventResolved) return;
     if (!room.eventId) {
       const used = this.run!.usedEventIds;
-      let available = WORLD_EVENTS.filter((e) => !used.has(e.id));
-      if (available.length === 0) available = WORLD_EVENTS;
+      const zoneId = this.run!.currentZoneDef.id;
+      // Zone-bound events only ever appear in their zone, and take priority
+      // there while unused — the ruins should feel like they have their own stories.
+      const eligible = WORLD_EVENTS.filter((e) => !e.zoneId || e.zoneId === zoneId);
+      let available = eligible.filter((e) => !used.has(e.id));
+      const zoneOwn = available.filter((e) => e.zoneId === zoneId);
+      if (zoneOwn.length > 0) available = zoneOwn;
+      if (available.length === 0) available = eligible;
       const rng = Random.fromString(`${this.run!.seed}:event:${room.key}`);
       room.eventId = rng.pick(available).id;
     }
@@ -599,6 +816,28 @@ export class Game {
         playSfx('pickupSoulAsh');
         break;
       }
+      case 'gainShieldCharge': {
+        player.shieldCharges += option.value ?? 1;
+        playSfx('shieldUp');
+        this.hud?.showToast('A Warden’s ward settles over you.');
+        break;
+      }
+      case 'gainMaxHp': {
+        const amount = option.value ?? 15;
+        player.addBonusModifier({ stat: 'maxHp', mode: 'flat', value: amount });
+        player.heal(amount);
+        spawnHealSparkle(this.particles, player.x, player.y);
+        playSfx('pickupHeart');
+        break;
+      }
+      case 'loseHpForEmbers': {
+        player.hp = Math.max(1, player.hp - player.stats.maxHp * 0.15);
+        run.addEmbers(option.value ?? 50);
+        this.camera.addShake(6, 0.25);
+        playSfx('playerHurt');
+        playSfx('pickupEmber');
+        break;
+      }
     }
   }
 
@@ -618,6 +857,8 @@ export class Game {
     this.hud?.showToast('The brazier\'s warmth mends your wounds.');
   }
 
+  /** Legacy instant zone change — only reachable if a heart room somehow has no
+   * stairwell. The real path is beginDescent → updateTransition → completeDescent. */
   private advanceZone(): void {
     const run = this.run!;
     if (run.isFinalZone()) return;
@@ -630,7 +871,215 @@ export class Game {
     this.syncCombatState();
     this.hud?.refreshMinimap(run);
     this.hud?.showPhaseBanner(run.currentZoneDef.name.toUpperCase());
+    music.setMood(run.zoneIndex);
     playSfx('doorOpen');
+  }
+
+  // ------------------------------------------------------------ Stairs & descent
+  /** Unseals a heart room's stairwell. `animate` plays the grinding reveal;
+   * false just restores an already-open state (re-entering the room). */
+  private openStairs(room: Room, animate: boolean): void {
+    const stairs = room.obstacles.find((o) => o.visual === 'stairsDown');
+    if (!stairs || stairs.activated) return;
+    stairs.activated = true;
+    stairs.activatedAt = animate ? performance.now() / 1000 : -10;
+    if (!animate) return;
+    playSfx('sealBreak');
+    this.camera.addShake(5, 0.5);
+    spawnStoneChips(this.particles, stairs.x, stairs.y, 14);
+    for (let i = 0; i < 10; i++) spawnSporeMote(this.particles, stairs.x + (Math.random() - 0.5) * 60, stairs.y + (Math.random() - 0.5) * 40);
+    this.hud?.showToast('The seal grinds open. The stairs lead down.');
+    this.onboarding?.show('stairs');
+  }
+
+  private beginDescent(stairs: Obstacle): void {
+    if (this.transition) return;
+    const player = this.player!;
+    const mouth = stairsMouthPosition(stairs);
+    this.transition = {
+      phase: 'out',
+      t: 0,
+      duration: DESCENT_OUT_SECONDS,
+      fromX: player.x,
+      fromY: player.y,
+      toX: mouth.x,
+      toY: mouth.y,
+      stairs,
+      sporeTimer: 0,
+    };
+    player.moveInputX = 0;
+    player.moveInputY = 0;
+    player.vx = 0;
+    player.vy = 0;
+    player.invulnTimer = Math.max(player.invulnTimer, DESCENT_OUT_SECONDS + DESCENT_IN_SECONDS + 0.4);
+    playSfx('stairsDescend');
+    music.setIntensity(0);
+  }
+
+  private updateTransition(dt: number): void {
+    const tr = this.transition!;
+    const player = this.player!;
+    // Keep regen/timers ticking, then take over position and pose.
+    player.moveInputX = 0;
+    player.moveInputY = 0;
+    player.update(dt);
+    tr.t += dt;
+    const k = clamp(tr.t / tr.duration, 0, 1);
+    const walk = tr.phase === 'out' ? easeInOutSine(k) : easeOutCubic(k);
+    player.x = lerp(tr.fromX, tr.toX, walk);
+    player.y = lerp(tr.fromY, tr.toY, walk);
+    player.vx = 0;
+    player.vy = 0;
+    player.facing = Math.atan2(tr.toY - tr.fromY, tr.toX - tr.fromX);
+    player.animState = k < 0.97 ? 'run' : 'idle';
+    player.moveCyclePhase += dt * 5.5;
+
+    tr.sporeTimer -= dt;
+    if (tr.sporeTimer <= 0) {
+      tr.sporeTimer = tr.phase === 'out' ? 0.05 : 0.12;
+      const s = tr.stairs;
+      spawnSporeMote(this.particles, s.x + (Math.random() - 0.5) * 70, s.y + (Math.random() - 0.5) * 50);
+    }
+
+    if (k >= 1) {
+      if (tr.phase === 'out') this.completeDescent();
+      else {
+        this.transition = null;
+        player.animState = 'idle';
+      }
+    }
+  }
+
+  /** The zone switch itself, at the bottom of the fade: new layout, player
+   * placed in the mouth of the arrival stairwell, camera snapped, then the
+   * 'in' half of the transition walks them off it. */
+  private completeDescent(): void {
+    const run = this.run!;
+    const player = this.player!;
+    const tr = this.transition!;
+    const nextRoom = run.advanceZone();
+    const zone = run.currentZoneDef;
+    this.particles.clear();
+    this.combat.reset();
+    this.boss = null;
+    if (!nextRoom.spawnedContent) {
+      populateRoomContent(nextRoom, zone, {
+        unlockedEnemyIds: meta.getUnlockedGateIds(),
+        runMinutes: run.elapsedMinutes(),
+        rarityLuck: player.stats.rarityLuck,
+        runSeed: run.runSeedString,
+      });
+    }
+    const arrival = nextRoom.obstacles.find((o) => o.visual === 'stairsUp') ?? null;
+    const mouth = arrival ? stairsMouthPosition(arrival) : { x: ROOM_WIDTH / 2, y: ROOM_HEIGHT / 2 };
+    const foot = arrival ? stairsFootPosition(arrival) : { x: ROOM_WIDTH / 2, y: ROOM_HEIGHT / 2 + 40 };
+    player.x = mouth.x;
+    player.y = mouth.y;
+    this.camera.snapTo(player.x, player.y);
+    this.transition = {
+      phase: 'in',
+      t: 0,
+      duration: DESCENT_IN_SECONDS,
+      fromX: mouth.x,
+      fromY: mouth.y,
+      toX: foot.x,
+      toY: foot.y,
+      stairs: arrival ?? tr.stairs,
+      sporeTimer: 0,
+    };
+    this.syncCombatState();
+    this.hud?.refreshMinimap(run);
+    this.hud?.showPhaseBanner(zone.name.toUpperCase());
+    const subtitleTimer = window.setTimeout(() => this.hud?.showToast(`<em>${zone.subtitle}</em>`), 1100);
+    this.synergyBannerTimers.push(subtitleTimer);
+    playSfx('zoneArrive');
+    music.setMood(run.zoneIndex);
+  }
+
+  // ------------------------------------------------------------ Sanctum rite
+  private spawnOptions() {
+    const run = this.run!;
+    const player = this.player!;
+    return {
+      unlockedEnemyIds: meta.getUnlockedGateIds(),
+      runMinutes: run.elapsedMinutes(),
+      rarityLuck: player.stats.rarityLuck,
+      runSeed: run.runSeedString,
+    };
+  }
+
+  private beginRite(room: Room): void {
+    if (room.ritualActive || room.cleared) return;
+    room.ritualActive = true;
+    room.ritualWave = 0;
+    room.ritualWaveTimer = 1.1;
+    this.hud?.showPhaseBanner('THE RITE BEGINS');
+    playSfx('ritualCandle');
+    playSfx('doorOpen');
+    this.camera.addShake(4, 0.4);
+    this.syncCombatState();
+  }
+
+  private updateRite(room: Room, dt: number): void {
+    if (!room.ritualActive || room.cleared) return;
+    if (room.enemies.some((e) => e.alive)) return;
+    room.ritualWaveTimer -= dt;
+    if (room.ritualWaveTimer > 0) return;
+    if (room.ritualWave >= SANCTUM_WAVE_COUNT) {
+      this.completeRite(room);
+      return;
+    }
+    const spawned = spawnSanctumWave(room, this.run!.currentZoneDef, room.ritualWave, this.spawnOptions());
+    for (const e of spawned) spawnSporeBurstVfx(this.particles, e.x, e.y, 26);
+    room.ritualWave++;
+    room.ritualWaveTimer = 1.6;
+    for (const idx of [(room.ritualWave - 1) * 2, (room.ritualWave - 1) * 2 + 1]) {
+      if (idx >= SANCTUM_CANDLE_COUNT) continue;
+      const p = sanctumCandlePosition(idx);
+      spawnRitualIgnite(this.particles, p.x, p.y);
+    }
+    playSfx('ritualCandle');
+    this.camera.addShake(3, 0.3);
+    this.hud?.showPhaseBanner(`WAVE ${room.ritualWave}`);
+    this.syncCombatState();
+  }
+
+  private completeRite(room: Room): void {
+    const player = this.player!;
+    const run = this.run!;
+    room.cleared = true;
+    playSfx('ritualComplete');
+    this.hud?.showPhaseBanner('THE RITE IS DONE');
+    for (let i = 0; i < SANCTUM_CANDLE_COUNT; i++) {
+      const p = sanctumCandlePosition(i);
+      spawnRitualIgnite(this.particles, p.x, p.y);
+    }
+    player.heal(player.stats.maxHp * 0.3);
+    spawnHealSparkle(this.particles, player.x, player.y);
+    run.addEmbers(35);
+    this.hud?.showToast('The sanctum yields what it kept: a rare blessing, and 35 Embers.');
+    this.syncCombatState();
+    this.grantRoomClearReward(room);
+  }
+
+  /** The Sunken Warden's shield shatters at half health: a hard stagger, two
+   * bloats crawling out of the flanks, and a faster, dirtier second phase. */
+  private onChampionShieldBreak(enemy: Enemy, spawnQueue: Enemy[]): void {
+    const run = this.run!;
+    playSfx('shieldShatter');
+    this.camera.addShake(14, 0.5);
+    this.hitStop.trigger(0.08, 0.05);
+    spawnStoneChips(this.particles, enemy.x + Math.cos(enemy.facing) * enemy.radius, enemy.y + Math.sin(enemy.facing) * enemy.radius, 26);
+    this.hud?.showPhaseBanner('THE SHIELD SHATTERS');
+    const { hpMult, damageMult } = getDifficultyFactors(run.zoneIndex, run.elapsedMinutes());
+    const def = getEnemyDefinition('blightbloat');
+    for (const side of [-1, 1]) {
+      const x = clamp(enemy.x + side * 260, WALL_THICKNESS + 50, ROOM_WIDTH - WALL_THICKNESS - 50);
+      const y = clamp(enemy.y + side * 40, WALL_THICKNESS + 50, ROOM_HEIGHT - WALL_THICKNESS - 50);
+      const add = new Enemy(def, x, y, hpMult * 0.8, damageMult * 0.8);
+      spawnQueue.push(add);
+      spawnSporeBurstVfx(this.particles, x, y, 30);
+    }
   }
 
   private grantRoomClearReward(room: Room): void {
@@ -638,18 +1087,25 @@ export class Game {
     room.rewardGranted = true;
     const player = this.player!;
     const run = this.run!;
-    const bonusLuck = room.type === 'elite' || room.type === 'heart' ? 0.15 : 0;
+    const bonusLuck = room.type === 'elite' || room.type === 'heart' ? 0.15 : room.type === 'sanctum' ? 0.3 : 0;
+    const minRarity: Rarity = room.type === 'sanctum' ? 'rare' : 'common';
     const luck = clamp(player.stats.rarityLuck + bonusLuck, 0, 1);
     const rng = Random.fromString(`${run.seed}:reward:${room.key}`);
     const owned = new Set(player.upgrades.map((u) => u.def.id));
-    const choices = rollUpgradeChoices(rng, 3, luck, meta.getUnlockedGateIds(), owned);
+    const choices = rollUpgradeChoices(rng, 3, luck, meta.getUnlockedGateIds(), owned, minRarity);
     playSfx('roomCleared');
-    if (choices.length === 0) return;
+    if (choices.length === 0) {
+      if (room.type === 'heart') this.openStairs(room, true);
+      return;
+    }
     this.onboarding?.show('upgrade');
     this.modalScreen = new UpgradeSelectUI(this.uiRoot, choices, {
       onChoose: (def) => {
         this.chooseUpgrade(def);
         this.modalScreen = null;
+        // The way down reveals itself once the blessing is chosen, so the
+        // reveal isn't buried under the upgrade screen.
+        if (room.type === 'heart') this.openStairs(room, true);
       },
     });
   }
@@ -795,6 +1251,25 @@ export class Game {
   private updatePlaying(dt: number): void {
     const run = this.run!;
     const player = this.player!;
+
+    if (this.transition) {
+      // Scripted stairwell walk: no input, no enemies — the world just breathes.
+      this.updateTransition(dt);
+      this.camera.setViewport(this.renderer.width, this.renderer.height);
+      this.updateCameraZoom();
+      this.camera.follow(player.x, player.y, dt);
+      this.camera.update(dt);
+      this.particles.update(dt);
+      this.combat.update(dt);
+      this.ambientTimer -= dt;
+      if (this.ambientTimer <= 0) {
+        this.ambientTimer = 0.12;
+        spawnZoneAmbientParticle(this.particles, run.currentZoneDef, this.camera);
+      }
+      this.updateHud();
+      return;
+    }
+
     const room = run.currentRoom;
 
     this.handlePlayerInput();
@@ -812,7 +1287,11 @@ export class Game {
       bounds: room.bounds,
       onMeleeLand: (enemy) => this.resolveEnemyMelee(enemy),
       onRangedFire: (enemy, angle) => this.combat.spawnEnemyProjectile(enemy, angle),
+      onBashStart: () => playSfx('wardenBash', { throttleMs: 60 }),
     };
+    // Enemies that other enemies spawn mid-loop (the champion's bloats) are
+    // queued and appended afterwards, never pushed into the array being walked.
+    const spawnQueue: Enemy[] = [];
     for (const enemy of room.enemies) {
       if (!enemy.alive) {
         enemy.update(dt);
@@ -821,13 +1300,23 @@ export class Game {
       const prevState = enemy.state;
       updateEnemyAI(enemy, aiCtx);
       if (isAttackTriggerFrame(enemy, prevState)) resolveAttackTrigger(enemy, aiCtx);
+      if (enemy.def.behavior === 'bloat' && enemy.state === 'windup' && prevState !== 'windup') playSfx('bloatSwell', { throttleMs: 120 });
+      if (enemy.pendingBurst) this.combat.detonateBloat(player, enemy);
+      if (enemy.phaseJustChanged) {
+        enemy.phaseJustChanged = false;
+        this.onChampionShieldBreak(enemy, spawnQueue);
+      }
       enemy.update(dt);
       if (!enemy.alive) this.combat.onEnemyDeath(player, enemy);
       resolveAgainstWalls(enemy, walls);
       resolveAgainstObstacles(enemy, room.obstacles);
+      clampInsideRoom(enemy, ROOM_WIDTH, ROOM_HEIGHT, WALL_THICKNESS);
     }
+    for (const spawned of spawnQueue) room.enemies.push(spawned);
     applyEnemySeparation(room.enemies, this.enemyGrid);
     this.combat.resolveContactDamage(player, room.enemies);
+    this.combat.resolveBashHits(player, room.enemies);
+    this.combat.consumePendingClouds(room.enemies);
 
     if (room.type === 'boss' && this.boss) {
       if (this.bossIntroTimer > 0) {
@@ -856,6 +1345,7 @@ export class Game {
     const targets = this.allTargetableEnemies();
     this.combat.updateProjectiles(dt, player, targets, room.obstacles);
     this.combat.resolveProjectileWalls(walls);
+    this.combat.updateHazards(dt, player);
     this.combat.update(dt);
     if (player.wardingSigilActive) this.combat.wardingSigilTick(player, targets, dt);
 
@@ -884,7 +1374,9 @@ export class Game {
       this.showReward(room.chest.rewardDef, 'Chest Reward');
     }
 
-    if (room.type !== 'boss' && room.requiresClearing && !room.rewardGranted) {
+    if (room.type === 'sanctum') {
+      this.updateRite(room, dt);
+    } else if (room.type !== 'boss' && room.requiresClearing && !room.rewardGranted) {
       room.checkCleared();
       if (room.cleared) {
         this.syncCombatState();
@@ -956,6 +1448,18 @@ export class Game {
         maxPhase: 3,
         invulnerable: this.boss.invulnerable,
       };
+    } else if (room.type === 'heart') {
+      // A heart-room champion gets the boss bar: it's the zone's real conclusion.
+      const champion = room.enemies.find((e) => e.def.champion && e.isEliteInstance);
+      if (champion && (champion.alive || champion.deathTimer < 0.5)) {
+        bossInfo = {
+          name: champion.displayName ?? champion.def.name,
+          hpRatio: champion.hp / champion.maxHp,
+          phase: champion.shieldBroken ? 2 : 1,
+          maxPhase: 2,
+          invulnerable: false,
+        };
+      }
     }
 
     this.hud.update({
@@ -979,23 +1483,66 @@ export class Game {
   private registerLights(): void {
     const player = this.player!;
     const room = this.run!.currentRoom;
+    const zone = this.run!.currentZoneDef;
+    const time = performance.now() / 1000;
+    // Each zone sets how deep its dark is; the ruins sit under a lower ceiling.
+    this.lighting.ambientDarkness = zone.darkness ?? 0.4;
+    const fungal = zone.fungalColor ?? Palette.fungus;
     this.lighting.add(player.x, player.y, 260, Palette.ember4, 1);
     for (const o of room.obstacles) {
       if (!o.lit) continue;
-      const color = o.visual === 'crystal' ? Palette.soul : Palette.ember4;
+      if (o.visual === 'stairsDown') {
+        // Sealed, the well is dark. Open, the ruins' cold light climbs out of it.
+        if (!o.activated) continue;
+        const reveal = clamp((time - o.activatedAt) / 1.2, 0, 1);
+        this.lighting.add(o.x + Math.cos(o.facing) * 22, o.y + Math.sin(o.facing) * 22, 150 * reveal, fungal, 0.6 * reveal);
+        continue;
+      }
+      if (o.visual === 'stairsUp') {
+        // The world above, faintly: the one warm light down here that isn't yours.
+        this.lighting.add(o.x + Math.cos(o.facing) * 34, o.y + Math.sin(o.facing) * 34, 120, Palette.ember3, 0.35);
+        continue;
+      }
+      const color = o.visual === 'crystal' ? Palette.soul : o.visual === 'fungus' ? fungal : Palette.ember4;
       // The merchant stall's real-photo sprite reads as a considerably
       // larger, more detailed structure than the old procedural stand-in —
       // its own light needs to be sized to actually bathe that footprint,
       // not just the small candle at its center, so the stall reads as a
       // real lit landmark rather than fading into the room's darkness.
-      const radius = o.visual === 'merchantStall' ? 175 : 120;
-      const intensity = o.visual === 'merchantStall' ? 0.85 : 0.75;
+      const radius = o.visual === 'merchantStall' ? 175 : o.visual === 'fungus' ? 105 : 120;
+      const intensity = o.visual === 'merchantStall' ? 0.85 : o.visual === 'fungus' ? 0.6 : 0.75;
       this.lighting.add(o.x, o.y - 8, radius, color, intensity);
     }
     for (const e of room.enemies) {
-      if (e.alive && (e.def.id === 'flameWisp' || e.def.id === 'emberDevourer' || e.def.id === 'cinderWraith')) {
+      if (!e.alive) continue;
+      if (e.def.id === 'flameWisp' || e.def.id === 'emberDevourer' || e.def.id === 'cinderWraith') {
         this.lighting.add(e.x, e.y, 90, e.def.accentColor, 0.7);
+      } else if (e.def.behavior === 'bloat') {
+        const swell = e.state === 'windup' ? Math.min(1, e.stateTimer / Math.max(0.05, e.def.telegraphTime)) : 0;
+        this.lighting.add(e.x, e.y, 60 + swell * 60, fungal, 0.4 + swell * 0.5);
+      } else if (e.def.champion) {
+        this.lighting.add(e.x, e.y, 110, e.shieldBroken ? fungal : Palette.soul, 0.55);
       }
+    }
+    for (const h of this.combat.hazards) {
+      const fade = Math.min(1, h.timer / 0.3) * Math.min(1, Math.max(0, (h.duration - h.timer) / 0.8));
+      this.lighting.add(h.x, h.y, h.radius * 1.15, Palette.fungusDim, 0.4 * fade);
+    }
+    if (room.type === 'sanctum') {
+      const complete = room.cleared && room.ritualActive;
+      const lit = sanctumLitCandles(room.ritualActive, room.ritualWave, complete);
+      for (let i = 0; i < lit; i++) {
+        const p = sanctumCandlePosition(i);
+        this.lighting.add(p.x, p.y - 6, 75, complete ? Palette.ember4 : fungal, 0.55);
+      }
+      if (complete) this.lighting.add(ROOM_WIDTH / 2, ROOM_HEIGHT / 2, 150, Palette.ember3, 0.4);
+    }
+    if (this.transition) {
+      // The well swallows/gives up the light as the player passes through it.
+      const tr = this.transition;
+      const k = clamp(tr.t / tr.duration, 0, 1);
+      const strength = tr.phase === 'out' ? k : 1 - k;
+      this.lighting.add(tr.stairs.x, tr.stairs.y, 170 * strength + 40, tr.phase === 'out' ? fungal : Palette.ember3, 0.4 * strength);
     }
     if (this.boss && this.boss.alive) {
       this.lighting.add(this.boss.x, this.boss.y, 220, Palette.ember3, 0.55 + this.boss.rageGlow * 0.4);
@@ -1026,6 +1573,11 @@ export class Game {
     this.renderer.clear(zone.palette.wall);
     this.camera.setViewport(this.renderer.width, this.renderer.height);
     drawRoomBackground(ctx, room, zone, this.camera, time, player.x, player.y);
+
+    if (room.type === 'sanctum') {
+      drawSanctumCircle(ctx, this.camera, time, room.ritualActive, room.ritualWave, room.cleared && room.ritualActive);
+    }
+    drawHazards(ctx, this.combat.hazards, this.camera, time);
 
     if (room.type === 'boss' && this.boss && this.boss.phase === 3) {
       for (const meteor of this.boss.meteorTargets) drawMeteorTelegraph(ctx, meteor, this.camera);
@@ -1064,11 +1616,26 @@ export class Game {
         },
       });
     }
+    const transition = this.transition;
     layers.push({
-      y: player.y,
+      // Mid-transition the player sorts just under the stairwell, so the
+      // well's own drawing swallows them going down and releases them coming up.
+      y: transition ? transition.stairs.y - 0.5 : player.y,
       draw: () => {
         const s = this.camera.worldToScreen(player.x, player.y);
-        drawPlayer(ctx, player, s.x, s.y);
+        if (transition) {
+          const k = clamp(transition.t / transition.duration, 0, 1);
+          const presence = transition.phase === 'out' ? 1 - easeInCubic(k) : easeOutCubic(k);
+          const scale = 0.72 + 0.28 * presence;
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, presence);
+          ctx.translate(s.x, s.y);
+          ctx.scale(scale, scale);
+          drawPlayer(ctx, player, 0, 0);
+          ctx.restore();
+        } else {
+          drawPlayer(ctx, player, s.x, s.y);
+        }
       },
     });
     if (room.type === 'boss' && this.boss) {
@@ -1095,6 +1662,18 @@ export class Game {
     this.registerLights();
     this.lighting.render(ctx, this.camera, this.renderer.width, this.renderer.height);
     drawRoomVignette(ctx, this.renderer.width, this.renderer.height, zone.palette.accent);
+
+    if (this.transition) {
+      // Down into black, then back up out of it — held at full dark for the
+      // first stretch of the arrival so the zone switch itself is never seen.
+      const tr = this.transition;
+      const k = clamp(tr.t / tr.duration, 0, 1);
+      const alpha = tr.phase === 'out' ? easeInCubic(k) : 1 - easeOutCubic(clamp((k - 0.15) / 0.85, 0, 1));
+      if (alpha > 0.002) {
+        ctx.fillStyle = `rgba(3,2,6,${alpha.toFixed(3)})`;
+        ctx.fillRect(0, 0, this.renderer.width, this.renderer.height);
+      }
+    }
 
     if (this.debugEnabled) this.renderDebug();
   }
@@ -1130,7 +1709,10 @@ export class Game {
       `Enemies: ${living.length}${nearest ? ` nearest=(${nearest.e.x.toFixed(0)},${nearest.e.y.toFixed(0)},d=${nearest.dist.toFixed(0)})` : ''}`,
       this.boss ? `Boss: hp=${this.boss.hp.toFixed(0)}/${this.boss.maxHp.toFixed(0)} phase=${this.boss.phase} state=${this.boss.bossState} pos=(${this.boss.x.toFixed(0)},${this.boss.y.toFixed(0)})` : '',
       `Particles: ${this.particles.activeCount}`,
-      `Projectiles: ${this.combat.projectiles.length}`,
+      `Projectiles: ${this.combat.projectiles.length} Hazards: ${this.combat.hazards.length}`,
+      `Obstacles: ${room.obstacles.map((o) => o.visual + (o.activated ? '*' : '')).join(',')}`,
+      room.type === 'sanctum' ? `Rite: active=${room.ritualActive} wave=${room.ritualWave}/${SANCTUM_WAVE_COUNT} cleared=${room.cleared}` : '',
+      this.transition ? `Transition: ${this.transition.phase} ${(this.transition.t / this.transition.duration).toFixed(2)}` : '',
       `State: ${this.stateMachine.current}`,
     ].join('\n');
   }

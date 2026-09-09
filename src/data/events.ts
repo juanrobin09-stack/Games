@@ -92,6 +92,63 @@ export const WORLD_EVENTS: WorldEventDefinition[] = [
     ],
   },
   {
+    id: 'wardensOath',
+    zoneId: 'hollowRuins',
+    title: "The Warden's Oath",
+    description: 'A stone warden kneels before a cracked shield, its lips still shaped around the last word of an oath. "Hold the line."',
+    options: [
+      {
+        id: 'take-oath',
+        label: 'Take Up the Oath',
+        detail: 'Gain a Warden’s ward: one extra shield charge.',
+        apply: 'gainShieldCharge',
+        value: 1,
+      },
+      {
+        id: 'pry-shield',
+        label: 'Pry the Shield Loose',
+        detail: 'Gain 55 Embers. The statue’s grip cracks your ribs on the way out: lose 15% of your HP.',
+        apply: 'loseHpForEmbers',
+        value: 55,
+      },
+      {
+        id: 'leave-warden',
+        label: 'Let It Kneel',
+        detail: 'Some oaths are not yours to carry.',
+        apply: 'nothing',
+      },
+    ],
+  },
+  {
+    id: 'sporeMother',
+    zoneId: 'hollowRuins',
+    title: 'The Spore Mother',
+    description: 'A pulsing fungal mass fills the alcove, breathing slowly. Whatever it grew from is still in there, and it is not entirely dead.',
+    options: [
+      {
+        id: 'breathe-deep',
+        label: 'Breathe Deep',
+        detail: 'The spores take root in you. Gain +15 max HP for this run, and heal 15.',
+        apply: 'gainMaxHp',
+        value: 15,
+      },
+      {
+        id: 'cut-it-open',
+        label: 'Cut It Open',
+        detail: 'Lose 20% of your current HP to the burst, and take what it was growing around: a rare-or-better upgrade.',
+        apply: 'loseHpForRareUpgrade',
+        value: 0.2,
+      },
+      {
+        id: 'leave-mother',
+        label: 'Back Away',
+        detail: 'Let it breathe. Small Ember gain from the floor.',
+        apply: 'gainEmbers',
+        value: 12,
+      },
+    ],
+  },
+  {
     id: 'emberWell',
     title: 'The Ember Well',
     description: 'A well sunk deep into the dark, glowing faintly. Embers dropped here do not return — but the well remembers.',

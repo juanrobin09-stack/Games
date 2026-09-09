@@ -126,7 +126,18 @@ export type SfxId =
   | 'shieldBreak'
   | 'shieldUp'
   | 'interact'
-  | 'roomCleared';
+  | 'roomCleared'
+  | 'stairsDescend'
+  | 'zoneArrive'
+  | 'sealBreak'
+  | 'sporeBurst'
+  | 'sporeHiss'
+  | 'bloatSwell'
+  | 'shieldClang'
+  | 'wardenBash'
+  | 'shieldShatter'
+  | 'ritualCandle'
+  | 'ritualComplete';
 
 const players: Record<SfxId, () => void> = {
   attackSwing: () => {
@@ -349,6 +360,93 @@ const players: Record<SfxId, () => void> = {
     if (!d) return;
     tone(d, { freq: 440, type: 'sine', duration: 0.2, volume: 0.1 });
     tone(d, { freq: 660, type: 'sine', duration: 0.3, volume: 0.12, delay: 0.08 });
+  },
+
+  // ---- Hollow Ruins / stairwell
+  stairsDescend: () => {
+    // Four stone footfalls, each a little lower and further away, under a long cold draft.
+    const d = audio.sfxDestination;
+    if (!d) return;
+    [0, 0.28, 0.56, 0.84].forEach((delay, i) => {
+      noise(d, { duration: 0.09, filterType: 'bandpass', freq: 720 - i * 90, freqEnd: 280, volume: 0.17 - i * 0.03, Q: 1.4, delay });
+      sub(d, { freq: 118 - i * 12, freqEnd: 58, duration: 0.12, volume: 0.15 - i * 0.025, delay });
+    });
+    noise(d, { duration: 1.7, filterType: 'lowpass', freq: 420, freqEnd: 130, volume: 0.12, attack: 0.35 });
+  },
+  zoneArrive: () => {
+    // Deep reverberant boom of arriving somewhere vast, then a thin cold hiss.
+    const d = audio.sfxDestination;
+    if (!d) return;
+    sub(d, { freq: 70, freqEnd: 32, duration: 1.5, volume: 0.34 });
+    tone(d, { freq: 140, freqEnd: 55, type: 'triangle', duration: 1.2, volume: 0.11, delay: 0.02 });
+    noise(d, { duration: 1.9, filterType: 'highpass', freq: 2600, freqEnd: 900, volume: 0.07, attack: 0.5 });
+  },
+  sealBreak: () => {
+    // The stairwell's stone lid grinding aside.
+    const d = audio.sfxDestination;
+    if (!d) return;
+    noise(d, { duration: 0.95, filterType: 'bandpass', freq: 240, freqEnd: 430, volume: 0.21, Q: 2, attack: 0.05 });
+    sub(d, { freq: 55, freqEnd: 38, duration: 0.85, volume: 0.22 });
+    tone(d, { freq: 1200, freqEnd: 1900, type: 'sine', duration: 0.5, volume: 0.05, delay: 0.55 });
+  },
+  sporeBurst: () => {
+    // Wet pop, then the hiss of spores settling.
+    const d = audio.sfxDestination;
+    if (!d) return;
+    tone(d, { freq: 320, freqEnd: 90, type: 'sine', duration: 0.16, volume: 0.22 });
+    noise(d, { duration: 0.12, filterType: 'lowpass', freq: 1500, freqEnd: 300, volume: 0.22 });
+    noise(d, { duration: 0.7, filterType: 'bandpass', freq: 3200, freqEnd: 1800, volume: 0.09, Q: 0.8, attack: 0.05 });
+  },
+  sporeHiss: () => {
+    const d = audio.sfxDestination;
+    if (!d) return;
+    noise(d, { duration: 0.22, filterType: 'bandpass', freq: 2600, freqEnd: 1400, volume: 0.12, Q: 1.1 });
+    tone(d, { freq: 220, freqEnd: 160, type: 'triangle', duration: 0.12, volume: 0.06 });
+  },
+  bloatSwell: () => {
+    // A rising, straining tone under the swell — the "get away" cue.
+    const d = audio.sfxDestination;
+    if (!d) return;
+    tone(d, { freq: 90, freqEnd: 260, type: 'sine', duration: 0.8, volume: 0.12, attack: 0.1 });
+    noise(d, { duration: 0.8, filterType: 'bandpass', freq: 600, freqEnd: 1600, volume: 0.06, Q: 1.5, attack: 0.2 });
+  },
+  shieldClang: () => {
+    const d = audio.sfxDestination;
+    if (!d) return;
+    tone(d, { freq: 1500, freqEnd: 900, type: 'square', duration: 0.07, volume: 0.09 });
+    noise(d, { duration: 0.09, filterType: 'bandpass', freq: 2800, freqEnd: 1200, volume: 0.16, Q: 2.2 });
+    tone(d, { freq: 420, freqEnd: 300, type: 'triangle', duration: 0.12, volume: 0.08 });
+  },
+  wardenBash: () => {
+    const d = audio.sfxDestination;
+    if (!d) return;
+    noise(d, { duration: 0.22, filterType: 'lowpass', freq: 1800, freqEnd: 400, volume: 0.2 });
+    sub(d, { freq: 110, freqEnd: 45, duration: 0.24, volume: 0.24 });
+  },
+  shieldShatter: () => {
+    const d = audio.sfxDestination;
+    if (!d) return;
+    noise(d, { duration: 0.5, filterType: 'highpass', freq: 1800, freqEnd: 500, volume: 0.28, Q: 0.8 });
+    tone(d, { freq: 900, freqEnd: 180, type: 'square', duration: 0.3, volume: 0.1 });
+    sub(d, { freq: 90, freqEnd: 35, duration: 0.6, volume: 0.28 });
+    [0.08, 0.16, 0.27].forEach((delay) => {
+      noise(d, { duration: 0.06, filterType: 'bandpass', freq: 1400, volume: 0.1, Q: 2, delay });
+    });
+  },
+  ritualCandle: () => {
+    const d = audio.sfxDestination;
+    if (!d) return;
+    noise(d, { duration: 0.25, filterType: 'bandpass', freq: 1200, freqEnd: 2600, volume: 0.1, Q: 1 });
+    tone(d, { freq: 660, type: 'sine', duration: 0.6, volume: 0.09, attack: 0.02 });
+    tone(d, { freq: 990, type: 'sine', duration: 0.7, volume: 0.05, delay: 0.05 });
+  },
+  ritualComplete: () => {
+    const d = audio.sfxDestination;
+    if (!d) return;
+    [330, 440, 554.37, 659.25].forEach((freq, i) => {
+      tone(d, { freq, type: 'triangle', duration: 0.9, volume: 0.12, delay: i * 0.12 });
+    });
+    sub(d, { freq: 82, freqEnd: 60, duration: 1.2, volume: 0.18 });
   },
 };
 

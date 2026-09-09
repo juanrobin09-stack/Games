@@ -1,5 +1,5 @@
 import { nextEntityId } from '@/entities/EntityId';
-import { createBaseStats, type StatBlock, type SynergyTag, type UpgradeDefinition } from '@/data/types';
+import { createBaseStats, type StatBlock, type StatModifier, type SynergyTag, type UpgradeDefinition } from '@/data/types';
 import { applyModifiers } from '@/data/stats';
 import { clamp } from '@/utils/MathUtils';
 import { getWeaponDefinition } from '@/data/weapons';
@@ -63,6 +63,9 @@ export class Player {
   stats: StatBlock = createBaseStats();
   upgrades: OwnedUpgrade[] = [];
   activeSynergies = new Set<string>();
+  /** Run-scoped stat bonuses that aren't upgrades (world events like the Spore
+   * Mother). Folded into every stat recompute alongside the owned upgrades. */
+  bonusModifiers: StatModifier[] = [];
 
   runTime = 0;
   wardingSigilActive: { x: number; y: number; timer: number; duration: number } | null = null;
@@ -78,8 +81,17 @@ export class Player {
     const allModifiers = this.upgrades.flatMap((u) =>
       Array.from({ length: u.stacks }, () => u.def.modifiers).flat()
     );
-    this.stats = applyModifiers(this.baseStats, allModifiers);
+    this.stats = applyModifiers(this.baseStats, [...allModifiers, ...this.bonusModifiers]);
     this.recomputeSynergies();
+  }
+
+  /** Grants a run-long stat bonus outside the upgrade system, keeping current HP
+   * proportional (so a max-HP bonus never leaves the bar looking emptier). */
+  addBonusModifier(mod: StatModifier): void {
+    const hpRatio = this.hp / Math.max(1, this.stats.maxHp);
+    this.bonusModifiers.push(mod);
+    this.recomputeStats();
+    this.hp = Math.min(this.stats.maxHp, Math.max(this.hp, this.stats.maxHp * hpRatio));
   }
 
   private recomputeSynergies(): void {

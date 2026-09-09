@@ -14,9 +14,21 @@ const CHORDS: Chord[] = [
   { root: 130.81, fifth: 196.0 },
   { root: 98.0, fifth: 146.83 },
 ];
+/** The Hollow Ruins' set: a semitone down, and one chord carries a lowered
+ * fifth (a tritone) so the drone never quite settles — colder, unresolved. */
+const RUINS_CHORDS: Chord[] = [
+  { root: 103.83, fifth: 155.56 },
+  { root: 82.41, fifth: 116.54 },
+  { root: 116.54, fifth: 174.61 },
+  { root: 92.5, fifth: 138.59 },
+];
+const CHORD_SETS: Chord[][] = [CHORDS, RUINS_CHORDS, CHORDS];
 const CHORD_DURATION = 7;
 
 const PLUCK_SCALE = [220.0, 246.94, 261.63, 293.66, 329.63, 349.23, 392.0, 440.0];
+/** G# natural minor for the ruins — same sparse plucks, darker ground. */
+const RUINS_PLUCK_SCALE = [207.65, 233.08, 246.94, 277.18, 311.13, 329.63, 369.99, 415.3];
+const PLUCK_SCALES: number[][] = [PLUCK_SCALE, RUINS_PLUCK_SCALE, PLUCK_SCALE];
 
 /**
  * Fully procedural, self-looping ambient score. A continuous detuned drone
@@ -33,12 +45,16 @@ export class MusicEngine {
   private droneFilter: BiquadFilterNode | null = null;
   private droneGain: GainNode | null = null;
   private tensionGain: GainNode | null = null;
+  private ambienceGain: GainNode | null = null;
 
   private intensity: MusicIntensity = 0;
+  /** Which zone's chord set / pluck scale / ambience is playing (0 = Ashen Woods). */
+  private mood = 0;
   private chordTimer = 0;
   private chordIndex = 0;
   private pluckTimer = 2;
   private pulseTimer = 0;
+  private dripTimer = 3;
   private lfoPhase = 0;
 
   start(): void {
@@ -89,20 +105,46 @@ export class MusicEngine {
     this.tensionGain = ctx.createGain();
     this.tensionGain.gain.value = 0;
     this.tensionGain.connect(dest);
+
+    // Zone ambience that plays regardless of combat intensity (the ruins' water drips).
+    this.ambienceGain = ctx.createGain();
+    this.ambienceGain.gain.value = 0.3;
+    this.ambienceGain.connect(dest);
   }
 
   setIntensity(level: MusicIntensity): void {
     this.intensity = level;
   }
 
+  /** Switches the score to a zone's harmonic set. The drone glides to the new
+   * set's current chord over a couple of seconds rather than cutting. */
+  setMood(zoneIndex: number): void {
+    const next = Math.max(0, Math.min(CHORD_SETS.length - 1, zoneIndex));
+    if (next === this.mood) return;
+    this.mood = next;
+    this.chordIndex = 0;
+    this.chordTimer = 0;
+    const ctx = audio.context;
+    if (!ctx || !this.started) return;
+    const chord = CHORD_SETS[this.mood][0];
+    const t = ctx.currentTime;
+    this.droneOscA?.frequency.setTargetAtTime(chord.root, t, 1.6);
+    this.droneOscB?.frequency.setTargetAtTime(chord.fifth, t, 1.6);
+    this.droneSub?.frequency.setTargetAtTime(chord.root / 2, t, 1.6);
+  }
+
   update(dt: number): void {
     if (!this.started || !audio.context) return;
     const ctx = audio.context;
     const t = ctx.currentTime;
+    const chords = CHORD_SETS[this.mood];
+    const scale = PLUCK_SCALES[this.mood];
 
     this.lfoPhase += dt;
     if (this.droneFilter) {
-      const targetCut = 700 + this.intensity * 350 + Math.sin(this.lfoPhase * 0.15) * 180;
+      // The ruins sit under a lower ceiling: the drone is filtered darker there.
+      const moodCut = this.mood === 1 ? -140 : 0;
+      const targetCut = 700 + moodCut + this.intensity * 350 + Math.sin(this.lfoPhase * 0.15) * 180;
       this.droneFilter.frequency.setTargetAtTime(targetCut, t, 0.6);
     }
     if (this.tensionGain) {
@@ -113,19 +155,33 @@ export class MusicEngine {
     this.chordTimer += dt;
     if (this.chordTimer >= CHORD_DURATION) {
       this.chordTimer = 0;
-      this.chordIndex = (this.chordIndex + 1) % CHORDS.length;
-      const chord = CHORDS[this.chordIndex];
+      this.chordIndex = (this.chordIndex + 1) % chords.length;
+      const chord = chords[this.chordIndex];
       this.droneOscA?.frequency.setTargetAtTime(chord.root, t, 2.2);
       this.droneOscB?.frequency.setTargetAtTime(chord.fifth, t, 2.2);
       this.droneSub?.frequency.setTargetAtTime(chord.root / 2, t, 2.2);
     }
 
+    if (this.mood === 1 && this.ambienceGain) {
+      // Water dripping somewhere in the dark: a tiny bright blip at irregular intervals.
+      this.dripTimer -= dt;
+      if (this.dripTimer <= 0) {
+        this.dripTimer = 2.2 + Math.random() * 4.5;
+        const freq = 1500 + Math.random() * 900;
+        tone(this.ambienceGain, { freq, freqEnd: freq * 0.7, type: 'sine', duration: 0.09, attack: 0.003, volume: 0.35 });
+        if (Math.random() < 0.4) {
+          tone(this.ambienceGain, { freq: freq * 1.18, freqEnd: freq * 0.8, type: 'sine', duration: 0.07, attack: 0.003, volume: 0.2, delay: 0.16 + Math.random() * 0.2 });
+        }
+      }
+    }
+
     this.pluckTimer -= dt;
     if (this.pluckTimer <= 0) {
       const baseInterval = this.intensity === 2 ? 1.6 : this.intensity === 1 ? 2.4 : 3.6;
-      this.pluckTimer = baseInterval + Math.random() * 2.5;
+      // Sparser in the ruins — more silence between notes, more room for the drips.
+      this.pluckTimer = baseInterval * (this.mood === 1 ? 1.35 : 1) + Math.random() * 2.5;
       if (Math.random() < 0.85 && this.tensionGain) {
-        const note = PLUCK_SCALE[Math.floor(Math.random() * PLUCK_SCALE.length)];
+        const note = scale[Math.floor(Math.random() * scale.length)];
         tone(this.tensionGain, {
           freq: note,
           type: 'sine',
@@ -167,6 +223,7 @@ export class MusicEngine {
     });
     this.droneGain?.gain.setTargetAtTime(0, t, 0.2);
     this.tensionGain?.gain.setTargetAtTime(0, t, 0.2);
+    this.ambienceGain?.gain.setTargetAtTime(0, t, 0.2);
     this.started = false;
   }
 }

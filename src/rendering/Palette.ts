@@ -27,6 +27,12 @@ export const Palette = {
   toxic: '#7dd35a',
   shadow: '#4a3d63',
 
+  // The Hollow Ruins' living light — cold fungal bioluminescence, the deliberate
+  // opposite of the Warden's warm ember glow.
+  fungus: '#6fe3c4',
+  fungusDim: '#2f6e5c',
+  fungusBright: '#b9f5e2',
+
   textWarm: '#ece3d2',
 } as const;
 

@@ -36,7 +36,7 @@ export function computeLevels(source: HTMLImageElement, region: Rect, percentile
   const canvas = document.createElement('canvas');
   canvas.width = region.w;
   canvas.height = region.h;
-  const ctx = canvas.getContext('2d')!;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   ctx.drawImage(source, region.x, region.y, region.w, region.h, 0, 0, region.w, region.h);
   const data = ctx.getImageData(0, 0, region.w, region.h).data;
 

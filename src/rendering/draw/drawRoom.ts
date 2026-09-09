@@ -237,20 +237,28 @@ export function spawnZoneAmbientParticle(ps: ParticleSystem, zone: ZoneDefinitio
         shape: 'circle',
       });
       break;
-    case 'spores':
-      ps.spawn({
-        x: worldX,
-        y: worldY,
-        vx: (Math.random() - 0.5) * 10,
-        vy: -8 - Math.random() * 8,
-        size: 1.6 + Math.random() * 1.8,
-        color: zone.palette.accent,
-        alpha: 0.5,
-        life: 3.5 + Math.random() * 2,
-        glow: true,
-        shape: 'circle',
-      });
+    case 'spores': {
+      // Denser and slower than the woods' ash, and in the ruins' two lights
+      // (fungal teal, spirit violet) rather than one flat colour: the air
+      // itself is alive down here.
+      const colors = zone.sporeColors ?? [zone.palette.accent];
+      for (let i = 0; i < 2; i++) {
+        ps.spawn({
+          x: worldX + (Math.random() - 0.5) * 120,
+          y: worldY + (Math.random() - 0.5) * 80,
+          vx: (Math.random() - 0.5) * 9,
+          vy: -6 - Math.random() * 8,
+          size: 1.4 + Math.random() * 2,
+          endSize: 0.8,
+          color: colors[Math.floor(Math.random() * colors.length)],
+          alpha: 0.45 + Math.random() * 0.2,
+          life: 4 + Math.random() * 2.5,
+          glow: true,
+          shape: 'circle',
+        });
+      }
       break;
+    }
     case 'embers':
     default:
       ps.spawn({
