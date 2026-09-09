@@ -981,7 +981,16 @@ export class Game {
     const room = this.run!.currentRoom;
     this.lighting.add(player.x, player.y, 260, Palette.ember4, 1);
     for (const o of room.obstacles) {
-      if (o.lit) this.lighting.add(o.x, o.y - 8, 120, o.visual === 'crystal' ? Palette.soul : Palette.ember4, 0.75);
+      if (!o.lit) continue;
+      const color = o.visual === 'crystal' ? Palette.soul : Palette.ember4;
+      // The merchant stall's real-photo sprite reads as a considerably
+      // larger, more detailed structure than the old procedural stand-in —
+      // its own light needs to be sized to actually bathe that footprint,
+      // not just the small candle at its center, so the stall reads as a
+      // real lit landmark rather than fading into the room's darkness.
+      const radius = o.visual === 'merchantStall' ? 175 : 120;
+      const intensity = o.visual === 'merchantStall' ? 0.85 : 0.75;
+      this.lighting.add(o.x, o.y - 8, radius, color, intensity);
     }
     for (const e of room.enemies) {
       if (e.alive && (e.def.id === 'flameWisp' || e.def.id === 'emberDevourer' || e.def.id === 'cinderWraith')) {

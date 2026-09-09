@@ -3,6 +3,7 @@ import type { ZoneDefinition } from '@/data/types';
 import { Random } from '@/utils/Random';
 import { mixColor } from '@/rendering/Palette';
 import { paintWallSwatch, paintJambSwatch, tintSwatch } from '@/rendering/StoneAsset';
+import { paintFloorSwatch } from '@/rendering/FloorAsset';
 
 /**
  * Bakes the fussy, expensive-to-redraw part of a room's presentation — individual
@@ -19,7 +20,9 @@ import { paintWallSwatch, paintJambSwatch, tintSwatch } from '@/rendering/StoneA
  */
 
 const SUPERSAMPLE = 2;
-const MAX_CACHE_ENTRIES = 32;
+// 4 wall strips + 1 floor per room now share this cache, so the limit is
+// bumped from the original 32 (4/room) to keep roughly the same room headroom.
+const MAX_CACHE_ENTRIES = 40;
 
 type WallOrientation = 'horizontal' | 'vertical';
 
@@ -296,4 +299,88 @@ export function getWallStrip(
   }
   cache.set(key, texture);
   return texture;
+}
+
+/**
+ * Real flagstone, not a flat fill with ruled grid lines: the room's floor is
+ * tiled, once per room, from jittered/irregularly-sized "slabs" that each
+ * resample a random window of the reference floor photo (FloorAsset.ts) —
+ * mirrored, tinted to the zone, and lightly re-shaded per slab so neighbors
+ * read as individually-set stone rather than one continuous sampled sheet.
+ * Falls back to a flat jittered fill per slab if the asset isn't loaded yet.
+ */
+function bakeFloor(canvas: HTMLCanvasElement, zone: ZoneDefinition, rng: Random): void {
+  const w = ROOM_WIDTH * SUPERSAMPLE;
+  const h = ROOM_HEIGHT * SUPERSAMPLE;
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d')!;
+
+  // Deep base fill — reads through the slim gap between slabs as mortar/
+  // shadow, and is the whole floor's color if the asset isn't loaded yet.
+  ctx.fillStyle = mixColor(zone.palette.floor, '#000000', 0.4);
+  ctx.fillRect(0, 0, w, h);
+
+  const targetCell = 165 * SUPERSAMPLE;
+  const cols = Math.max(1, Math.round(w / targetCell));
+  const rows = Math.max(1, Math.round(h / targetCell));
+  const cellW = w / cols;
+  const cellH = h / rows;
+  const gap = 3 * SUPERSAMPLE;
+
+  for (let cy = 0; cy < rows; cy++) {
+    // Alternating rows offset by half a cell (running-bond, like real coursed
+    // pavement) — without this, even heavily-jittered slabs still leave every
+    // row's seams aligned into straight vertical bands that read as a grid.
+    const rowOffset = (cy % 2) * cellW * 0.5;
+    for (let cx = -1; cx <= cols; cx++) {
+      const jitterW = cellW * rng.range(0.85, 1.05);
+      const jitterH = cellH * rng.range(0.85, 1.05);
+      const dx = cx * cellW + rowOffset + (cellW - jitterW) / 2 + (rng.next() - 0.5) * cellW * 0.22 + gap;
+      const dy = cy * cellH + (cellH - jitterH) / 2 + (rng.next() - 0.5) * cellH * 0.22 + gap;
+      const dw = Math.max(4, jitterW - gap * 2);
+      const dh = Math.max(4, jitterH - gap * 2);
+      if (dx + dw < 0 || dx > w || dy + dh < 0 || dy > h) continue;
+
+      const painted = paintFloorSwatch(ctx, dx, dy, dw, dh, rng.next(), rng.next(), rng.bool(0.5));
+      if (painted) {
+        tintSwatch(ctx, dx, dy, dw, dh, zone.palette.floor, 0.32);
+        // Faint flat shading per slab — real uneven flagstone rarely sits at
+        // exactly the same tone as its neighbor.
+        ctx.fillStyle = rng.bool(0.5)
+          ? `rgba(255,255,255,${rng.range(0.02, 0.06)})`
+          : `rgba(0,0,0,${rng.range(0.04, 0.1)})`;
+        ctx.fillRect(dx, dy, dw, dh);
+      } else {
+        ctx.fillStyle = jitterColor(zone.palette.floorAccent, rng, 0.12);
+        ctx.fillRect(dx, dy, dw, dh);
+      }
+    }
+  }
+
+  // Hairline cracks in the same style as the walls, so floor and masonry
+  // read as one continuous, ancient, worn material.
+  drawCracks(ctx, w, h, rng, rng.int(5, 8));
+}
+
+function floorCacheKey(zoneId: string, roomKey: string): string {
+  return `floor:${zoneId}:${roomKey}`;
+}
+
+/** Returns the cached (or freshly baked) floor texture for one room. */
+export function getFloorTexture(roomKey: string, zone: ZoneDefinition): HTMLCanvasElement {
+  const key = floorCacheKey(zone.id, roomKey);
+  const existing = cache.get(key);
+  if (existing) return existing;
+
+  const rng = Random.fromString(`floortex:${zone.id}:${roomKey}`);
+  const canvas = document.createElement('canvas');
+  bakeFloor(canvas, zone, rng);
+
+  if (cache.size >= MAX_CACHE_ENTRIES) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+  cache.set(key, canvas);
+  return canvas;
 }

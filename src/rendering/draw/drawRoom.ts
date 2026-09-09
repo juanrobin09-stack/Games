@@ -5,7 +5,7 @@ import type { Camera } from '@/core/Camera';
 import type { ParticleSystem } from '@/rendering/ParticleSystem';
 import { hashJitter } from '@/rendering/DrawUtils';
 import { rgba, mixColor, Palette } from '@/rendering/Palette';
-import { getWallStrip } from '@/rendering/RoomTexture';
+import { getWallStrip, getFloorTexture } from '@/rendering/RoomTexture';
 import { paintCornerSwatch, tintSwatch } from '@/rendering/StoneAsset';
 
 const DIRS = ['N', 'S', 'E', 'W'] as const;
@@ -111,45 +111,16 @@ export function drawRoomBackground(
   const scale = camera.zoom;
 
   ctx.save();
-  ctx.fillStyle = zone.palette.floor;
-  ctx.fillRect(topLeft.x, topLeft.y, ROOM_WIDTH * scale, ROOM_HEIGHT * scale);
 
   const seed = room.gridX * 7919 + room.gridY * 104729;
 
-  // Large flagstone seams — a coarser grid than the wall's masonry, giving the
-  // floor its own distinct scale of texture rather than reading as one flat plane.
-  ctx.strokeStyle = rgba(zone.palette.wall, 0.35);
-  ctx.lineWidth = Math.max(1, 1.4 * scale);
-  const cols = 6;
-  const rows = 4;
-  for (let c = 1; c < cols; c++) {
-    const x = topLeft.x + (c / cols) * ROOM_WIDTH * scale + hashJitter(seed, c + 200) * 14 * scale;
-    ctx.beginPath();
-    ctx.moveTo(x, topLeft.y);
-    ctx.lineTo(x, topLeft.y + ROOM_HEIGHT * scale);
-    ctx.stroke();
-  }
-  for (let r = 1; r < rows; r++) {
-    const y = topLeft.y + (r / rows) * ROOM_HEIGHT * scale + hashJitter(seed, r + 260) * 14 * scale;
-    ctx.beginPath();
-    ctx.moveTo(topLeft.x, y);
-    ctx.lineTo(topLeft.x + ROOM_WIDTH * scale, y);
-    ctx.stroke();
-  }
-
-  ctx.fillStyle = zone.palette.floorAccent;
-  for (let i = 0; i < 16; i++) {
-    const jx = hashJitter(seed, i * 2);
-    const jy = hashJitter(seed, i * 2 + 1);
-    const x = topLeft.x + jx * ROOM_WIDTH * scale;
-    const y = topLeft.y + jy * ROOM_HEIGHT * scale;
-    const r = (14 + hashJitter(seed, i + 50) * 26) * scale;
-    ctx.globalAlpha = 0.12 + hashJitter(seed, i + 90) * 0.1;
-    ctx.beginPath();
-    ctx.ellipse(x, y, r, r * 0.7, hashJitter(seed, i) * Math.PI, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.globalAlpha = 1;
+  // Real flagstone, not a flat fill with a ruled grid: hand-picked crops of
+  // the reference floor photo are tiled per room as jittered, irregularly-
+  // sized slabs — baked once and cached (RoomTexture.ts's getFloorTexture) —
+  // so the floor carries actual stone grain and imperfection rather than a
+  // uniform, artificial-looking grid.
+  const floorTex = getFloorTexture(room.key, zone);
+  ctx.drawImage(floorTex, topLeft.x, topLeft.y, ROOM_WIDTH * scale, ROOM_HEIGHT * scale);
 
   // Sparse debris hugging the walls — small chips knocked loose from the masonry.
   const margin = WALL_THICKNESS + 60;
