@@ -1,17 +1,15 @@
-import floorShopUrl from '@/assets/textures/floor-and-shop.png';
+import dungeonRoomUrl from '@/assets/textures/dungeon-room-ref.png';
 import { computeLevels, applyLevels, type Levels } from '@/rendering/ImageLevels';
 
 /**
- * The second real photographic asset: one reference image whose left half is
- * a top-down flagstone floor and whose right half is a sheet of individual
- * shop props (see ShopAsset.ts, which reuses this same loaded image rather
- * than fetching it twice). Only the floor half is sampled here, from two
- * separate bands (top and bottom of the panel) — using two spatially
- * distinct sources, on top of the per-slab position/mirror jitter already
- * applied in RoomTexture.ts's bakeFloor, is what keeps a room's floor from
- * reading as the same handful of recognizable chunks tiled in a visible
- * pattern, which a single narrow band can't avoid no matter how much you
- * jitter within it.
+ * The floor's real photographic asset: a full top-down dungeon room render
+ * (the player, the door and the torch's own light pool in this photo are
+ * exactly what the floor renderer must NOT copy — only the stone material
+ * itself). Two bands are sampled, both from well outside the photo's own
+ * torch hotspot (roughly x:520-970, y:300-480) so a baked-in "this exact
+ * spot is lit" doesn't get tiled across every floor in the game and fight
+ * the actual dynamic light — everywhere else in this particular photo is
+ * lit evenly enough to read as neutral, undirected ambient stone.
  */
 
 interface FloorRegion {
@@ -22,8 +20,8 @@ interface FloorRegion {
 }
 
 const FLOOR_BANDS: FloorRegion[] = [
-  { x: 15, y: 520, w: 845, h: 340 },
-  { x: 15, y: 20, w: 845, h: 250 },
+  { x: 170, y: 80, w: 340, h: 740 },
+  { x: 1010, y: 80, w: 600, h: 740 },
 ];
 
 let img: HTMLImageElement | null = null;
@@ -42,14 +40,12 @@ export function preloadFloorAsset(): Promise<void> {
       resolve();
     };
     el.onerror = () => resolve();
-    el.src = floorShopUrl;
+    el.src = dungeonRoomUrl;
   });
   return loadPromise;
 }
 
-/** Raw accessor to the loaded image (or null before it's ready) — reused by
- * ShopAsset.ts so the second half of the same sheet doesn't load twice. */
-export function floorAssetImage(): HTMLImageElement | null {
+function floorImage(): HTMLImageElement | null {
   return ready ? img : null;
 }
 
@@ -65,12 +61,15 @@ function regionLevels(source: HTMLImageElement, region: FloorRegion): Levels {
 }
 
 /** Paints a randomized window of one of the two floor bands (mirrored on
- * either/both axes) into the destination rect, clipped to it. `bandPick`
- * (0..1) chooses which band; the crop is deliberately smaller relative to
- * the destination than a naive fill would use, so there's real room to
- * reposition it within the band — a crop nearly as big as the band itself
- * barely moves between draws no matter how the jitter is randomized.
- * Returns false (paints nothing) if the source image isn't loaded yet. */
+ * either/both axes) into the destination rect. Unlike the wall swatches,
+ * this does NOT clip to (dx,dy,dw,dh) itself — RoomTexture.ts's organic
+ * slab shapes establish their own clip path before calling this, so the
+ * photo fill follows that silhouette rather than a plain rectangle.
+ * `bandPick` (0..1) chooses which band; the crop is deliberately smaller
+ * relative to the destination than a naive fill would use, so there's real
+ * room to reposition it within the band — a crop nearly as big as the band
+ * itself barely moves between draws no matter how the jitter is
+ * randomized. Returns false (paints nothing) if the source isn't loaded. */
 export function paintFloorSwatch(
   ctx: CanvasRenderingContext2D,
   dx: number,
@@ -83,26 +82,39 @@ export function paintFloorSwatch(
   flipH: boolean,
   flipV: boolean
 ): boolean {
-  const source = floorAssetImage();
+  const source = floorImage();
   if (!source) return false;
   const region = FLOOR_BANDS[bandPick < 0.5 ? 0 : 1];
-  const sw = Math.min(region.w, Math.max(dw * 0.55, 90));
-  const sh = Math.min(region.h, Math.max(dh * 0.55, 90));
+  const sw = Math.min(region.w, Math.max(dw * 0.5, 80));
+  const sh = Math.min(region.h, Math.max(dh * 0.5, 80));
   const sx = region.x + jitterX * Math.max(0, region.w - sw);
   const sy = region.y + jitterY * Math.max(0, region.h - sh);
 
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(dx, dy, dw, dh);
-  ctx.clip();
-  ctx.translate(dx + dw / 2, dy + dh / 2);
-  ctx.scale(flipH ? -1 : 1, flipV ? -1 : 1);
-  ctx.drawImage(source, sx, sy, sw, sh, -dw / 2, -dh / 2, dw, dh);
-  ctx.restore();
+  // The levels stretch below needs putImageData, which writes raw pixels
+  // straight into the canvas bitmap ignoring whatever clip is active — fine
+  // against a plain rect clip (the old flat-rect slabs), but against an
+  // organic blob clip it would paint a visible rectangular halo right
+  // through the silhouette. So the crop is drawn and corrected on a small
+  // unclipped scratch canvas first, and only the finished result is
+  // composited into the real destination via drawImage, which — unlike
+  // putImageData — does respect the caller's clip path.
+  const scratchW = Math.max(1, Math.round(dw));
+  const scratchH = Math.max(1, Math.round(dh));
+  const scratch = document.createElement('canvas');
+  scratch.width = scratchW;
+  scratch.height = scratchH;
+  const sctx = scratch.getContext('2d')!;
+  sctx.save();
+  sctx.translate(scratchW / 2, scratchH / 2);
+  sctx.scale(flipH ? -1 : 1, flipV ? -1 : 1);
+  sctx.drawImage(source, sx, sy, sw, sh, -scratchW / 2, -scratchH / 2, scratchW, scratchH);
+  sctx.restore();
+  // Same reasoning as the walls: even the photo's "evenly lit" areas sit at
+  // a fairly low ambient brightness (this is a dark scene, not a lit
+  // material scan), so a per-region levels stretch keeps the real stone
+  // detail — cracks, edges, grain — legible once tiled.
+  applyLevels(sctx, 0, 0, scratchW, scratchH, regionLevels(source, region));
 
-  // Same reasoning as StoneAsset.ts: the source photo is only really lit
-  // right around its own torch glow, so a crop from elsewhere in frame
-  // needs its brightness stretched back up or it bakes in as a dark void.
-  applyLevels(ctx, dx, dy, dw, dh, regionLevels(source, region));
+  ctx.drawImage(scratch, dx, dy);
   return true;
 }

@@ -305,12 +305,119 @@ export function getWallStrip(
 }
 
 /**
+ * A slab's silhouette: a rectangle with rounded, individually-jittered
+ * corners and a slight outward/inward bow along each edge — reads as a
+ * hand-cut flagstone (per the reference art) rather than either a hard
+ * rect or a rounded-off-into-a-circle blob. Built directly in destination
+ * pixel space (no transform needed), so it composes with `ctx.clip()`
+ * exactly like any other path.
+ */
+function slabPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, rng: Random): void {
+  const baseR = Math.min(w, h) * 0.2;
+  const rTL = baseR * rng.range(0.7, 1.3);
+  const rTR = baseR * rng.range(0.7, 1.3);
+  const rBR = baseR * rng.range(0.7, 1.3);
+  const rBL = baseR * rng.range(0.7, 1.3);
+  const bow = Math.min(w, h) * 0.05;
+  const j = () => (rng.next() - 0.5) * bow;
+
+  ctx.beginPath();
+  ctx.moveTo(x + rTL, y);
+  ctx.quadraticCurveTo(x + w / 2 + j(), y + j(), x + w - rTR, y);
+  ctx.arcTo(x + w, y, x + w, y + rTR, rTR);
+  ctx.quadraticCurveTo(x + w + j(), y + h / 2 + j(), x + w, y + h - rBR);
+  ctx.arcTo(x + w, y + h, x + w - rBR, y + h, rBR);
+  ctx.quadraticCurveTo(x + w / 2 + j(), y + h + j(), x + rBL, y + h);
+  ctx.arcTo(x, y + h, x, y + h - rBL, rBL);
+  ctx.quadraticCurveTo(x + j(), y + h / 2 + j(), x, y + rTL);
+  ctx.arcTo(x, y, x + rTL, y, rTL);
+  ctx.closePath();
+}
+
+/**
+ * One flagstone. Its silhouette (see slabPath) is clipped once, and
+ * everything after — the photo fill, the tint, the per-slab dome shading —
+ * paints only inside it; the pale grout base painted under the whole floor
+ * shows through everywhere outside, so gaps between slabs are a
+ * deliberate, fully-opaque joint color, never a void.
+ */
+function drawSlab(ctx: CanvasRenderingContext2D, dx: number, dy: number, dw: number, dh: number, rng: Random, zone: ZoneDefinition): void {
+  ctx.save();
+  slabPath(ctx, dx, dy, dw, dh, rng);
+  ctx.clip();
+
+  const painted = paintFloorSwatch(ctx, dx, dy, dw, dh, rng.next(), rng.next(), rng.next(), rng.bool(0.5), rng.bool(0.35));
+  if (painted) {
+    tintSwatch(ctx, dx, dy, dw, dh, zone.palette.floor, 0.28);
+  } else {
+    ctx.fillStyle = jitterColor(zone.palette.floorAccent, rng, 0.12);
+    ctx.fillRect(dx, dy, dw, dh);
+  }
+
+  // A soft dome: lighter toward the center, gently darkening toward the
+  // rounded edge — real worn flagstone is never perfectly flat.
+  const cx = dx + dw / 2;
+  const cy = dy + dh / 2;
+  const dome = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(dw, dh) / 2);
+  dome.addColorStop(0, 'rgba(255,255,255,0.05)');
+  dome.addColorStop(0.68, 'rgba(0,0,0,0)');
+  dome.addColorStop(1, 'rgba(0,0,0,0.24)');
+  ctx.fillStyle = dome;
+  ctx.fillRect(dx, dy, dw, dh);
+
+  // Faint flat shading per slab — real uneven flagstone rarely sits at
+  // exactly the same tone as its neighbor.
+  ctx.fillStyle = rng.bool(0.5)
+    ? `rgba(255,255,255,${rng.range(0.02, 0.05)})`
+    : `rgba(0,0,0,${rng.range(0.03, 0.08)})`;
+  ctx.fillRect(dx, dy, dw, dh);
+
+  ctx.restore();
+}
+
+function scatterFloorMoss(ctx: CanvasRenderingContext2D, w: number, h: number, rng: Random, count: number): void {
+  for (let i = 0; i < count; i++) {
+    const x = rng.range(0, w);
+    const y = rng.range(0, h);
+    const r = rng.range(5, 14);
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, 'rgba(80,100,60,0.22)');
+    grad.addColorStop(1, 'rgba(80,100,60,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.ellipse(x, y, r, r * 0.65, rng.next() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function scatterFloorRubble(ctx: CanvasRenderingContext2D, w: number, h: number, rng: Random, count: number): void {
+  for (let i = 0; i < count; i++) {
+    const cx = rng.range(0, w);
+    const cy = rng.range(0, h);
+    const clumps = rng.int(2, 4);
+    for (let j = 0; j < clumps; j++) {
+      const ox = (rng.next() - 0.5) * 16 * SUPERSAMPLE;
+      const oy = (rng.next() - 0.5) * 12 * SUPERSAMPLE;
+      const r = rng.range(3, 7) * SUPERSAMPLE;
+      ctx.fillStyle = `rgba(20,16,12,${rng.range(0.25, 0.4)})`;
+      ctx.beginPath();
+      ctx.ellipse(cx + ox, cy + oy, r, r * 0.7, rng.next() * Math.PI, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+/**
  * Real flagstone, not a flat fill with ruled grid lines: the room's floor is
- * tiled, once per room, from jittered/irregularly-sized "slabs" that each
- * resample a random window of the reference floor photo (FloorAsset.ts) —
- * mirrored, tinted to the zone, and lightly re-shaded per slab so neighbors
- * read as individually-set stone rather than one continuous sampled sheet.
- * Falls back to a flat jittered fill per slab if the asset isn't loaded yet.
+ * tiled, once per room, from organically-shaped, irregularly-sized slabs
+ * that each resample a random window of a reference dungeon floor photo
+ * (FloorAsset.ts) — mirrored, levels-corrected, tinted to the zone, and
+ * given a soft per-slab dome so neighbors read as individually-set stone.
+ * The whole canvas is pre-filled with a pale, warm grout color that shows
+ * through the gaps between slabs — a deliberate, always-opaque joint, never
+ * a void — matching the light, thick joints of the reference art rather
+ * than the walls' own dark, thin mortar line. Falls back to a flat jittered
+ * fill per slab if the asset isn't loaded yet.
  */
 function bakeFloor(canvas: HTMLCanvasElement, zone: ZoneDefinition, rng: Random): void {
   const w = ROOM_WIDTH * SUPERSAMPLE;
@@ -319,17 +426,18 @@ function bakeFloor(canvas: HTMLCanvasElement, zone: ZoneDefinition, rng: Random)
   canvas.height = h;
   const ctx = canvas.getContext('2d')!;
 
-  // Deep base fill — reads through the slim gap between slabs as mortar/
-  // shadow, and is the whole floor's color if the asset isn't loaded yet.
-  ctx.fillStyle = mixColor(zone.palette.floor, '#000000', 0.4);
+  // Pale, warm grout base — this is what shows through every gap between
+  // slabs, so it must always be a legible, fully opaque stone color, never
+  // a dark or flat "hole" color.
+  ctx.fillStyle = mixColor('#9c9284', zone.palette.wallTop, 0.22);
   ctx.fillRect(0, 0, w, h);
 
-  const targetCell = 165 * SUPERSAMPLE;
+  const targetCell = 205 * SUPERSAMPLE;
   const cols = Math.max(1, Math.round(w / targetCell));
   const rows = Math.max(1, Math.round(h / targetCell));
   const cellW = w / cols;
   const cellH = h / rows;
-  const gap = 3 * SUPERSAMPLE;
+  const groutW = 3 * SUPERSAMPLE;
 
   for (let cy = 0; cy < rows; cy++) {
     // Alternating rows offset by half a cell (running-bond, like real coursed
@@ -337,33 +445,24 @@ function bakeFloor(canvas: HTMLCanvasElement, zone: ZoneDefinition, rng: Random)
     // row's seams aligned into straight vertical bands that read as a grid.
     const rowOffset = (cy % 2) * cellW * 0.5;
     for (let cx = -1; cx <= cols; cx++) {
-      const jitterW = cellW * rng.range(0.85, 1.05);
-      const jitterH = cellH * rng.range(0.85, 1.05);
-      const dx = cx * cellW + rowOffset + (cellW - jitterW) / 2 + (rng.next() - 0.5) * cellW * 0.22 + gap;
-      const dy = cy * cellH + (cellH - jitterH) / 2 + (rng.next() - 0.5) * cellH * 0.22 + gap;
-      const dw = Math.max(4, jitterW - gap * 2);
-      const dh = Math.max(4, jitterH - gap * 2);
+      const jitterW = cellW * rng.range(0.72, 1.18);
+      const jitterH = cellH * rng.range(0.72, 1.18);
+      const dx = cx * cellW + rowOffset + (cellW - jitterW) / 2 + (rng.next() - 0.5) * cellW * 0.24;
+      const dy = cy * cellH + (cellH - jitterH) / 2 + (rng.next() - 0.5) * cellH * 0.24;
+      const dw = Math.max(6, jitterW - groutW * 2);
+      const dh = Math.max(6, jitterH - groutW * 2);
       if (dx + dw < 0 || dx > w || dy + dh < 0 || dy > h) continue;
 
-      const painted = paintFloorSwatch(ctx, dx, dy, dw, dh, rng.next(), rng.next(), rng.next(), rng.bool(0.5), rng.bool(0.35));
-      if (painted) {
-        tintSwatch(ctx, dx, dy, dw, dh, zone.palette.floor, 0.32);
-        // Faint flat shading per slab — real uneven flagstone rarely sits at
-        // exactly the same tone as its neighbor.
-        ctx.fillStyle = rng.bool(0.5)
-          ? `rgba(255,255,255,${rng.range(0.02, 0.06)})`
-          : `rgba(0,0,0,${rng.range(0.04, 0.1)})`;
-        ctx.fillRect(dx, dy, dw, dh);
-      } else {
-        ctx.fillStyle = jitterColor(zone.palette.floorAccent, rng, 0.12);
-        ctx.fillRect(dx, dy, dw, dh);
-      }
+      drawSlab(ctx, dx, dy, dw, dh, rng, zone);
     }
   }
 
   // Hairline cracks in the same style as the walls, so floor and masonry
-  // read as one continuous, ancient, worn material.
-  drawCracks(ctx, w, h, rng, rng.int(5, 8));
+  // read as one continuous, ancient, worn material, plus sparse moss and
+  // loose rubble scattered across the room rather than only near the walls.
+  drawCracks(ctx, w, h, rng, rng.int(6, 10));
+  scatterFloorMoss(ctx, w, h, rng, rng.int(3, 6));
+  scatterFloorRubble(ctx, w, h, rng, rng.int(2, 4));
 }
 
 function floorCacheKey(zoneId: string, roomKey: string): string {

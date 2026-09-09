@@ -2,9 +2,11 @@ import '@/style.css';
 import { Game } from '@/core/Game';
 import { preloadStoneAsset } from '@/rendering/StoneAsset';
 import { preloadFloorAsset } from '@/rendering/FloorAsset';
+import { preloadShopAsset } from '@/rendering/ShopAsset';
 
 preloadStoneAsset();
 preloadFloorAsset();
+preloadShopAsset();
 
 function boot(): void {
   const canvas = document.getElementById('game-canvas');
