@@ -31,6 +31,21 @@ const DESCENT_IN_SECONDS := 1.35
 const XP_PER_WEIGHT := 5.0
 const XP_ZONE_BONUS_PER_INDEX := 0.25
 
+## The Canvas2D "darken the whole frame, then re-brighten with additive
+## lights" hack (LightingSystem.ts) has no per-shape equivalent in Godot —
+## CanvasModulate is the engine-native way to tint everything under it at
+## once, so this ports the *mood* (a dark scene PointLight2D sources punch
+## back through) rather than the exact compositing technique. See
+## _update_ambient() for how zone.darkness maps onto its color.
+var _ambient: CanvasModulate = null
+## LightingSystem.ts's per-frame `lighting.add(tr.stairs.x, tr.stairs.y, ...)`
+## during a stairs transition — the one light in registerLights() that isn't
+## owned by a persistent entity node, so LevelFlow (which already owns the
+## whole transition state machine) owns this one PointLight2D directly
+## instead, reusing it across every future transition rather than
+## creating/freeing one each time.
+var _transition_light: PointLight2D = null
+
 var player: PlayerCharacter = null
 var _active_room: RoomContainer = null
 var _transition: Dictionary = {}
@@ -62,6 +77,20 @@ func start_new_run(seed_string: String, p_player: PlayerCharacter, parent: Node)
 	player = p_player
 	_transition.clear()
 	_active_room = null
+
+	# Recreated only if missing/freed (a fresh scene tree on a brand-new
+	# run) — reused across zone/room changes otherwise, same as every
+	# per-entity Glow light is reused rather than rebuilt every frame.
+	if _ambient == null or not is_instance_valid(_ambient):
+		_ambient = CanvasModulate.new()
+		_ambient.name = "AmbientDarkness"
+		parent.add_child(_ambient)
+	if _transition_light == null or not is_instance_valid(_transition_light):
+		_transition_light = PointLight2D.new()
+		_transition_light.name = "TransitionGlow"
+		_transition_light.texture = DrawUtils.glow_texture()
+		_transition_light.enabled = false
+		add_child(_transition_light)
 
 	for zone_def in _sorted_zones():
 		var rng := LevelGenerator.rng_from("%s:zonegen:%s" % [seed_string, zone_def.id])
@@ -101,6 +130,24 @@ func _sync_active_room(new_room: RoomContainer) -> void:
 		_active_room.set_active(false)
 	new_room.set_active(true)
 	_active_room = new_room
+	_update_ambient(new_room)
+
+## Ports Game.ts's registerLights(): "this.lighting.ambientDarkness =
+## zone.darkness ?? 0.4" — recomputed there every single frame, but the
+## value only actually changes when the active room's zone changes, so
+## driving it from _sync_active_room (called on every room AND zone change)
+## reaches the same result without a redundant per-frame write. CanvasModulate
+## multiplies the whole scene's colors, unlike the source's darken-then-
+## additive-gradient overlay, so this maps darkness onto a multiply tint
+## toward the source's own overlay color (rgba(4, 3, 8, ...)) rather than
+## reproducing that exact compositing — the PointLight2D sources placed
+## everywhere else are what actually punch back through it.
+func _update_ambient(room: RoomContainer) -> void:
+	if _ambient == null:
+		return
+	var darkness: float = room.zone.darkness if room.zone != null else 0.4
+	var dark_tint := Color(4.0 / 255.0, 3.0 / 255.0, 8.0 / 255.0)
+	_ambient.color = Color(1.0, 1.0, 1.0).lerp(dark_tint, darkness)
 
 func enter_room(room: RoomContainer, from_dir) -> void:
 	room.visited = true
@@ -263,6 +310,8 @@ func _start_transition(kind: String, stairs: ObstacleNode, from: Vector2, to: Ve
 	}
 	player.is_transitioning = true
 	player.velocity = Vector2.ZERO
+	if _transition_light != null:
+		_transition_light.enabled = true
 
 func _ease_in_out_sine(t: float) -> float:
 	return -(cos(PI * t) - 1.0) / 2.0
@@ -282,6 +331,19 @@ func _update_transition(delta: float) -> void:
 	if from.distance_squared_to(to) > 0.0001:
 		player.facing = (to - from).angle()
 
+	# Ports Game.ts's registerLights(): "lighting.add(tr.stairs.x,
+	# tr.stairs.y, 170*strength + 40, phase==='out' ? fungal : ember3,
+	# 0.4*strength)" — strength rises 0->1 walking into the well ('out') and
+	# falls 1->0 walking off it on the other side ('in'), same shape as the
+	# player's own walk progress k/1-k just above.
+	var stairs: ObstacleNode = _transition.get("stairs")
+	if _transition_light != null and stairs != null and is_instance_valid(stairs):
+		var strength: float = k if out_phase else 1.0 - k
+		_transition_light.global_position = stairs.global_position
+		_transition_light.texture_scale = (170.0 * strength + 40.0) / 128.0
+		_transition_light.color = Color(Palette.FUNGUS if out_phase else Palette.EMBER3)
+		_transition_light.energy = 0.4 * strength
+
 	if k >= 1.0:
 		if out_phase:
 			if _transition["kind"] == "ascend":
@@ -291,6 +353,8 @@ func _update_transition(delta: float) -> void:
 		else:
 			_transition.clear()
 			player.is_transitioning = false
+			if _transition_light != null:
+				_transition_light.enabled = false
 
 ## The zone switch itself, at the bottom of the fade: new layout, player
 ## placed in the mouth of the arrival stairwell, then the 'in' half of the

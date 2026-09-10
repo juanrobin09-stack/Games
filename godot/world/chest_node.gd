@@ -27,6 +27,7 @@ func _ready() -> void:
 	# Counters RoomContainer's own z_index = -10 (see its own comment) so
 	# the chest doesn't inherit that and vanish behind the room's floor.
 	z_as_relative = false
+	($Glow as PointLight2D).texture = DrawUtils.glow_texture()
 
 func setup(pos: Vector2, p_tier: UpgradeDefinition.Rarity) -> void:
 	position = pos
@@ -48,6 +49,22 @@ func _process(dt: float) -> void:
 		state = State.OPENED
 		state_timer = 0.0
 	queue_redraw()
+	_update_light()
+
+## Ports Game.ts's registerLights(): "if (room.chest && room.chest.state ===
+## 'opened') lighting.add(room.chest.x, room.chest.y, 100,
+## RARITY_COLORS[room.chest.tier], 0.7)" — reuses _tier_color() below rather
+## than a second RARITY_COLORS table, since it's the exact same lookup the
+## chest's own opened-lid glow already draws.
+func _update_light() -> void:
+	var glow: PointLight2D = $Glow
+	if state != State.OPENED:
+		glow.enabled = false
+		return
+	glow.enabled = true
+	glow.texture_scale = 100.0 / 128.0
+	glow.color = Color(_tier_color())
+	glow.energy = 0.7
 
 ## Matches data/types.ts's RARITY_COLORS exactly (kept as a hex String, not
 ## Color, so it can feed DrawUtils.draw_glow_circle directly — see Palette's

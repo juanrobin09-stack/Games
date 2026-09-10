@@ -22,8 +22,12 @@ extends Node2D
 
 const PLAYER_SCENE := preload("res://entities/player.tscn")
 
-@onready var debug_label: Label = $DebugLabel
-@onready var live_label: Label = $LiveLabel
+## Both labels sit under a CanvasLayer ("UI") rather than directly under
+## Main — LevelFlow's ambient CanvasModulate (build-order step 7's
+## lighting pass) tints the whole base canvas to mimic the dungeon's
+## darkness, and debug/diagnostic text should stay legible regardless.
+@onready var debug_label: Label = $UI/DebugLabel
+@onready var live_label: Label = $UI/LiveLabel
 
 var player: PlayerCharacter
 var run_seed: String = ""

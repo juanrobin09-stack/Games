@@ -58,6 +58,7 @@ func _ready() -> void:
 	# behind the player; obstacles shouldn't inherit that and vanish behind it).
 	z_as_relative = false
 	_apply_shape()
+	($Glow as PointLight2D).texture = DrawUtils.glow_texture()
 
 func _apply_shape() -> void:
 	var shape: CollisionShape2D = get_node_or_null("CollisionShape2D")
@@ -72,6 +73,7 @@ func _apply_shape() -> void:
 ## obstacles at most, not every one that's ever been generated.
 func _process(_delta: float) -> void:
 	queue_redraw()
+	_update_light()
 
 func activate() -> void:
 	if activated:
@@ -79,6 +81,41 @@ func activate() -> void:
 	activated = true
 	activated_at = Time.get_ticks_msec() / 1000.0
 	queue_redraw()
+
+## Ports Game.ts's registerLights() obstacle loop exactly, including its
+## early-continue shape: an unlit obstacle (most visuals — see setup()'s
+## default_lit) gets no light at all, stairsDown only lights once activated
+## and fades in over the same 1.2s the source uses (a different, deliberate
+## constant from the well's own _draw() reveal, which fades over 1.1s), and
+## stairsUp lights unconditionally at a fixed warm glow the moment it's
+## lit — which for stairsUp is always, from the moment it's placed.
+func _update_light() -> void:
+	var glow: PointLight2D = $Glow
+	if not lit:
+		glow.enabled = false
+		return
+	if visual == Visual.STAIRS_DOWN:
+		if not activated:
+			glow.enabled = false
+			return
+		var now: float = Time.get_ticks_msec() / 1000.0
+		var reveal: float = clampf((now - activated_at) / 1.2, 0.0, 1.0)
+		_set_light(glow, Vector2(cos(facing) * 22.0, sin(facing) * 22.0), 150.0 * reveal, Palette.FUNGUS, 0.6 * reveal)
+		return
+	if visual == Visual.STAIRS_UP:
+		_set_light(glow, Vector2(cos(facing) * 34.0, sin(facing) * 34.0), 120.0, Palette.EMBER3, 0.35)
+		return
+	var color_hex: String = Palette.SOUL if visual == Visual.CRYSTAL else (Palette.FUNGUS if visual == Visual.FUNGUS else Palette.EMBER4)
+	var light_radius: float = 175.0 if visual == Visual.MERCHANT_STALL else (105.0 if visual == Visual.FUNGUS else 120.0)
+	var intensity: float = 0.85 if visual == Visual.MERCHANT_STALL else (0.6 if visual == Visual.FUNGUS else 0.75)
+	_set_light(glow, Vector2(0.0, -8.0), light_radius, color_hex, intensity)
+
+func _set_light(glow: PointLight2D, offset: Vector2, light_radius: float, color_hex: String, intensity: float) -> void:
+	glow.enabled = true
+	glow.position = offset
+	glow.texture_scale = light_radius / 128.0
+	glow.color = Color(color_hex)
+	glow.energy = intensity
 
 ## Ports drawObstacle.ts's dispatch: a shared contact shadow under every
 ## grounded obstacle (stairs are a hole in the floor, not a body standing on

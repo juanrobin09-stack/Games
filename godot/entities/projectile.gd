@@ -44,6 +44,7 @@ func _ready() -> void:
 	# A player-fired bolt is parented under Main (z_index 0) and is
 	# unaffected either way.
 	z_as_relative = false
+	($Glow as PointLight2D).texture = DrawUtils.glow_texture()
 
 func setup(spawn_pos: Vector2, p_angle: float, p_speed: float, p_damage: float, p_radius: float) -> void:
 	global_position = spawn_pos
@@ -89,6 +90,21 @@ func _physics_process(delta: float) -> void:
 		queue_free()
 	else:
 		queue_redraw()
+		_update_light()
+
+## Ports Game.ts's registerLights(): "lighting.add(p.x, p.y, 55,
+## p.fromPlayer ? Palette.ember5 : Palette.soul, 0.8)". Set every physics
+## tick rather than once in setup() — combat_manager.gd's two spawn call
+## sites assign from_player in a different order relative to setup() (before
+## it for an enemy bolt, after it for a player bolt), so reading from_player
+## here, once it's unconditionally settled before any _physics_process tick
+## can run, is the one hook that's correct regardless of that ordering.
+func _update_light() -> void:
+	var glow: PointLight2D = $Glow
+	glow.enabled = true
+	glow.texture_scale = 55.0 / 128.0
+	glow.color = Color(Palette.EMBER5 if from_player else Palette.SOUL)
+	glow.energy = 0.8
 
 ## Ports CombatSystem.ts's obstacle-blocking check inside updateProjectiles
 ## plus its separate resolveProjectileWalls — both fold into one check here

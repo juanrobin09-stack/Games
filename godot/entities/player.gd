@@ -238,6 +238,16 @@ func _ready() -> void:
 	var shape: CollisionShape2D = get_node_or_null("CollisionShape2D")
 	if shape and shape.shape is CircleShape2D:
 		(shape.shape as CircleShape2D).radius = radius
+	# Ports Game.ts's registerLights(): "lighting.add(player.x, player.y, 260,
+	# Palette.ember4, 1)" — constant for the run's whole lifetime, so this is
+	# the only place it needs setting (unlike the enemy/obstacle lights that
+	# change condition every frame).
+	var glow: PointLight2D = $Glow
+	glow.texture = DrawUtils.glow_texture()
+	glow.texture_scale = 260.0 / 128.0
+	glow.color = Color(Palette.EMBER4)
+	glow.energy = 1.0
+	glow.enabled = true
 
 func _physics_process(delta: float) -> void:
 	if not is_transitioning:

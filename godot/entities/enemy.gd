@@ -130,6 +130,7 @@ func _ready() -> void:
 	# behind that same floor.
 	z_as_relative = false
 	_apply_shape()
+	($Glow as PointLight2D).texture = DrawUtils.glow_texture()
 
 func _apply_shape() -> void:
 	var shape: CollisionShape2D = get_node_or_null("CollisionShape2D")
@@ -145,6 +146,7 @@ func _physics_process(delta: float) -> void:
 	if not alive:
 		death_timer += delta
 		queue_redraw()
+		_update_light()
 		return
 
 	if attack_cooldown_timer > 0.0: attack_cooldown_timer -= delta
@@ -167,6 +169,39 @@ func _physics_process(delta: float) -> void:
 	if pending_burst:
 		CombatManager.detonate_bloat(player, self)
 	queue_redraw()
+	_update_light()
+
+## Ports Game.ts's registerLights() enemy loop exactly: three mutually
+## exclusive cases (a dead enemy — the `if (!e.alive) continue` guard in the
+## caller — gets no light at all, and elif here mirrors the source's actual
+## if/else-if chain, so a champion that happened to also be a fire-type
+## would still only light once, same as the source). BossCharacter overrides
+## this entirely below rather than falling into any of these branches — the
+## boss's id/behavior/champion never match any of them, same as the source's
+## own registerLights() handling the boss as a separate `if (this.boss...)`
+## block, not through this enemy loop.
+func _update_light() -> void:
+	var glow: PointLight2D = $Glow
+	if not alive:
+		glow.enabled = false
+		return
+	if def.id == "flameWisp" or def.id == "emberDevourer" or def.id == "cinderWraith":
+		_set_light(glow, 90.0, def.accent_color, 0.7)
+	elif def.behavior == EnemyDefinition.Behavior.BLOAT:
+		var swell: float = 0.0
+		if state == State.WINDUP:
+			swell = minf(1.0, state_timer / maxf(0.05, def.telegraph_time))
+		_set_light(glow, 60.0 + swell * 60.0, Palette.FUNGUS, 0.4 + swell * 0.5)
+	elif def.champion:
+		_set_light(glow, 110.0, Palette.FUNGUS if shield_broken else Palette.SOUL, 0.55)
+	else:
+		glow.enabled = false
+
+func _set_light(glow: PointLight2D, light_radius: float, color_hex: String, intensity: float) -> void:
+	glow.enabled = true
+	glow.texture_scale = light_radius / 128.0
+	glow.color = Color(color_hex)
+	glow.energy = intensity
 
 ## Wobble seeds shared by every organic blob silhouette below — ports
 ## drawEnemy.ts's module-level WOBBLE_SEEDS constant verbatim (plain float

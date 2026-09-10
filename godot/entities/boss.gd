@@ -37,6 +37,27 @@ func move_speed_for_phase() -> float:
 	var factor: float = 1.0 if phase == Phase.ONE else (1.3 if phase == Phase.TWO else 1.55)
 	return def.move_speed * factor
 
+## Ports Game.ts's registerLights(): "lighting.add(this.boss.x, this.boss.y,
+## 220, Palette.ember3, 0.55 + this.boss.rageGlow * 0.4)". Overrides
+## EnemyCharacter._update_light() entirely rather than falling into any of
+## its id/behavior/champion branches — the source handles the boss with its
+## own separate `if (this.boss...)` block in registerLights(), never through
+## the generic enemy loop, and ashenColossus matches none of that loop's
+## conditions anyway (not a fire-type id, not BLOAT, not champion). rageGlow
+## itself was never a stored field on Boss.ts beyond this one derivation
+## (phase 1 -> 0, phase 2 -> 0.5, phase 3 -> 1), so it's computed inline here
+## exactly like _rage_glow_hex() below does for the body's own glow.
+func _update_light() -> void:
+	var glow: PointLight2D = $Glow
+	if not alive:
+		glow.enabled = false
+		return
+	var rage_glow: float = 0.0 if phase == Phase.ONE else (0.5 if phase == Phase.TWO else 1.0)
+	glow.enabled = true
+	glow.texture_scale = 220.0 / 128.0
+	glow.color = Color(Palette.EMBER3)
+	glow.energy = 0.55 + rage_glow * 0.4
+
 ## Ports rendering/draw/drawBoss.ts's own distinct silhouette (The Ashen
 ## Colossus), overriding EnemyCharacter's generic circle-body _draw().
 ## Deliberately does NOT call super._draw(): that draws a plain filled

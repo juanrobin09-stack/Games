@@ -66,3 +66,37 @@ static func lerp_color_hex(a: String, b: String, t: float) -> Color:
 static func hash_jitter(seed_val: float, salt: float) -> float:
 	var x: float = sin(seed_val * 127.1 + salt * 311.7) * 43758.5453123
 	return x - floor(x)
+
+## Shared soft-circle texture every PointLight2D in the game uses (build-order
+## step 7's lighting pass — see LightingSystem.ts's render(): a radial
+## gradient per light, opaque at the center, fading to nothing at the edge).
+## Built once in code rather than authored as a .tres GradientTexture2D
+## resource: this project has no Godot editor available to round-trip a
+## hand-typed resource file through, and Gradient/GradientTexture2D's script
+## API (plain `offsets`/`colors` arrays, `fill`/`fill_from`/`fill_to`) is
+## exactly as reliable to write directly. The three gradient stops mirror
+## LightingSystem.ts's own addColorStop calls (0 -> 0.85, 0.45 -> 0.32,
+## 1 -> 0) rescaled to a 0-1 peak so each PointLight2D's own `energy`
+## reproduces the source's per-light `intensity` multiplier untouched.
+## Native radius at texture_scale = 1.0 is 128px (half the 256px texture);
+## every call site sets texture_scale = desiredRadius / 128.0.
+static var _glow_texture: GradientTexture2D = null
+
+static func glow_texture() -> GradientTexture2D:
+	if _glow_texture == null:
+		var gradient := Gradient.new()
+		gradient.offsets = PackedFloat32Array([0.0, 0.45, 1.0])
+		gradient.colors = PackedColorArray([
+			Color(1.0, 1.0, 1.0, 1.0),
+			Color(1.0, 1.0, 1.0, 0.376),
+			Color(1.0, 1.0, 1.0, 0.0),
+		])
+		var tex := GradientTexture2D.new()
+		tex.gradient = gradient
+		tex.width = 256
+		tex.height = 256
+		tex.fill = GradientTexture2D.FILL_RADIAL
+		tex.fill_from = Vector2(0.5, 0.5)
+		tex.fill_to = Vector2(1.0, 0.5)
+		_glow_texture = tex
+	return _glow_texture

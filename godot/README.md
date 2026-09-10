@@ -7,7 +7,7 @@ kept/improved/rebuilt, the recommended architecture, and the complete
 [`GODOT_MIGRATION.md`](../GODOT_MIGRATION.md) at the repo root. Read that
 first; this file only tracks what's actually been built here so far.
 
-## Status: build-order step 6 of 12 — level generation
+## Status: build-order step 7 of 12 — real rendering + lighting
 
 **Important caveat:** this project was authored without access to the
 Godot editor or engine binary — this environment doesn't have Godot
@@ -17,12 +17,14 @@ running them in their own Godot editor, including live debugging of three
 real issues this session surfaced and fixed (a null-guard gap in
 `weapon()`/`ability()`, a debug-label layout overlap, and a duplicate
 `combo_step` field GDScript rejects that TypeScript silently allows).
-**Step 6 below has NOT yet had that same live confirmation** — and it is
-by a wide margin the largest, most architecturally novel step so far
-(procedural generation, a whole new room-persistence model, real physics
-walls). Treat it as unverified until you run it and report back, and
-expect a real chance something needs a fix. If anything fails to parse or
-run, report the exact error.
+**Step 6 has partial live confirmation**: combat rooms clearing and their
+doors unsealing on kill is confirmed working. Chests, resting, the sanctum
+rite, and the bidirectional stairs transition haven't been explicitly
+exercised yet (the sanctum only exists in Zone 2 — Hollow Ruins — not the
+Zone 1 starting zone, so a fresh run won't encounter one immediately).
+**Step 7 below has NOT yet had any live confirmation.** Treat both as
+carrying real risk until run and reported back. If anything fails to parse
+or run, report the exact error.
 
 ### Steps 1-5 — scaffold, data, core entities, combat+AI, weapons (confirmed working)
 
@@ -35,7 +37,7 @@ AI behavior families, the generic status-effect runtime, and a real
 detail in git history — see the step-1 through step-5 commits, or
 `GODOT_MIGRATION.md` for the architecture.
 
-### Step 6 — level generation: real rooms, walls, and bidirectional stairs (just added, unverified)
+### Step 6 — level generation: real rooms, walls, and bidirectional stairs (combat/doors confirmed; chest/rest/sanctum/stairs not yet exercised)
 
 The point of this step per `GODOT_MIGRATION.md` §5: port `LevelGenerator.ts`
 and get a full run genuinely navigable start-to-boss-and-back, with the
@@ -98,8 +100,79 @@ unsealing correctly, walls that seem to block or fail to block movement
 oddly, or an error in the Output panel (parse errors will likely show up
 immediately on load, the same way `combo_step` did last step).
 
+### Step 7 — real rendering: `_draw()` ports + PointLight2D lighting (just added, unverified)
+
+Per `GODOT_MIGRATION.md` §5 and §4's approach (a): every placeholder flat
+circle/rect is replaced with a real procedural `_draw()` port of the Web
+build's own `rendering/draw/*.ts` functions, plus `PointLight2D` sources
+wherever `Game.ts`'s `registerLights()` called `lighting.add(...)`.
+Lighting itself is a **rewrite, not a port** — per `GODOT_MIGRATION.md`
+§4/§6, Godot's real 2D lighting has no reason to copy Canvas2D's
+darken-then-additive-gradient hack; see `autoload/level_flow.gd`'s
+`_update_ambient()` header for exactly how the two approaches map onto
+each other.
+
+| File | Ports | State |
+|---|---|---|
+| `rendering/palette.gd`, `rendering/draw_utils.gd` | `rendering/Palette.ts`, `rendering/DrawUtils.ts` | Shared color tokens and drawing primitives (soft shadows, glow circles, blob silhouettes) every other file below calls into |
+| `entities/enemy.gd` | `rendering/draw/drawEnemy.ts` | All 9 unique enemy silhouettes, elite/mutated rings, telegraph indicators, status overlay |
+| `entities/player.gd`, `entities/boss.gd` | `drawPlayer.ts`, `drawBoss.ts` | Real body/cloak/weapon rendering; the boss has its own silhouette, rage-glow, and cracking-armor-at-low-HP overlay (does not reuse the generic enemy body) |
+| `world/obstacle_node.gd` | `drawObstacle.ts` | All 13 obstacle silhouettes (trees, braziers, the stairwells' reveal animation, etc.) |
+| `world/chest_node.gd`, `world/pickup_node.gd`, `entities/projectile.gd` | `drawChest.ts`, `drawPickup.ts`, `drawProjectile.ts` | Chest lid-opening animation with real rarity coloring; Ember/Heart pickups; projectile glow+trail |
+| `world/room_container.gd` | — | Floor/wall colors now read each zone's own palette instead of one fixed gray |
+| every entity/obstacle/chest above, plus `autoload/level_flow.gd` | `rendering/Lighting.ts`'s `registerLights()` | A `PointLight2D` "Glow" child on every light-casting node, turned on/off and recolored each frame to match that node's own current state (a fire enemy's glow, a bloat's windup swell, a champion's shield-broken color flip, the boss's phase-based rage glow, a lit obstacle, an opened chest, a stairs-transition well) — see below |
+
+**Lighting specifics:**
+- Every `PointLight2D` shares one procedurally-built soft-circle texture
+  (`DrawUtils.glow_texture()`, built once in code from a `Gradient` +
+  `GradientTexture2D` rather than hand-authored as a `.tres` — this
+  environment has no editor to round-trip a resource file through) with
+  the same 3-stop falloff `LightingSystem.ts` used per-light, so each
+  node only ever needs to set that light's `texture_scale` (radius),
+  `color`, and `energy` (the source's per-light `intensity`).
+  `Light2D.blend_mode` is left at its engine default, which is already
+  additive — matching the source's own `globalCompositeOperation =
+  'lighter'` for free.
+- Ambient darkness (`zone.darkness`) is a `CanvasModulate` LevelFlow
+  creates once and updates whenever the active room's zone changes. It
+  tints the whole base canvas, which is why the debug/live labels moved
+  under a `CanvasLayer` (`scenes/main/main.tscn`'s new `UI` node) — a
+  `CanvasModulate` doesn't reach into a separate canvas layer, so the
+  debug text stays legible regardless of how dark a zone gets.
+- The one light that isn't owned by a persistent entity — the stairs
+  transition's traveling glow — is a single `PointLight2D` LevelFlow
+  owns directly and repositions/recolors every frame of the transition.
+
+**Deferred this pass, on purpose:** hazards (fungal pools), the sanctum's
+lit candles, and the player's warding-sigil ability aren't ported into
+Godot yet at all (not a step-7 gap — those systems themselves don't exist
+yet), so their `registerLights()` entries have nothing to wire to. Real
+occluders (`LightOccluder2D` on walls, so lights actually cast shadows)
+are a natural follow-up once the base lighting is confirmed working —
+`GODOT_MIGRATION.md` §4 calls this out as lighting's whole reason for
+being a rewrite rather than a port, but it's additional polish, not
+required for the lights to work.
+
+**How to test it:** run the project and confirm every entity now has a
+real silhouette instead of a flat circle/rect — enemies should be visibly
+distinct per type, the player/boss should show cloak/weapon/body detail,
+obstacles should read as trees/braziers/statues/etc., and room floors/
+walls should tint per zone. For lighting specifically: the player should
+cast a warm glow around themselves at all times; braziers/crystals/the
+merchant stall/fungus/lit stairwells should glow; a Spore Bloat should
+brighten as it winds up to burst; the Hollow Warden champion's glow
+should flip color when its shield breaks; the boss should glow more
+intensely each phase; an opened chest should glow in its reward's rarity
+color; and the whole scene should visibly darken/brighten between zones
+(Ashen Woods vs. the Hollow Ruins) while the debug text in the corner
+stays readable throughout. None of this has been confirmed working yet —
+report exactly what you see, especially anything about a light that
+doesn't appear at all (likely a `$Glow` node/texture wiring issue) versus
+one that appears but looks visually wrong (likely a color/radius/timing
+tuning issue).
+
 ### Next steps (not started)
 
-Per `GODOT_MIGRATION.md` §5, step 7: real rendering — `_draw()` ports (or
-authored sprites) replacing every flat-colored placeholder circle/rect,
-and `PointLight2D` sources wherever the current code calls `lighting.add(...)`.
+Per `GODOT_MIGRATION.md` §5, step 8: particles — replace every
+`spawn*Vfx`/`ParticlePresets` call with the matching `GPUParticles2D`
+scene/preset.
