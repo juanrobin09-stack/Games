@@ -138,6 +138,15 @@ export const UPGRADES: UpgradeDefinition[] = [
     icon: 'stamina',
     modifiers: [{ stat: 'staminaMax', mode: 'flat', value: 35 }],
   },
+  {
+    id: 'ember-wellspring',
+    name: 'Ember Wellspring',
+    description: '+18% ability energy regen.',
+    rarity: 'uncommon',
+    tags: ['ember'],
+    icon: 'ability',
+    modifiers: [{ stat: 'energyRegen', mode: 'mult', value: 0.18 }],
+  },
   // ---------- RARE ----------
   {
     id: 'twin-embers',

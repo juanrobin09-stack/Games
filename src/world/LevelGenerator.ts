@@ -1,5 +1,5 @@
 import { Random } from '@/utils/Random';
-import type { ZoneDefinition, Rarity } from '@/data/types';
+import type { ZoneDefinition, Rarity, EnemyDefinition } from '@/data/types';
 import { Room, OPPOSITE, DIRECTION_DELTA, type Direction, ROOM_WIDTH, ROOM_HEIGHT, WALL_THICKNESS } from '@/world/Room';
 import { Enemy } from '@/entities/Enemy';
 import { Obstacle, type ObstacleVisual } from '@/entities/Obstacle';
@@ -367,10 +367,11 @@ export function stairsMouthPosition(stairs: Obstacle): { x: number; y: number } 
 // ---------------------------------------------------------------- Encounters
 
 /**
- * Level 2 combat rooms are composed, not rolled: each template is a specific
- * tactical problem (a shield wall to flank, a field of bloats to kite, a
- * vanguard that mixes both), weighted by how deep into the zone the room
- * sits so the two new mechanics are met one at a time before they combine.
+ * Combat rooms in Levels 2 and 3 are composed, not rolled: each template is
+ * a specific tactical problem, weighted by how deep into the zone the room
+ * sits so a zone's own new mechanics are met one at a time before they
+ * combine. Level 1 stays a plain random pick from its 3-enemy pool — it's
+ * meant to be the simple, uncomplicated introduction.
  */
 interface EncounterTemplate {
   id: string;
@@ -387,15 +388,66 @@ const RUINS_ENCOUNTERS: EncounterTemplate[] = [
   { id: 'phalanx', weight: (d) => (d >= 3 ? 2.2 : 0.4), core: ['hollowWarden', 'hollowWarden'], filler: ['blightbloat', 'ashCrawler', 'hollow'] },
 ];
 
-function composeRuinsEncounter(rng: Random, count: number, distance: number, pool: string[]): string[] {
+/**
+ * Ember Citadel gets the same treatment as the Ruins: each template is a
+ * distinct tactical problem rather than a bigger pile of random stats, so
+ * Level 3's extra difficulty comes from *what* a room asks of you too.
+ * The Ember Devourer is deliberately left out of every core/filler list here
+ * (an earlier version gave it its own low-weight template, but padding a
+ * full-strength elite-tier enemy up to a normal room's 5-7 count made a
+ * plain combat room tougher than the dedicated, properly-proportioned elite
+ * room itself — confirmed the hard way in testing) — it stays exclusive to
+ * the elite room, where 1 leader + 2 escorts is the right scale for it.
+ */
+const CITADEL_ENCOUNTERS: EncounterTemplate[] = [
+  { id: 'crossfire', weight: (d) => (d <= 2 ? 3 : 1.5), core: ['flameWisp', 'flameWisp'], filler: ['shadowStalker', 'gravebound', 'cinderWraith'] },
+  { id: 'vanguard', weight: (d) => (d <= 2 ? 2.5 : 1.2), core: ['gravebound', 'shadowStalker'], filler: ['flameWisp', 'shadowStalker', 'gravebound'] },
+  { id: 'ambush', weight: (d) => (d >= 2 ? 3 : 1), core: ['shadowStalker', 'cinderWraith'], filler: ['cinderWraith', 'flameWisp', 'shadowStalker'] },
+  { id: 'siege', weight: (d) => (d >= 2 ? 2 : 0.5), core: ['gravebound', 'gravebound'], filler: ['shadowStalker', 'flameWisp', 'cinderWraith'] },
+];
+
+function composeEncounter(rng: Random, count: number, distance: number, pool: string[], templates: EncounterTemplate[]): string[] {
   const inPool = (id: string) => pool.includes(id);
-  const usable = RUINS_ENCOUNTERS.filter((t) => t.core.every(inPool));
+  const usable = templates.filter((t) => t.core.every(inPool));
   if (usable.length === 0) return Array.from({ length: count }, () => rng.pick(pool));
   const template = rng.weighted(usable, (t) => t.weight(distance));
   const ids = template.core.slice(0, Math.max(1, count));
-  const filler = template.filler.filter(inPool);
-  while (ids.length < count) ids.push(filler.length > 0 ? rng.pick(filler) : rng.pick(pool));
+  const fillerPool = template.filler.filter(inPool);
+  // Cycle the filler list round-robin (reshuffled once each lap) rather than
+  // an independent re-roll per slot: with only 2-3 filler options, a plain
+  // random pick per slot has a real chance of stacking the same one 3-4
+  // times in a row and quietly turning, say, a ranged "crossfire" room into
+  // one mostly built from its stalker filler — the template's intended
+  // flavor should hold regardless of how the dice land.
+  let cycle: string[] = [];
+  while (ids.length < count) {
+    if (cycle.length === 0) cycle = rng.shuffle(fillerPool.length > 0 ? fillerPool : pool);
+    ids.push(cycle.pop()!);
+  }
   return ids;
+}
+
+const MUTATED_VARIANT_CHANCE = 0.1;
+const MUTATED_HP_MULT = 1.35;
+const MUTATED_DAMAGE_MULT = 1.25;
+const MUTATED_RADIUS_MULT = 1.12;
+
+/**
+ * Ember Citadel only: a rare, visibly tainted variant of a regular enemy —
+ * noticeably tougher (HP, damage, a slightly larger silhouette) and named
+ * distinctly, so it reads as "that one's different" the instant it's seen,
+ * without becoming a second elite tier or needing any new behavior/AI.
+ * Elite-behavior and champion enemies are excluded — they're already special.
+ */
+function maybeApplyMutatedVariant(enemy: Enemy, def: EnemyDefinition, rng: Random): void {
+  if (def.isElite || def.champion) return;
+  if (rng.next() >= MUTATED_VARIANT_CHANCE) return;
+  enemy.isMutatedVariant = true;
+  enemy.maxHp = Math.round(enemy.maxHp * MUTATED_HP_MULT);
+  enemy.hp = enemy.maxHp;
+  enemy.difficultyDamageMult *= MUTATED_DAMAGE_MULT;
+  enemy.radius *= MUTATED_RADIUS_MULT;
+  enemy.displayName = t('enemy.mutatedFormat', '{name}, Ember-Marked').replace('{name}', tc(def.id, 'name', def.name));
 }
 
 // ---------------------------------------------------------------- Sanctum rite
@@ -445,19 +497,35 @@ function settleSpawn(room: Room, x: number, y: number, radius: number): { x: num
   return { x, y };
 }
 
+/**
+ * The rite is meant to be a genuine special encounter, not just another
+ * combat room behind a door — noticeably more dangerous than a standard
+ * fight in the same zone. Biased toward damage over raw HP (a resistant
+ * enemy with real bite reads as "special"; a plain HP sponge just reads as
+ * a longer fight), so wave enemies feel like a real step up without
+ * becoming a slog.
+ */
+const SANCTUM_HP_MULT = 1.12;
+const SANCTUM_DAMAGE_MULT = 1.18;
+
 /** Spawns one wave of the rite around the circle's edge (staggered so they
  * rise one after another) and returns the new enemies. */
 export function spawnSanctumWave(room: Room, zone: ZoneDefinition, waveIndex: number, opts: SpawnContentOptions): Enemy[] {
   const rng = Random.fromString(`${opts.runSeed}:${zone.id}:${room.key}:wave${waveIndex}`);
   const { hpMult, damageMult } = getDifficultyFactors(zone.index, opts.runMinutes);
-  const ids = SANCTUM_WAVES[Math.min(waveIndex, SANCTUM_WAVES.length - 1)];
+  let ids = SANCTUM_WAVES[Math.min(waveIndex, SANCTUM_WAVES.length - 1)];
+  // The climactic third wave swaps in the vanish-and-reposition threat once
+  // it's been unlocked, so the rite isn't always the exact same fight.
+  if (waveIndex === SANCTUM_WAVES.length - 1 && opts.unlockedEnemyIds.has('awakenDeep')) {
+    ids = ids.map((id) => (id === 'blightbloat' ? 'cinderWraith' : id));
+  }
   const slotOffset = rng.int(0, SANCTUM_SPAWN_SLOTS.length - 1);
   const spawned: Enemy[] = [];
   ids.forEach((id, i) => {
     const def = getEnemyDefinition(id);
     const slot = SANCTUM_SPAWN_SLOTS[(slotOffset + i * 3) % SANCTUM_SPAWN_SLOTS.length];
     const pos = settleSpawn(room, slot.x + rng.range(-16, 16), slot.y + rng.range(-12, 12), def.radius);
-    const enemy = new Enemy(def, pos.x, pos.y, hpMult, damageMult);
+    const enemy = new Enemy(def, pos.x, pos.y, hpMult * SANCTUM_HP_MULT, damageMult * SANCTUM_DAMAGE_MULT);
     enemy.stateTimer = -0.14 * i;
     room.enemies.push(enemy);
     spawned.push(enemy);
@@ -508,12 +576,16 @@ export function populateRoomContent(room: Room, zone: ZoneDefinition, opts: Spaw
       const { hpMult, damageMult } = getDifficultyFactors(zone.index, opts.runMinutes);
       const ids =
         zone.index === 1
-          ? composeRuinsEncounter(rng, count, room.distanceFromStart, safePool)
-          : Array.from({ length: count }, () => rng.pick(safePool));
+          ? composeEncounter(rng, count, room.distanceFromStart, safePool, RUINS_ENCOUNTERS)
+          : zone.index === 2
+            ? composeEncounter(rng, count, room.distanceFromStart, safePool, CITADEL_ENCOUNTERS)
+            : Array.from({ length: count }, () => rng.pick(safePool));
       for (const id of ids) {
         const def = getEnemyDefinition(id);
         const pos = randomSpawnPosition(rng, 150, room);
-        room.enemies.push(new Enemy(def, pos.x, pos.y, hpMult, damageMult));
+        const enemy = new Enemy(def, pos.x, pos.y, hpMult, damageMult);
+        if (zone.index === 2) maybeApplyMutatedVariant(enemy, def, rng);
+        room.enemies.push(enemy);
       }
       break;
     }
@@ -532,7 +604,9 @@ export function populateRoomContent(room: Room, zone: ZoneDefinition, opts: Spaw
         const id = rng.pick(safePool);
         const def = getEnemyDefinition(id);
         const pos = randomSpawnPosition(rng, 150, room);
-        room.enemies.push(new Enemy(def, pos.x, pos.y, hpMult, damageMult));
+        const escort = new Enemy(def, pos.x, pos.y, hpMult, damageMult);
+        if (zone.index === 2) maybeApplyMutatedVariant(escort, def, rng);
+        room.enemies.push(escort);
       }
       break;
     }

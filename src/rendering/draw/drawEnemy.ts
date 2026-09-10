@@ -560,6 +560,19 @@ export function drawEnemy(ctx: CanvasRenderingContext2D, enemy: Enemy, screenX: 
     drawGlowCircle(ctx, 0, 0, r * 2, Palette.ember4, 0.22);
   }
 
+  if (enemy.isMutatedVariant && enemy.alive) {
+    // A colder violet tainting the Citadel's warm palette — the game's existing
+    // visual language for "something otherworldly" (Shadow Stalker, Cinder
+    // Wraith, the Sunken Warden), reused here rather than inventing a new one.
+    const pulse = 0.45 + Math.sin(enemy.animPhase * 4.2) * 0.25;
+    ctx.strokeStyle = rgba(Palette.soulBright, pulse);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, r * 0.6, r * 1.05, 0, Math.PI * 2);
+    ctx.stroke();
+    drawGlowCircle(ctx, 0, 0, r * 1.6, Palette.soul, 0.2);
+  }
+
   telegraphRing(ctx, enemy, r);
 
   if (deathT > 0) {
@@ -576,10 +589,10 @@ export function drawEnemy(ctx: CanvasRenderingContext2D, enemy: Enemy, screenX: 
   ctx.save();
   ctx.translate(screenX, screenY);
   healthBar(ctx, enemy, r);
-  if (enemy.def.isElite || enemy.isEliteInstance) {
+  if (enemy.def.isElite || enemy.isEliteInstance || enemy.isMutatedVariant) {
     ctx.font = '700 11px Georgia, serif';
     ctx.textAlign = 'center';
-    ctx.fillStyle = Palette.ember5;
+    ctx.fillStyle = enemy.isMutatedVariant && !enemy.isEliteInstance && !enemy.def.isElite ? Palette.soulBright : Palette.ember5;
     ctx.shadowColor = 'rgba(0,0,0,0.8)';
     ctx.shadowBlur = 3;
     ctx.fillText((enemy.displayName ?? tc(enemy.def.id, 'name', enemy.def.name)).toUpperCase(), 0, -r - 18);

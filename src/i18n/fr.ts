@@ -78,6 +78,7 @@ export const FR_CONTENT: Record<string, Record<string, string>> = {
   'embered-veins': { name: 'Veines d’Ember', description: '+20% dégâts de compétence.' },
   'cinder-wound': { name: 'Blessure Cendrée', description: '+10% de chances d’enflammer les ennemis au contact.' },
   'iron-lungs': { name: 'Poumons de Fer', description: '+35 endurance maximum.' },
+  'ember-wellspring': { name: 'Source d’Ember', description: '+18% régénération d’énergie de compétence.' },
   'twin-embers': { name: 'Embers Jumeaux', description: '+1 projectile sur les attaques à distance et les compétences.' },
   'wide-blast': { name: 'Explosion Large', description: '+20% dégâts et rayon de zone.' },
   'leeching-strikes': { name: 'Frappes Vampiriques', description: '+5% de vol de vie sur tous les dégâts infligés.' },
@@ -224,6 +225,7 @@ export const FR_UI: Record<string, string> = {
   // Enemy display-name templates ({name} is replaced with the already-translated base name)
   'enemy.empoweredFormat': '{name} Renforcé',
   'enemy.heartWardenFormat': '{name}, Gardien du Cœur',
+  'enemy.mutatedFormat': '{name}, Marqué par l’Ember',
   'hud.rmbHint': 'Clic D.',
   // Onboarding hints
   'hint.desktop.move': 'Utilisez <strong>ZQSD</strong> pour vous déplacer — visez avec la souris.',

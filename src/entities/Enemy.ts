@@ -53,6 +53,9 @@ export class Enemy {
   difficultyHpMult: number;
   difficultyDamageMult: number;
   isEliteInstance = false;
+  /** Ember Citadel only: a rare, visibly tainted variant of a regular enemy —
+   * noticeably tougher than the baseline, short of a full elite promotion. */
+  isMutatedVariant = false;
   displayName: string | null = null;
 
   lastPlayerX = 0;
