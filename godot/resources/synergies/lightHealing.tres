@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="SynergyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/synergy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "lightHealing"
+name = "Light & Healing"
+description = "Enemies slain while burning or warded have a chance to drop a healing mote."
+requires = Array[String](["light", "healing"])
+icon = "heart"

@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="UnlockDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/unlock_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "unlock-void-scythe"
+name = "Void Scythe"
+description = "Unlock a slow, devastating melee weapon."
+cost = 150
+kind = 0
+ref_id = "voidScythe"

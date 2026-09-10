@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="UnlockDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/unlock_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "unlock-stormstep"
+name = "Stormstep"
+description = "Unlock a blinking dash ability."
+cost = 140
+kind = 1
+ref_id = "stormstep"

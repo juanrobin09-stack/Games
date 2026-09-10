@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="PermanentUpgradeDefinition" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/permanent_upgrade_definition.gd" id="1"]
+[ext_resource type="Script" path="res://resources/definitions/stat_modifier.gd" id="2"]
+
+[sub_resource type="Resource" id="StatModifier_1"]
+script = ExtResource("2")
+stat = "max_hp"
+mode = 0
+value = 10.0
+
+[resource]
+script = ExtResource("1")
+id = "wardens-resolve"
+name = "Warden's Resolve"
+description = "+10 starting max HP per level."
+max_level = 5
+base_cost = 40
+cost_growth = 1.35
+modifiers = Array[Resource]([SubResource("StatModifier_1")])
+icon = "heart"
+tier = 1

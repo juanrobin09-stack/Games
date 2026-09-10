@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="WorldEventDefinition" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/world_event_definition.gd" id="1"]
+[ext_resource type="Script" path="res://resources/definitions/event_option.gd" id="2"]
+
+[sub_resource type="Resource" id="EventOption_1"]
+script = ExtResource("2")
+id = "feed-well"
+label = "Feed the Well"
+detail = "Spend 40 Embers to draw a measure of Soul Ash, kept even if you fall."
+apply = 5
+value = 18.0
+cost = 40.0
+
+[sub_resource type="Resource" id="EventOption_2"]
+script = ExtResource("2")
+id = "leave-well"
+label = "Leave It Be"
+detail = "The well can wait. So can you."
+apply = 9
+
+[resource]
+script = ExtResource("1")
+id = "emberWell"
+title = "The Ember Well"
+description = "A well sunk deep into the dark, glowing faintly. Embers dropped here do not return — but the well remembers."
+options = Array[Resource]([SubResource("EventOption_1"), SubResource("EventOption_2")])

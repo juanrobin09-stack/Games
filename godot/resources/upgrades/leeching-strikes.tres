@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="UpgradeDefinition" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/upgrade_definition.gd" id="1"]
+[ext_resource type="Script" path="res://resources/definitions/stat_modifier.gd" id="2"]
+
+[sub_resource type="Resource" id="StatModifier_1"]
+script = ExtResource("2")
+stat = "lifesteal"
+mode = 0
+value = 0.05
+
+[resource]
+script = ExtResource("1")
+id = "leeching-strikes"
+name = "Leeching Strikes"
+description = "+5% lifesteal on all damage dealt."
+rarity = 2
+tags = Array[String](["healing"])
+modifiers = Array[Resource]([SubResource("StatModifier_1")])
+icon = "lifesteal"

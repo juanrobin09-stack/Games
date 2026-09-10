@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="WorldEventDefinition" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/world_event_definition.gd" id="1"]
+[ext_resource type="Script" path="res://resources/definitions/event_option.gd" id="2"]
+
+[sub_resource type="Resource" id="EventOption_1"]
+script = ExtResource("2")
+id = "blessing-embers"
+label = "Ember's Bounty"
+detail = "Gain a generous handful of Embers."
+apply = 0
+value = 45.0
+
+[sub_resource type="Resource" id="EventOption_2"]
+script = ExtResource("2")
+id = "blessing-hp"
+label = "Light's Mercy"
+detail = "Mend your wounds completely."
+apply = 1
+value = 9999.0
+
+[resource]
+script = ExtResource("1")
+id = "oldShrine"
+title = "The Old Shrine"
+description = "A blackened altar hums with what light remains. It offers a single blessing."
+options = Array[Resource]([SubResource("EventOption_1"), SubResource("EventOption_2")])

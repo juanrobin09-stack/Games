@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="UnlockDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/unlock_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "awakenDeep"
+name = "Awaken the Deep"
+description = "Something stirs. The Cinder Wraith now haunts the ruins and the citadel."
+cost = 130
+kind = 2
+ref_id = "cinderWraith"

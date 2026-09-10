@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="UpgradeDefinition" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/upgrade_definition.gd" id="1"]
+[ext_resource type="Script" path="res://resources/definitions/stat_modifier.gd" id="2"]
+
+[sub_resource type="Resource" id="StatModifier_1"]
+script = ExtResource("2")
+stat = "stamina_max"
+mode = 0
+value = 20.0
+
+[resource]
+script = ExtResource("1")
+id = "steady-breath"
+name = "Steady Breath"
+description = "+20 maximum stamina."
+rarity = 0
+modifiers = Array[Resource]([SubResource("StatModifier_1")])
+requires_unlock = "staminaUpgrades"
+icon = "stamina"

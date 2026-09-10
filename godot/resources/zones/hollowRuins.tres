@@ -1,0 +1,34 @@
+[gd_resource type="Resource" script_class="ZoneDefinition" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/zone_definition.gd" id="1"]
+[ext_resource type="Script" path="res://resources/definitions/zone_material.gd" id="2"]
+
+[sub_resource type="Resource" id="ZoneMaterial_1"]
+script = ExtResource("2")
+moss_color = "#3a7062"
+moss_density = 2.6
+rubble_density = 1.8
+crack_density = 1.5
+damp_patches = 5
+
+[resource]
+script = ExtResource("1")
+id = "hollowRuins"
+name = "The Hollow Ruins"
+subtitle = "Stone remembers what flesh forgets"
+index = 1
+room_count = 10
+palette_floor = "#22213a"
+palette_floor_accent = "#2c2a48"
+palette_wall = "#131120"
+palette_wall_top = "#433c5e"
+palette_fog = "rgba(8,7,16,0.6)"
+palette_ambient = "#3a4a5a"
+palette_accent = "#9b7ed9"
+enemy_pool = Array[String](["ashCrawler", "hollow", "gravebound", "shadowStalker", "cinderWraith", "blightbloat", "hollowWarden"])
+heart_guardian = "sunkenWarden"
+ambient_particle = 2
+darkness = 0.5
+fungal_color = "#6fe3c4"
+spore_colors = Array[String](["#8de9cf", "#9b7ed9", "#b9f5e2", "#8de9cf"])
+material = SubResource("ZoneMaterial_1")

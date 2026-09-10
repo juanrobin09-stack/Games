@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="SynergyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/synergy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "wrath"
+name = "Wrath of the Warden"
+description = "The lower your HP, the more damage you deal — up to +50% at the brink of death."
+requires = Array[String](["wrath", "wrath"])
+icon = "critDamage"

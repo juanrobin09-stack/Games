@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="WorldEventDefinition" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/world_event_definition.gd" id="1"]
+[ext_resource type="Script" path="res://resources/definitions/event_option.gd" id="2"]
+
+[sub_resource type="Resource" id="EventOption_1"]
+script = ExtResource("2")
+id = "sacrifice-hp"
+label = "Offer Your Blood"
+detail = "Lose 25% of your current HP for a rare-or-better upgrade."
+apply = 2
+value = 0.25
+
+[sub_resource type="Resource" id="EventOption_2"]
+script = ExtResource("2")
+id = "refuse-flame"
+label = "Walk Away"
+detail = "The flame gutters and dims. Nothing ventured."
+apply = 9
+
+[resource]
+script = ExtResource("1")
+id = "dyingFlame"
+title = "The Dying Flame"
+description = "A guttering flame offers you strength, but flame demands fuel — and you are the only fuel here."
+options = Array[Resource]([SubResource("EventOption_1"), SubResource("EventOption_2")])

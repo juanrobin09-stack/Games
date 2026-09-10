@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="SynergyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/synergy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "emberCritical"
+name = "Ember & Critical"
+description = "Critical hits have a chance to detonate the target in a burst of Ember light."
+requires = Array[String](["ember", "critical"])
+icon = "crit"

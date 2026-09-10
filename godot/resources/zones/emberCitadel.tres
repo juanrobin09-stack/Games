@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="ZoneDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/zone_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "emberCitadel"
+name = "Ember Citadel"
+subtitle = "The last light burns behind these walls"
+index = 2
+room_count = 7
+palette_floor = "#2e1e19"
+palette_floor_accent = "#3a2620"
+palette_wall = "#1c110d"
+palette_wall_top = "#5a3220"
+palette_fog = "rgba(20,6,4,0.55)"
+palette_ambient = "#5a2a18"
+palette_accent = "#ffab54"
+enemy_pool = Array[String](["gravebound", "shadowStalker", "flameWisp", "emberDevourer", "cinderWraith"])
+heart_guardian = "emberDevourer"
+ambient_particle = 0

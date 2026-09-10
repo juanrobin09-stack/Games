@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="WorldEventDefinition" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/world_event_definition.gd" id="1"]
+[ext_resource type="Script" path="res://resources/definitions/event_option.gd" id="2"]
+
+[sub_resource type="Resource" id="EventOption_1"]
+script = ExtResource("2")
+id = "gamble-embers"
+label = "Wager Your Embers"
+detail = "Coin flip: double your Embers, or lose half."
+apply = 4
+
+[sub_resource type="Resource" id="EventOption_2"]
+script = ExtResource("2")
+id = "ignore-whisper"
+label = "Ignore It"
+detail = "Some voices are best left unanswered. Small Ember gain."
+apply = 0
+value = 15.0
+
+[resource]
+script = ExtResource("1")
+id = "theWhisper"
+title = "The Whisper"
+description = "Something in the dark speaks your name. It knows what you carry. It wants to play a game."
+options = Array[Resource]([SubResource("EventOption_1"), SubResource("EventOption_2")])

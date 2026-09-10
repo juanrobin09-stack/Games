@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="SynergyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/synergy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "shadowDodge"
+name = "Shadow & Dodge"
+description = "A perfectly-timed dodge grants a brief surge of damage."
+requires = Array[String](["shadow", "dodge"])
+icon = "dodge"

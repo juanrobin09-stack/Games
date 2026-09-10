@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="SynergyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/synergy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "ashFire"
+name = "Ash & Fire"
+description = "Burning enemies take 40% more damage from all sources."
+requires = Array[String](["ash", "fire"])
+icon = "burn"

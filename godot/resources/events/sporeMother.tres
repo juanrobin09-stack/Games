@@ -1,0 +1,36 @@
+[gd_resource type="Resource" script_class="WorldEventDefinition" load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/world_event_definition.gd" id="1"]
+[ext_resource type="Script" path="res://resources/definitions/event_option.gd" id="2"]
+
+[sub_resource type="Resource" id="EventOption_1"]
+script = ExtResource("2")
+id = "breathe-deep"
+label = "Breathe Deep"
+detail = "The spores take root in you. Gain +15 max HP for this run, and heal 15."
+apply = 7
+value = 15.0
+
+[sub_resource type="Resource" id="EventOption_2"]
+script = ExtResource("2")
+id = "cut-it-open"
+label = "Cut It Open"
+detail = "Lose 20% of your current HP to the burst, and take what it was growing around: a rare-or-better upgrade."
+apply = 2
+value = 0.2
+
+[sub_resource type="Resource" id="EventOption_3"]
+script = ExtResource("2")
+id = "leave-mother"
+label = "Back Away"
+detail = "Let it breathe. Small Ember gain from the floor."
+apply = 0
+value = 12.0
+
+[resource]
+script = ExtResource("1")
+id = "sporeMother"
+title = "The Spore Mother"
+description = "A pulsing fungal mass fills the alcove, breathing slowly. Whatever it grew from is still in there, and it is not entirely dead."
+options = Array[Resource]([SubResource("EventOption_1"), SubResource("EventOption_2"), SubResource("EventOption_3")])
+zone_id = "hollowRuins"

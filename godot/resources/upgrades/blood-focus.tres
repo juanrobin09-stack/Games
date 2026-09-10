@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="UpgradeDefinition" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/upgrade_definition.gd" id="1"]
+[ext_resource type="Script" path="res://resources/definitions/stat_modifier.gd" id="2"]
+
+[sub_resource type="Resource" id="StatModifier_1"]
+script = ExtResource("2")
+stat = "crit_chance"
+mode = 0
+value = 0.1
+
+[sub_resource type="Resource" id="StatModifier_2"]
+script = ExtResource("2")
+stat = "crit_damage"
+mode = 0
+value = 0.2
+
+[resource]
+script = ExtResource("1")
+id = "blood-focus"
+name = "Blood Focus"
+description = "+10% critical chance, +20% critical damage."
+rarity = 3
+tags = Array[String](["critical", "wrath"])
+modifiers = Array[Resource]([SubResource("StatModifier_1"), SubResource("StatModifier_2")])
+icon = "critDamage"

@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="PermanentUpgradeDefinition" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/permanent_upgrade_definition.gd" id="1"]
+[ext_resource type="Script" path="res://resources/definitions/stat_modifier.gd" id="2"]
+
+[sub_resource type="Resource" id="StatModifier_1"]
+script = ExtResource("2")
+stat = "stamina_max"
+mode = 0
+value = 8.0
+
+[resource]
+script = ExtResource("1")
+id = "endless-vigor"
+name = "Endless Vigor"
+description = "+8 starting max stamina per level."
+max_level = 5
+base_cost = 40
+cost_growth = 1.35
+modifiers = Array[Resource]([SubResource("StatModifier_1")])
+icon = "stamina"
+tier = 1

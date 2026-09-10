@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="ZoneDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/zone_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "ashenWoods"
+name = "Ashen Woods"
+subtitle = "Where the trees remember fire"
+index = 0
+room_count = 8
+palette_floor = "#252d1e"
+palette_floor_accent = "#313d26"
+palette_wall = "#171d11"
+palette_wall_top = "#44532f"
+palette_fog = "rgba(9,13,7,0.5)"
+palette_ambient = "#3c4a2c"
+palette_accent = "#ff7b3d"
+enemy_pool = Array[String](["ashCrawler", "hollow", "flameWisp"])
+heart_guardian = "gravebound"
+ambient_particle = 1

@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="PermanentUpgradeDefinition" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/permanent_upgrade_definition.gd" id="1"]
+[ext_resource type="Script" path="res://resources/definitions/stat_modifier.gd" id="2"]
+
+[sub_resource type="Resource" id="StatModifier_1"]
+script = ExtResource("2")
+stat = "ember_gain_mult"
+mode = 1
+value = 0.08
+
+[resource]
+script = ExtResource("1")
+id = "ember-hoard"
+name = "Ember Hoard"
+description = "+8% Embers gained per level."
+max_level = 5
+base_cost = 45
+cost_growth = 1.35
+modifiers = Array[Resource]([SubResource("StatModifier_1")])
+icon = "ember"
+tier = 1

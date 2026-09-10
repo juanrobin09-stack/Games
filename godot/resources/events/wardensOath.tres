@@ -1,0 +1,35 @@
+[gd_resource type="Resource" script_class="WorldEventDefinition" load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/world_event_definition.gd" id="1"]
+[ext_resource type="Script" path="res://resources/definitions/event_option.gd" id="2"]
+
+[sub_resource type="Resource" id="EventOption_1"]
+script = ExtResource("2")
+id = "take-oath"
+label = "Take Up the Oath"
+detail = "Gain a Warden’s ward: one extra shield charge."
+apply = 6
+value = 1.0
+
+[sub_resource type="Resource" id="EventOption_2"]
+script = ExtResource("2")
+id = "pry-shield"
+label = "Pry the Shield Loose"
+detail = "Gain 55 Embers. The statue’s grip cracks your ribs on the way out: lose 15% of your HP."
+apply = 8
+value = 55.0
+
+[sub_resource type="Resource" id="EventOption_3"]
+script = ExtResource("2")
+id = "leave-warden"
+label = "Let It Kneel"
+detail = "Some oaths are not yours to carry."
+apply = 9
+
+[resource]
+script = ExtResource("1")
+id = "wardensOath"
+title = "The Warden's Oath"
+description = "A stone warden kneels before a cracked shield, its lips still shaped around the last word of an oath. \"Hold the line.\""
+options = Array[Resource]([SubResource("EventOption_1"), SubResource("EventOption_2"), SubResource("EventOption_3")])
+zone_id = "hollowRuins"

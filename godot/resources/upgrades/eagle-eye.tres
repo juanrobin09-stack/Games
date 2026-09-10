@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="UpgradeDefinition" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/upgrade_definition.gd" id="1"]
+[ext_resource type="Script" path="res://resources/definitions/stat_modifier.gd" id="2"]
+
+[sub_resource type="Resource" id="StatModifier_1"]
+script = ExtResource("2")
+stat = "area_damage_mult"
+mode = 1
+value = 0.17
+
+[resource]
+script = ExtResource("1")
+id = "eagle-eye"
+name = "Eagle Eye"
+description = "+17% ability range."
+rarity = 3
+modifiers = Array[Resource]([SubResource("StatModifier_1")])
+icon = "range"

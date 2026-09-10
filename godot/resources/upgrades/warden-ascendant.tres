@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="UpgradeDefinition" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/upgrade_definition.gd" id="1"]
+[ext_resource type="Script" path="res://resources/definitions/stat_modifier.gd" id="2"]
+
+[sub_resource type="Resource" id="StatModifier_1"]
+script = ExtResource("2")
+stat = "damage_mult"
+mode = 1
+value = 0.4
+
+[sub_resource type="Resource" id="StatModifier_2"]
+script = ExtResource("2")
+stat = "ember_power"
+mode = 1
+value = 0.4
+
+[resource]
+script = ExtResource("1")
+id = "warden-ascendant"
+name = "Warden Ascendant"
+description = "+40% damage, +40% Ember power."
+rarity = 4
+tags = Array[String](["ember", "critical"])
+modifiers = Array[Resource]([SubResource("StatModifier_1"), SubResource("StatModifier_2")])
+requires_unlock = "emberSight"
+icon = "blade"

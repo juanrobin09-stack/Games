@@ -144,7 +144,7 @@ This runs a full TypeScript type-check (`tsc --noEmit`) followed by a Vite produ
 
 ## Future migration
 
-The Godot rebuild has started: [`godot/`](./godot) holds a real, openable Godot 4.3 project — currently step 1 of the 12-step build order (project scaffold + the 4 core Autoloads; see [`godot/README.md`](./godot/README.md) for exactly what's implemented versus stubbed). [`GODOT_MIGRATION.md`](./GODOT_MIGRATION.md) is the full transition plan this scaffold follows, and [`STEAM_PORTING.md`](./STEAM_PORTING.md) covers what a commercial desktop/Steam release would additionally require. Game design details (enemy stats, upgrade formulas, economy) live in [`GAME_DESIGN.md`](./GAME_DESIGN.md).
+The Godot rebuild has started: [`godot/`](./godot) holds a real, openable Godot 4.3 project — through step 2 of the 12-step build order (the scaffold + 5 core Autoloads, plus every enemy/weapon/ability/upgrade/zone/event/permanent-upgrade/unlock/synergy converted to a data-driven `Resource`; see [`godot/README.md`](./godot/README.md) for exactly what's implemented, stubbed, or still unverified in a real editor). [`GODOT_MIGRATION.md`](./GODOT_MIGRATION.md) is the full transition plan this project follows, and [`STEAM_PORTING.md`](./STEAM_PORTING.md) covers what a commercial desktop/Steam release would additionally require. Game design details (enemy stats, upgrade formulas, economy) live in [`GAME_DESIGN.md`](./GAME_DESIGN.md).
 
 ## Known limitations
 

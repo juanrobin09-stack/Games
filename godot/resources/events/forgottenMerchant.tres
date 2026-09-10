@@ -1,0 +1,36 @@
+[gd_resource type="Resource" script_class="WorldEventDefinition" load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/world_event_definition.gd" id="1"]
+[ext_resource type="Script" path="res://resources/definitions/event_option.gd" id="2"]
+
+[sub_resource type="Resource" id="EventOption_1"]
+script = ExtResource("2")
+id = "buy-upgrade-cheap"
+label = "A Modest Charm"
+detail = "Guaranteed upgrade, common odds. 30 Embers."
+apply = 3
+value = 0.0
+cost = 30.0
+
+[sub_resource type="Resource" id="EventOption_2"]
+script = ExtResource("2")
+id = "buy-upgrade-rare"
+label = "A Rare Relic"
+detail = "Guaranteed rare-or-better upgrade. 70 Embers."
+apply = 3
+value = 2.0
+cost = 70.0
+
+[sub_resource type="Resource" id="EventOption_3"]
+script = ExtResource("2")
+id = "leave-merchant"
+label = "Refuse"
+detail = "Some prices are not worth paying."
+apply = 9
+
+[resource]
+script = ExtResource("1")
+id = "forgottenMerchant"
+title = "The Forgotten Merchant"
+description = "A hooded figure trades in things better left buried. \"Everything has a price, Warden.\""
+options = Array[Resource]([SubResource("EventOption_1"), SubResource("EventOption_2"), SubResource("EventOption_3")])
