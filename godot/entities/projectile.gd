@@ -147,5 +147,27 @@ func _check_hit_player() -> void:
 	})
 
 func _draw() -> void:
-	var color: Color = Color("#5aa9e6") if from_player else Color("#e2694f")
-	draw_circle(Vector2.ZERO, radius, color)
+	# Ports drawProjectile.ts. `rotation` is already set to `angle` in
+	# setup(), so this local frame is already the bolt's facing direction —
+	# draw forward along +X directly, no rotation math needed here.
+	#
+	# ProjectileEntity has no `visual` field (Projectile.ts's solarBolt/
+	# emberBolt/shadowBolt/voidOrb collapse to just from_player here).
+	# CombatSystem.ts always uses 'solarBolt' for player bolts and
+	# 'emberBolt' for enemy bolts, except the cinderWraith-specific
+	# 'shadowBolt' — not reachable from from_player alone, so not
+	# reproduced — so this uses those two default cases' colors.
+	var core_hex: String = Palette.EMBER6 if from_player else Palette.EMBER5
+	var glow_hex: String = Palette.EMBER5 if from_player else Palette.EMBER3
+
+	DrawUtils.draw_glow_circle(self, 0.0, 0.0, radius * 2.6, glow_hex, 0.75)
+
+	var trail := PackedVector2Array()
+	trail.append(Vector2(-radius * 3.2, -radius * 0.5))
+	trail.append(Vector2(-radius * 0.6, 0.0))
+	trail.append(Vector2(-radius * 3.2, radius * 0.5))
+	var trail_color := Color(glow_hex)
+	trail_color.a = 0.55
+	draw_colored_polygon(trail, trail_color)
+
+	draw_circle(Vector2.ZERO, radius, Color(core_hex))

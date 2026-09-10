@@ -79,7 +79,46 @@ func _collect(player: PlayerCharacter) -> void:
 		room.pickups.erase(self)
 	queue_free()
 
+## Cubic bezier point sample — p0/p1 anchors, c1/c2 controls, t in [0, 1].
+static func _cubic_bezier(p0: Vector2, c1: Vector2, c2: Vector2, p1: Vector2, t: float) -> Vector2:
+	var mt: float = 1.0 - t
+	return p0 * (mt * mt * mt) + c1 * (3.0 * mt * mt * t) + c2 * (3.0 * mt * t * t) + p1 * (t * t * t)
+
+## drawPickup.ts's heart is two cubic beziers; Godot's _draw() has no
+## bezier-fill primitive, so it's sampled into a polygon instead — the same
+## technique DrawUtils.blob_points already uses for organic shapes.
+static func _heart_points(radius: float, offset: Vector2) -> PackedVector2Array:
+	var p0: Vector2 = offset + Vector2(0.0, radius * 0.8)
+	var c1a: Vector2 = offset + Vector2(-radius, 0.0)
+	var c1b: Vector2 = offset + Vector2(-radius * 0.5, -radius)
+	var p1: Vector2 = offset + Vector2(0.0, -radius * 0.3)
+	var c2a: Vector2 = offset + Vector2(radius * 0.5, -radius)
+	var c2b: Vector2 = offset + Vector2(radius, 0.0)
+	var p2: Vector2 = offset + Vector2(0.0, radius * 0.8)
+	var segments := 12
+	var pts := PackedVector2Array()
+	for i in range(segments + 1):
+		pts.append(_cubic_bezier(p0, c1a, c1b, p1, float(i) / float(segments)))
+	for i in range(1, segments + 1):
+		pts.append(_cubic_bezier(p1, c2a, c2b, p2, float(i) / float(segments)))
+	return pts
+
 func _draw() -> void:
-	var bob: float = sin(bob_phase * 3.0) * 2.0
-	var color: Color = Color("#ffb84d") if kind == Kind.EMBER else Color("#e0546b")
-	draw_circle(Vector2(0.0, bob), radius, color)
+	# Ports drawPickup.ts.
+	var bob: float = sin(bob_phase * 4.0) * 3.0
+	var center := Vector2(0.0, bob)
+	var color_hex: String = Palette.EMBER4 if kind == Kind.EMBER else Palette.TOXIC
+	DrawUtils.draw_glow_circle(self, center.x, center.y, radius * 2.4, color_hex, 0.65)
+
+	if kind == Kind.EMBER:
+		var diamond := PackedVector2Array()
+		diamond.append(center + Vector2(0.0, -radius))
+		diamond.append(center + Vector2(radius * 0.7, 0.0))
+		diamond.append(center + Vector2(0.0, radius))
+		diamond.append(center + Vector2(-radius * 0.7, 0.0))
+		draw_colored_polygon(diamond, Color(color_hex))
+		var core := Color(Palette.EMBER6)
+		core.a = 0.8
+		draw_circle(center, radius * 0.35, core)
+	else:
+		draw_colored_polygon(_heart_points(radius, center), Color(color_hex))
