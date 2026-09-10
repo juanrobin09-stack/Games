@@ -3,15 +3,6 @@ import type { UpgradeDefinition } from '@/data/types';
 export const UPGRADES: UpgradeDefinition[] = [
   // ---------- COMMON ----------
   {
-    id: 'weathered-grip',
-    name: 'Weathered Grip',
-    description: '+10% damage.',
-    rarity: 'common',
-    tags: [],
-    icon: 'blade',
-    modifiers: [{ stat: 'damageMult', mode: 'mult', value: 0.1 }],
-  },
-  {
     id: 'quick-stride',
     name: 'Quick Stride',
     description: '+8% movement speed.',
@@ -57,32 +48,46 @@ export const UPGRADES: UpgradeDefinition[] = [
     modifiers: [{ stat: 'pickupRange', mode: 'flat', value: 30 }],
   },
   {
+    // Kept in code (see brief) but never currently offerable: gated behind
+    // an unlock id nothing grants yet.
     id: 'steady-breath',
     name: 'Steady Breath',
     description: '+20 maximum stamina.',
     rarity: 'common',
     tags: [],
     icon: 'stamina',
+    requiresUnlock: 'staminaUpgrades',
     modifiers: [{ stat: 'staminaMax', mode: 'flat', value: 20 }],
+  },
+  {
+    id: 'keen-aim',
+    name: 'Keen Aim',
+    description: '+5% ability range.',
+    rarity: 'common',
+    tags: [],
+    icon: 'range',
+    modifiers: [{ stat: 'areaDamageMult', mode: 'mult', value: 0.05 }],
   },
   // ---------- UNCOMMON ----------
   {
+    // Attack speed only matters once the Bow is in hand — see GAME_DESIGN.md.
     id: 'brisk-hands',
     name: 'Brisk Hands',
-    description: '+12% attack speed.',
+    description: '+3% attack speed.',
     rarity: 'uncommon',
     tags: [],
-    icon: 'blade',
-    modifiers: [{ stat: 'attackSpeedMult', mode: 'mult', value: 0.12 }],
+    icon: 'haste',
+    requiresUnlock: 'bow',
+    modifiers: [{ stat: 'attackSpeedMult', mode: 'mult', value: 0.03 }],
   },
   {
-    id: 'honed-edge',
-    name: 'Honed Edge',
-    description: '+15% damage.',
+    id: 'far-reach',
+    name: 'Far Reach',
+    description: '+10% ability range.',
     rarity: 'uncommon',
     tags: [],
-    icon: 'blade',
-    modifiers: [{ stat: 'damageMult', mode: 'mult', value: 0.15 }],
+    icon: 'range',
+    modifiers: [{ stat: 'areaDamageMult', mode: 'mult', value: 0.1 }],
   },
   {
     id: 'hardened-hide',
@@ -112,12 +117,15 @@ export const UPGRADES: UpgradeDefinition[] = [
     modifiers: [{ stat: 'dodgeCooldownMult', mode: 'mult', value: -0.15 }],
   },
   {
+    // Ability damage stays locked in the Ashen Woods (Zone 1 of the game) —
+    // gated on reaching the Hollow Ruins, not on any purchasable unlock.
     id: 'embered-veins',
     name: 'Embered Veins',
     description: '+20% ability damage.',
     rarity: 'uncommon',
     tags: ['ember'],
     icon: 'ability',
+    requiresUnlock: 'zone1',
     modifiers: [{ stat: 'abilityDamageMult', mode: 'mult', value: 0.2 }],
   },
   {
@@ -136,6 +144,7 @@ export const UPGRADES: UpgradeDefinition[] = [
     rarity: 'uncommon',
     tags: [],
     icon: 'stamina',
+    requiresUnlock: 'staminaUpgrades',
     modifiers: [{ stat: 'staminaMax', mode: 'flat', value: 35 }],
   },
   {
@@ -160,11 +169,11 @@ export const UPGRADES: UpgradeDefinition[] = [
   {
     id: 'wide-blast',
     name: 'Wide Blast',
-    description: '+20% area damage and radius.',
+    description: '+15% ability range.',
     rarity: 'rare',
     tags: [],
     icon: 'area',
-    modifiers: [{ stat: 'areaDamageMult', mode: 'mult', value: 0.2 }],
+    modifiers: [{ stat: 'areaDamageMult', mode: 'mult', value: 0.15 }],
   },
   {
     id: 'leeching-strikes',
@@ -187,13 +196,33 @@ export const UPGRADES: UpgradeDefinition[] = [
   {
     id: 'shadow-step',
     name: 'Shadow Step',
-    description: '+18% attack speed, quiet as the dark.',
+    description: '+6% attack speed, quiet as the dark.',
     rarity: 'rare',
     tags: ['shadow'],
-    icon: 'blade',
-    modifiers: [{ stat: 'attackSpeedMult', mode: 'mult', value: 0.18 }],
+    icon: 'haste',
+    requiresUnlock: 'bow',
+    modifiers: [{ stat: 'attackSpeedMult', mode: 'mult', value: 0.06 }],
   },
   // ---------- EPIC ----------
+  {
+    id: 'eagle-eye',
+    name: 'Eagle Eye',
+    description: '+17% ability range.',
+    rarity: 'epic',
+    tags: [],
+    icon: 'range',
+    modifiers: [{ stat: 'areaDamageMult', mode: 'mult', value: 0.17 }],
+  },
+  {
+    id: 'quickdraw',
+    name: 'Quickdraw',
+    description: '+9% attack speed.',
+    rarity: 'epic',
+    tags: [],
+    icon: 'haste',
+    requiresUnlock: 'bow',
+    modifiers: [{ stat: 'attackSpeedMult', mode: 'mult', value: 0.09 }],
+  },
   {
     id: 'reckless-vigor',
     name: 'Reckless Vigor',

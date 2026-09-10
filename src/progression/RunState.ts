@@ -3,7 +3,7 @@ import { ZONES } from '@/data/zones';
 import { generateZoneLayout, type ZoneLayout } from '@/world/LevelGenerator';
 import { Room, DIRECTION_DELTA, type Direction } from '@/world/Room';
 import type { Enemy } from '@/entities/Enemy';
-import { createInitialStatLevels, STAT_POINTS_PER_LEVEL, xpRequiredForLevel, type PlayerStatId } from '@/data/playerProgression';
+import { createInitialStatLevels, MAX_PLAYER_LEVEL, STAT_POINTS_PER_LEVEL, xpRequiredForLevel, type PlayerStatId } from '@/data/playerProgression';
 
 export interface RunStats {
   startedAt: number;
@@ -151,17 +151,24 @@ export class RunState {
     if (amount <= 0) return { levelsGained: 0, newLevel: this.playerLevel };
     this.xp += amount;
     let levelsGained = 0;
-    while (this.xp >= xpRequiredForLevel(this.playerLevel)) {
+    while (this.playerLevel < MAX_PLAYER_LEVEL && this.xp >= xpRequiredForLevel(this.playerLevel)) {
       this.xp -= xpRequiredForLevel(this.playerLevel);
       this.playerLevel++;
       this.statPoints += STAT_POINTS_PER_LEVEL;
       levelsGained++;
     }
+    // At the level cap, further XP has nothing left to buy — stop banking it
+    // so the bar doesn't read as "almost there" forever.
+    if (this.playerLevel >= MAX_PLAYER_LEVEL) this.xp = 0;
     return { levelsGained, newLevel: this.playerLevel };
   }
 
   /** XP still needed to reach the next Player Level, for the HUD/inventory bar. */
   xpToNextLevel(): number {
     return xpRequiredForLevel(this.playerLevel);
+  }
+
+  get isMaxLevel(): boolean {
+    return this.playerLevel >= MAX_PLAYER_LEVEL;
   }
 }

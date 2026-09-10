@@ -59,7 +59,9 @@ Earned at the end of every run: `floor(kills × 0.6 + eliteKills × 4 + (victory
 
 ### Player Level & Stat Points
 
-A run-scoped character sheet, entirely separate from (and layered underneath) the in-run upgrade pool — resets to Level 1 every run, same as upgrades do. Every enemy kill grants XP (`data/playerProgression.ts`'s `getEnemyXpValue`, built on the existing `xpWeight` field already authored per enemy — an Ash Crawler, `xpWeight` 1, gives exactly 5 XP; deeper zones' enemies are worth more at the same `xpWeight`, +25% per zone index, a placeholder curve). Reaching the level's XP threshold (`xpRequiredForLevel`: 25 to reach Level 2, ×1.35 per level after — a real ramp, not a flat repeat) grants 1 stat point and rolls over any leftover XP; a single large grant resolves every level it crosses in one synchronous loop, so nothing desyncs. Open the character sheet with **I** (or Pause → Your Build) to spend points across 7 stats — HP, M1 Damage, Stamina, Ability Damage, Range, Move Speed, Attack Speed — each with its own independent level and a modest per-level bonus (`PLAYER_STATS` in the same file). All of it is placeholder magnitude by design, meant to be retuned from that one file without touching call sites.
+A run-scoped character sheet, entirely separate from (and layered underneath) the in-run upgrade pool — resets to Level 1 every run, same as upgrades do, and caps at **Level 30** (`MAX_PLAYER_LEVEL`): XP still accumulates harmlessly past it, but the bar just reads MAX rather than banking XP it can never spend. Every enemy kill grants XP (`data/playerProgression.ts`'s `getEnemyXpValue`, built on the existing `xpWeight` field already authored per enemy — an Ash Crawler, `xpWeight` 1, gives exactly 5 XP; deeper zones' enemies are worth more at the same `xpWeight`, +25% per zone index, a placeholder curve). Reaching the level's XP threshold (`xpRequiredForLevel`: 25 to reach Level 2, ×1.35 per level after — a real ramp, not a flat repeat) grants 1 stat point and rolls over any leftover XP; a single large grant resolves every level it crosses in one synchronous loop, so nothing desyncs. Open the character sheet with **I** (or Pause → Your Build) to spend points across 6 stats — HP, Stamina, Ability Damage, Range, Move Speed, Attack Speed — each with its own independent level and a modest per-level bonus (`PLAYER_STATS` in the same file). All of it is placeholder magnitude by design, meant to be retuned from that one file without touching call sites.
+
+M1 Damage was removed from this list entirely — base weapon damage is now a fixed, unupgradeable number (see §7). Attack Speed and Ability Damage stay in the list but start **locked**: a row shows a lock badge and its unlock condition instead of a spend button, and `Game.spendStatPoint` refuses the same way server-side (`isPlayerStatLocked`, `data/playerProgression.ts`) so the lock can't be bypassed by any path other than the UI. Attack Speed unlocks the moment the Bow is picked up; Ability Damage unlocks on reaching Zone 2 (the Hollow Ruins) — see §7 and §9.
 
 ### Upgrade Levels
 
@@ -72,7 +74,7 @@ The player's live `StatBlock` (see `data/types.ts`) is built as `base → + perm
 - `flat` modifiers add their raw value.
 - `mult` modifiers multiply the stat's *current* value by `(1 + value)` — this lets `*Mult` fields (base `1.0`) compound predictably, and lets reduction fields (like dodge cooldown) shrink safely toward zero via negative values.
 
-Base stats: 100 HP, 0.4 HP/s regen, 190 move speed, 5% crit chance, 1.5× crit damage, 100 stamina, 100 energy (6/s regen), 70 pickup range. All other multipliers start at `1.0`; all other flat bonuses (armor, lifesteal, burn chance, shield charges, projectile count, rarity luck) start at `0`. Stamina's own regen (45/s after a 0.55s pause — a full 0→100 refill takes ~2.2s) is a fixed constant rather than a stat — only its max is upgradeable, see §5 and §7.
+Base stats: 130 HP (clamped 10–180 — the 180 ceiling is a hard ceiling, not a starting value: Player Level HP points and the Hearty Vigor/Phoenix Heart upgrades climb toward it, nothing starts there), 0.4 HP/s regen, 190 move speed, 5% crit chance, 1.5× crit damage, 100 stamina, 100 energy (6/s regen), 70 pickup range. All other multipliers start at `1.0`; all other flat bonuses (armor, lifesteal, burn chance, shield charges, projectile count, rarity luck) start at `0`. Stamina's own regen (45/s after a 0.55s pause — a full 0→100 refill takes ~2.2s) is a fixed constant rather than a stat — only its max is upgradeable, see §5 and §7.
 
 ## 5. Combat
 
@@ -89,9 +91,9 @@ Base stats: 100 HP, 0.4 HP/s regen, 190 move speed, 5% crit chance, 1.5× crit d
 
 | Enemy | Behavior | HP | Damage | Speed | Notes |
 |---|---|---|---|---|---|
-| Ash Crawler | Chaser | 16 | 6 | 255 | Fast, fragile, hunts in numbers |
-| Hollow | Tank | 68 | 13 | 85 | Slow, high HP, heavy telegraph |
-| Flame Wisp | Ranged | 22 | 9 | 125 | Flying, kites at range, fireballs |
+| Ash Crawler | Chaser | 200 | 8 | 255 | Fast, hunts in numbers |
+| Hollow | Tank | 200 | 8 | 85 | Slow, heavy telegraph |
+| Flame Wisp | Ranged | 200 | 8 | 125 | Flying, kites at range, fireballs |
 | Gravebound | Heavy | 58 | 20 | 105 | Big telegraphed slam |
 | Shadow Stalker | Stalker | 30 | 14 | 235 | Vanishes and repositions to ambush |
 | Ember Devourer | Elite | 230 | 22 | 145 | Hybrid melee/ranged, appears in elite/heart rooms |
@@ -100,21 +102,24 @@ Base stats: 100 HP, 0.4 HP/s regen, 190 move speed, 5% crit chance, 1.5× crit d
 | Hollow Warden *(Hollow Ruins)* | Warden | 88 | 19 | 92 | Door-sized stone shield turns aside 85% of damage inside its frontal ±66° arc (no knockback/stagger/burn); turns at 3.1 rad/s while hunting an angle (fast enough to actually catch up to a circling player, with a light lead on their velocity so holding a steady orbit no longer stalls it indefinitely), engages its bash from 195px; bashes along its facing (540 px/s lunge, telegraphed as a lane — the *committed* turn during windup/bash is throttled back to its original, pre-rework rate so a sidestep still beats it), then its guard drops for 1.4s — the punish window. |
 | **The Sunken Warden** *(champion)* | Warden | 290 | 23 | 104 | Level 2's conclusion. Phase 1: the shield line above (turns at 2.7 rad/s, engages from 235px), wider arc. At 50% HP the shield **shatters** (hard stagger, two Blightbloats crawl out of the flanks), and phase 2 is a faster double bash that leaves a spore cloud where it lands. Gets the boss HP bar. |
 
-All values are base; see §9 for zone/time scaling. Every enemy can be spawned as an **elite instance** (empowered ×2.1 HP / ×1.35 damage, named `Empowered <Name>`) in elite rooms, or as a **zone heart guardian** (×3.2 HP / ×1.5 damage) at the end of zone 1. Zone 2's heart guardian is instead a purpose-built **champion** (The Sunken Warden) whose numbers are authored for the role — it only takes the zone/time scaling, not the ×3.2 promotion.
+Zone 1's three starting enemies (Ash Crawler, Hollow, Flame Wisp) were leveled to a uniform 200 HP / 8 damage as part of the Level-30 rebalance — a deliberate simplification of what were previously three differentiated HP/damage tiers (16–22 HP, 6–9 damage) into one shared baseline for the player's very first fights, chosen over re-differentiating three new numbers per archetype since the brief specified a single Level-1 mob baseline; their behavior, speed, and role (fast chaser / slow tank / kiting ranged) are untouched, so the *feel* of each still differs even though the numbers now don't. All values are base; see §9 for zone/time scaling. Every enemy can be spawned as an **elite instance** (empowered ×2.1 HP / ×1.35 damage, named `Empowered <Name>`) in elite rooms, or as a **zone heart guardian** (×3.2 HP / ×1.5 damage) at the end of zone 1. Zone 2's heart guardian is instead a purpose-built **champion** (The Sunken Warden) whose numbers are authored for the role — it only takes the zone/time scaling, not the ×3.2 promotion.
 
 The two Level 2 archetypes were designed around *new situations* rather than bigger numbers: the Warden is a **positioning** problem (its front is a wall, its back is a target, its bash is a committed line you sidestep and punish — Stormstep's dash-through puts you behind it for free), and the Blightbloat is a **space-denial** problem (it makes the floor itself the enemy, and turns "kill it fast" into "kill it *there*"). Together — a Warden advancing behind its shield while a Bloat waddles up beside it — they force the flank and the retreat to happen at the same time.
 
 ## 7. Weapons, Abilities & Permanent Progression
 
-### Weapons (3)
+### Weapons (4)
 
 | Weapon | Type | Damage | Cooldown | Stamina | Notes | Unlock |
 |---|---|---|---|---|---|---|
-| Ember Blade | Melee | 22 | 0.45s | 10 | Balanced, wide-ish arc | Default |
+| Ember Blade | Melee | 17 | 0.45s | 10 | Balanced, wide-ish arc | Default |
 | Void Scythe | Melee | 34 | 0.85s | 10 | Slow, huge arc, +8% crit | 150 Soul Ash |
 | Solar Spear | Ranged | 14 | 0.55s | 10 | Pierces 2 targets | 220 Soul Ash |
+| Warden's Bow | Ranged | 16 | 0.5s | 10 | Pierces 1 target, 420 range | Zone 2 elite room (in-run) |
 
-Ember Blade's base damage was raised from 16 to 22 (the low end of the requested 22–23 range) after checking hits-to-kill across the roster: at 22, Hollow (68 HP) still takes 4 clean hits rather than collapsing to 3 the way 23 would, keeping Level 1's first real "tank" fight from feeling trivial, while Flame Wisp (22 HP) becomes a clean one-hit-kill and the bigger HP pools (Ember Devourer, the two Wardens, the Colossus) land on sensible double-digit hit counts rather than the sponge counts 16 produced.
+Ember Blade's base damage is fixed at 17 with **no in-run upgrade able to raise it any more** — the old Weathered Grip / Honed Edge upgrades and the `m1Damage` Player-Level stat that used to scale it were removed outright as part of the Level-30 rebalance (still fully absent from chests, shop, room-clear rewards and the character sheet; verified by sampling the live upgrade pool hundreds of rolls deep with every gate state reachable). Reducing raw M1 output made room for a real early cadence to matter: Attack Speed itself is Level-1-locked (see §3) precisely so the *fixed* ~2.2 hits/s cadence stays the balance point for a while, rather than immediately drifting upward.
+
+The **Warden's Bow** is the run's one in-run weapon pickup: clearing Zone 2's (the Hollow Ruins') single guaranteed elite room grants it directly and auto-equips it, stacked on top of that room's normal upgrade-choice reward exactly the way the Drowned Sanctum's bonus stacks with its own room-clear roll (§3's "Upgrade Levels", §9). It reuses the same ranged-attack path Solar Spear already exercises (`kind:'ranged'`, a pierce-1 projectile), so nothing new had to be built for it to fire correctly. Attack Speed's three upgrades — Brisk Hands (+3%), Shadow Step (+6%), Quickdraw (+9%) — are gated `requiresUnlock:'bow'` and only enter the pool once the Bow is owned (`Game.currentGateIds()` merges the player's in-run `unlockedWeapons` into the same gate-id set `requiresUnlock` already checks for permanent Soul-Ash unlocks and zone-progress — see §8).
 
 ### Abilities (3)
 
@@ -136,7 +141,7 @@ Void Scythe (weapon), Solar Spear (weapon), Stormstep (ability), Warding Sigil (
 
 ## 8. Upgrades, Rarities & Synergies
 
-26 in-run upgrades across 5 rarities (weights: Common 40, Uncommon 30, Rare 18, Epic 9, Legendary 3 — biased upward by `rarityLuck` via an exponential roll transform). Legendary upgrades are gated behind the **Ember Sight** unlock so they never appear for a save that hasn't earned them. Every `StatBlock` field has in-run coverage except `rarityLuck` itself (permanent-only, to keep luck-stacking from spiraling within a single run) — **Ember Wellspring** (Uncommon, +18% ability energy regen) closes the one gap that used to exist between `embered-veins` (ability *damage*) and no in-run lever at all for ability *cooldown*.
+28 in-run upgrades across 5 rarities (weights: Common 40, Uncommon 30, Rare 18, Epic 9, Legendary 3 — biased upward by `rarityLuck` via an exponential roll transform). `requiresUnlock` gates an upgrade behind any id in `Game.currentGateIds()`, which merges three independent sources into the one set — permanent Soul-Ash unlocks (`meta.getUnlockedGateIds()`, persists across runs), weapons found this run (`player.unlockedWeapons`), and synthetic zone-progress ids (`'zone1'`, `'zone2'` once `run.zoneIndex` reaches them) — so an upgrade can gate on any of them through the exact same mechanism `UpgradePool` already had, with no changes to its own logic. Legendary upgrades are gated behind the **Ember Sight** unlock so they never appear for a save that hasn't earned them; the four ability-range upgrades (Keen Aim +5%, Far Reach +10%, Wide Blast +15%, Eagle Eye +17%, one per rarity tier from Common to Epic) are ungated; the three attack-speed upgrades (Brisk Hands +3%, Shadow Step +6%, Quickdraw +9%) are gated `'bow'`; Embered Veins (ability damage) is gated `'zone1'`; Steady Breath and Iron Lungs (stamina) are gated behind an id nothing currently grants (`'staminaUpgrades'`) — kept in code per the brief rather than deleted, but permanently unreachable as a drop until that changes. Every `StatBlock` field has in-run coverage except `rarityLuck` itself (permanent-only, to keep luck-stacking from spiraling within a single run) — **Ember Wellspring** (Uncommon, +18% ability energy regen) closes the one gap that used to exist between `embered-veins` (ability *damage*) and no in-run lever at all for ability *cooldown*.
 
 ### Synergies (5)
 
@@ -214,6 +219,7 @@ Zones 1 and 2 end in a **heart room** rather than a boss: a guardian fight, then
 - Shop and chest pricing follow the same rarity-weight table used for random upgrade rolls, so "buying power" and "luck" always mean the same thing everywhere in the game.
 - Rarity luck (`rarityLuck` stat) affects *chests, shop offers, and room-clear rewards* identically via one shared `rollRarity()` function — never duplicated, never inconsistent between systems.
 - Elite and heart-guardian encounters bias the post-fight upgrade roll upward (+0.15 luck) so a harder optional fight is never a *worse* deal than skipping it.
+- **The Level-30 rebalancing pass** narrowed Zone 1 to one deliberately simple baseline (130 starting / 180 ceiling HP, 200 HP / 8 damage mobs, 17 fixed M1 damage) specifically so early runs read as *legible* rather than swingy, then reintroduces power gradually and gates two stats — Attack Speed, Ability Damage — behind concrete gameplay moments (finding the Bow; reaching Zone 2) instead of making them available from the first stat point. The Player Level cap of 30 exists so the stat-point curve has a defined endpoint to design future zones' XP/enemy scaling against, rather than growing unbounded. One brief item was intentionally left unimplemented rather than guessed at: a literal ability base-range value of "10" didn't map onto the existing `areaDamageMult` 1.0-based multiplier system without either being a no-op (10 read as a flat addend) or breaking Ember Burst's radius outright (10 read as the new multiplier, an 800%+ radius increase) — the actionable, mechanically unambiguous part of that same request (the 5/10/15/17% range-upgrade tiers) is implemented in full; the base-value question is left for the next balancing pass to resolve with an explicit answer on which field "10" is meant to describe.
 
 ## 13. Replayability
 

@@ -31,7 +31,7 @@ export function clampStats(stats: StatBlock): StatBlock {
   stats.dodgeCooldownMult = clamp(stats.dodgeCooldownMult, 0.3, 2);
   stats.attackSpeedMult = clamp(stats.attackSpeedMult, 0.35, 4);
   stats.moveSpeed = Math.max(60, stats.moveSpeed);
-  stats.maxHp = Math.max(10, stats.maxHp);
+  stats.maxHp = clamp(stats.maxHp, 10, 180);
   stats.staminaMax = Math.max(20, stats.staminaMax);
   stats.rangeMult = Math.max(0.4, stats.rangeMult);
   stats.pickupRange = Math.max(20, stats.pickupRange);

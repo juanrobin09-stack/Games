@@ -1048,6 +1048,18 @@ input[type="range"]::-moz-range-thumb {
 .meta-node .meta-levels .pip { width: 8px; height: 8px; border-radius: 2px; background: var(--c-bg-3); }
 .meta-node .meta-levels .pip.filled { background: var(--c-ember-4); }
 .meta-node .buy-btn { flex: none; }
+.meta-node.locked { opacity: 0.55; filter: grayscale(0.5); }
+.meta-node.locked .meta-desc { color: var(--c-text-dim); font-style: italic; }
+.stat-locked-badge {
+  flex: none;
+  font-size: 0.75em;
+  padding: 5px 10px;
+  border-radius: var(--radius-s, 6px);
+  background: var(--c-bg-2);
+  color: var(--c-text-dim);
+  border: 1px solid var(--c-border);
+  white-space: nowrap;
+}
 
 .soul-ash-balance {
   display: flex;

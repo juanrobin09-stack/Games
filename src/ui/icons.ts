@@ -21,6 +21,7 @@ const ICONS: Record<UpgradeIconId, string> = {
   stamina: '<path d="M6 16l6-5 6 5"/><path d="M6 10l6-5 6 5"/>',
   range: '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>',
   haste: '<path d="M4 6l6 6-6 6"/><path d="M12 6l6 6-6 6"/>',
+  bow: '<path d="M6 3c-3 4-3 14 0 18"/><path d="M6 3l14 9-14 9"/><path d="M6 12h13"/>',
 };
 
 export function iconSvg(id: UpgradeIconId, size = 22): string {

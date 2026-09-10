@@ -58,7 +58,7 @@ import { RunState } from '@/progression/RunState';
 import { meta } from '@/progression/MetaProgression';
 import { rollUpgradeChoices, pickUpgradeAtLeastRarity, upcomingUpgradeLevel } from '@/progression/UpgradePool';
 import { getUpgrade } from '@/data/upgrades';
-import { getEnemyXpValue, getPlayerStatDef, type PlayerStatId } from '@/data/playerProgression';
+import { getEnemyXpValue, getPlayerStatDef, isPlayerStatLocked, type PlayerStatId } from '@/data/playerProgression';
 import { InventoryUI } from '@/ui/InventoryUI';
 import { setLocale, t, tc } from '@/i18n';
 import { applyModifiers } from '@/data/stats';
@@ -134,6 +134,11 @@ function iconForAbility(id: string): UpgradeIconId {
   if (id === 'stormstep') return 'dodge';
   if (id === 'wardingSigil') return 'shield';
   return 'ember';
+}
+
+function iconForWeapon(id: string): UpgradeIconId {
+  if (id === 'bow') return 'bow';
+  return 'blade';
 }
 
 function chestSoundFor(tier: Rarity): SfxId {
@@ -233,7 +238,10 @@ export class Game {
             attackCooldownTimer: player.attackCooldownTimer, canAttack: player.canAttack(), canUseAbility: player.canUseAbility(),
             isDodging: player.isDodging, dodgeCooldownTimer: player.dodgeCooldownTimer, canDodge: player.canDodge(),
             damageMult: player.stats.damageMult, abilityDamageMult: player.stats.abilityDamageMult,
+            areaDamageMult: player.stats.areaDamageMult,
             rangeMult: player.stats.rangeMult, moveSpeed: player.stats.moveSpeed, attackSpeedMult: player.stats.attackSpeedMult,
+            weaponId: player.weaponId, weaponCooldown: player.weapon.attackCooldown, weaponDamage: player.weapon.baseDamage,
+            unlockedWeapons: Array.from(player.unlockedWeapons),
             upgrades: player.upgrades.map((u) => ({ id: u.def.id, stacks: u.stacks })),
           },
           enemies: room.enemies.map((e) => ({
@@ -256,6 +264,7 @@ export class Game {
             contactDamage: e.contactDamage,
           })),
           obstacles: room.obstacles.map((o) => ({ visual: o.visual, x: o.x, y: o.y, radius: o.radius, activated: o.activated, facing: o.facing })),
+          chest: room.chest ? { x: room.chest.x, y: room.chest.y, tier: room.chest.tier, canInteract: room.chest.canInteract } : null,
           hazards: this.combat.hazards.map((h) => ({ x: h.x, y: h.y, radius: h.radius, timer: h.timer, duration: h.duration })),
           transition: this.transition ? { phase: this.transition.phase, t: this.transition.t, duration: this.transition.duration } : null,
           modal: !!this.modalScreen,
@@ -366,6 +375,23 @@ export class Game {
       getPermanentLevel: (id: string) => meta.getPermanentLevel(id),
       grantXp: (amount: number) => (this.run ? this.run.grantXp(amount) : null),
       spendStatPoint: (statId: PlayerStatId) => this.spendStatPoint(statId),
+      /** QA-only: samples the live upgrade pool `count` times under the
+       * current gate/zone/owned state and returns every distinct id that
+       * could appear — lets a test assert an id is (or isn't) reachable
+       * without needing to open hundreds of real chests. */
+      sampleUpgradePool: (count: number, minRarity: Rarity = 'common') => {
+        const run = this.run;
+        const player = this.player;
+        if (!run || !player) return [];
+        const seen = new Set<string>();
+        for (let i = 0; i < count; i++) {
+          const rng = Random.fromString(`qa:${i}:${Math.random()}`);
+          const choices = rollUpgradeChoices(rng, 3, player.stats.rarityLuck, this.currentGateIds(), player.upgrades, run.zoneIndex, minRarity);
+          for (const c of choices) seen.add(c.id);
+        }
+        return Array.from(seen);
+      },
+      gateIds: () => Array.from(this.currentGateIds()),
       openInventory: () => {
         this.openInventory();
         return true;
@@ -742,6 +768,18 @@ export class Game {
     return null;
   }
 
+  /** Merges every source of `requiresUnlock` gating into the one set
+   * UpgradePool already checks against: permanent Soul-Ash unlocks (persist
+   * across runs), weapons found this run (the Bow), and synthetic
+   * zone-progress ids — so an upgrade can gate on any of them through the
+   * exact same mechanism, with zero changes to UpgradePool's own logic. */
+  private currentGateIds(): Set<string> {
+    const ids = new Set<string>([...meta.getUnlockedGateIds(), ...this.player!.unlockedWeapons]);
+    if (this.run!.zoneIndex >= 1) ids.add('zone1');
+    if (this.run!.zoneIndex >= 2) ids.add('zone2');
+    return ids;
+  }
+
   private openChest(room: Room): void {
     const chest = room.chest;
     if (!chest || !chest.canInteract) return;
@@ -750,7 +788,7 @@ export class Game {
     this.run!.stats.chestsOpened++;
     const player = this.player!;
     const rng = Random.fromString(`${this.run!.seed}:chestreward:${room.key}`);
-    const def = pickUpgradeAtLeastRarity(rng, chest.tier, meta.getUnlockedGateIds(), player.upgrades, this.run!.zoneIndex);
+    const def = pickUpgradeAtLeastRarity(rng, chest.tier, this.currentGateIds(), player.upgrades, this.run!.zoneIndex);
     chest.rewardDef = def;
     chest.rewardLevel = upcomingUpgradeLevel(def.id, player.upgrades);
     this.grantUpgrade(def);
@@ -760,7 +798,7 @@ export class Game {
   private openShopRoom(room: Room): void {
     let rerollCount = 0;
     const makeOffers = (): ShopOffer[] =>
-      generateShopOffers(makeShopRng(this.run!.runSeedString, room.key, rerollCount), this.player!.stats.rarityLuck, meta.getUnlockedGateIds(), this.player!.upgrades, this.run!.zoneIndex);
+      generateShopOffers(makeShopRng(this.run!.runSeedString, room.key, rerollCount), this.player!.stats.rarityLuck, this.currentGateIds(), this.player!.upgrades, this.run!.zoneIndex);
     const offers = makeOffers();
     this.modalScreen = new ShopUI(this.uiRoot, offers, {
       getEmbers: () => this.run!.embers,
@@ -839,7 +877,7 @@ export class Game {
       case 'gainRandomUpgrade': {
         const minRarity = RARITY_ORDER[option.value ?? 0] ?? 'common';
         const rng = Random.fromString(`${run.seed}:eventupgrade:${room.key}:${option.id}`);
-        const def = pickUpgradeAtLeastRarity(rng, minRarity, meta.getUnlockedGateIds(), player.upgrades, run.zoneIndex);
+        const def = pickUpgradeAtLeastRarity(rng, minRarity, this.currentGateIds(), player.upgrades, run.zoneIndex);
         const level = upcomingUpgradeLevel(def.id, player.upgrades);
         this.grantUpgrade(def);
         run.recordUpgrade(def.id);
@@ -850,7 +888,7 @@ export class Game {
         const loss = player.stats.maxHp * (option.value ?? 0.25);
         player.hp = Math.max(1, player.hp - loss);
         const rng = Random.fromString(`${run.seed}:eventupgrade:${room.key}:${option.id}`);
-        const def = pickUpgradeAtLeastRarity(rng, 'rare', meta.getUnlockedGateIds(), player.upgrades, run.zoneIndex);
+        const def = pickUpgradeAtLeastRarity(rng, 'rare', this.currentGateIds(), player.upgrades, run.zoneIndex);
         const level = upcomingUpgradeLevel(def.id, player.upgrades);
         this.grantUpgrade(def);
         run.recordUpgrade(def.id);
@@ -1147,11 +1185,23 @@ export class Game {
     room.rewardGranted = true;
     const player = this.player!;
     const run = this.run!;
+    // The Hollow Ruins' elite den is the one guaranteed elite fight of Level 2
+    // ("Level 2 du jeu" — see the brief) — clearing it hands over the Warden's
+    // Bow directly, on top of (not instead of) the room's normal upgrade-choice
+    // reward below, the same way the Sanctum's own bonus reward stacks with it.
+    if (room.type === 'elite' && run.zoneIndex === 1 && !player.unlockedWeapons.has('bow')) {
+      player.unlockedWeapons.add('bow');
+      player.weaponId = 'bow';
+      playSfx('chestOpenLegendary');
+      spawnLevelUpBurst(this.particles, player.x, player.y);
+      this.hud?.showPhaseBanner(t('banner.bowFound', "THE WARDEN'S BOW"));
+      this.hud?.showToast(t('toast.bowFound', 'A weapon fast where the blade is slow. Attack speed now has something to sharpen.'));
+    }
     const bonusLuck = room.type === 'elite' || room.type === 'heart' ? 0.15 : room.type === 'sanctum' ? 0.3 : 0;
     const minRarity: Rarity = room.type === 'sanctum' ? 'rare' : 'common';
     const luck = clamp(player.stats.rarityLuck + bonusLuck, 0, 1);
     const rng = Random.fromString(`${run.seed}:reward:${room.key}`);
-    const choices = rollUpgradeChoices(rng, 3, luck, meta.getUnlockedGateIds(), player.upgrades, run.zoneIndex, minRarity);
+    const choices = rollUpgradeChoices(rng, 3, luck, this.currentGateIds(), player.upgrades, run.zoneIndex, minRarity);
     playSfx('roomCleared');
     if (choices.length === 0) {
       if (room.type === 'heart') this.openStairs(room, true);
@@ -1228,6 +1278,7 @@ export class Game {
     const run = this.run;
     const player = this.player;
     if (!run || !player || run.statPoints <= 0) return false;
+    if (isPlayerStatLocked(statId, player.unlockedWeapons.has('bow'), run.zoneIndex)) return false;
     const def = getPlayerStatDef(statId);
     run.statPoints--;
     run.statLevels[statId]++;
@@ -1616,6 +1667,8 @@ export class Game {
       xp: run.xp,
       xpToNext: run.xpToNextLevel(),
       statPoints: run.statPoints,
+      isMaxLevel: run.isMaxLevel,
+      weaponIcon: iconForWeapon(player.weaponId),
     });
 
     if (getCorruptionRatio(run.elapsedMinutes()) > 0.5) this.onboarding?.show('corruption');

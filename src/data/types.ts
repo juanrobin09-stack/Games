@@ -53,7 +53,7 @@ export interface StatBlock {
 
 export function createBaseStats(): StatBlock {
   return {
-    maxHp: 100,
+    maxHp: 130,
     hpRegen: 0.4,
     moveSpeed: 190,
     damageMult: 1,
@@ -131,7 +131,8 @@ export type UpgradeIconId =
   | 'luck'
   | 'stamina'
   | 'range'
-  | 'haste';
+  | 'haste'
+  | 'bow';
 
 export interface SynergyDefinition {
   id: string;

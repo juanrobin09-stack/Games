@@ -33,6 +33,8 @@ export interface HudFrameData {
   xp: number;
   xpToNext: number;
   statPoints: number;
+  isMaxLevel: boolean;
+  weaponIcon: UpgradeIconId;
 }
 
 export class HUD {
@@ -53,6 +55,7 @@ export class HUD {
   private abilitySlot!: HTMLElement;
   private abilitySweep!: HTMLElement;
   private abilityIconEl!: HTMLElement;
+  private weaponIconEl!: HTMLElement;
   private weaponNameEl!: HTMLElement;
   private abilityNameEl!: HTMLElement;
   private interactPromptEl!: HTMLElement;
@@ -150,7 +153,7 @@ export class HUD {
     const bottomLeft = el('div', { class: 'hud-bottom-left' }, [
       this.abilitySlot,
       el('div', { class: 'button-column', style: 'gap:4px;' }, [
-        el('div', { class: 'hud-weapon-slot' }, [el('span', { html: iconSvg('blade', 14) }), this.weaponNameEl]),
+        el('div', { class: 'hud-weapon-slot' }, [(this.weaponIconEl = el('span', { html: iconSvg('blade', 14) })), this.weaponNameEl]),
         el('div', { class: 'hud-weapon-slot' }, [el('span', { html: iconSvg('ember', 14) }), this.abilityNameEl]),
       ]),
     ]);
@@ -250,9 +253,9 @@ export class HUD {
 
   update(data: HudFrameData): void {
     this.levelLabel.textContent = `${t('hud.levelAbbrevFormat', 'Lv.{n}').replace('{n}', String(data.playerLevel))}`;
-    const xpRatio = clamp(data.xp / Math.max(1, data.xpToNext), 0, 1);
+    const xpRatio = data.isMaxLevel ? 1 : clamp(data.xp / Math.max(1, data.xpToNext), 0, 1);
     this.xpFill.style.transform = `scaleX(${xpRatio})`;
-    this.xpLabel.textContent = `${Math.floor(data.xp)}/${data.xpToNext}`;
+    this.xpLabel.textContent = data.isMaxLevel ? t('hud.levelMax', 'MAX') : `${Math.floor(data.xp)}/${data.xpToNext}`;
     if (data.statPoints > 0) {
       this.pointsHint.innerHTML = `${t('hud.pointsReadyFormat', '+{count}').replace('{count}', String(data.statPoints))} <kbd>I</kbd>`;
       this.pointsHint.classList.add('visible');
@@ -303,6 +306,10 @@ export class HUD {
     if (this.abilityIconEl.dataset.icon !== data.abilityIcon) {
       this.abilityIconEl.innerHTML = iconSvg(data.abilityIcon, 22);
       this.abilityIconEl.dataset.icon = data.abilityIcon;
+    }
+    if (this.weaponIconEl.dataset.icon !== data.weaponIcon) {
+      this.weaponIconEl.innerHTML = iconSvg(data.weaponIcon, 14);
+      this.weaponIconEl.dataset.icon = data.weaponIcon;
     }
     this.weaponNameEl.textContent = data.weaponName;
     this.abilityNameEl.textContent = data.abilityName;

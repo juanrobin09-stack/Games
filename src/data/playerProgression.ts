@@ -45,9 +45,15 @@ export function xpRequiredForLevel(level: number): number {
 /** Stat points granted per Player Level gained. */
 export const STAT_POINTS_PER_LEVEL = 1;
 
-// ---------------------------------------------------------------- The 7 stats
+/** Hard ceiling on the run-scoped Player Level — XP still accumulates
+ * (harmlessly) past it, but no further level or stat point is granted. */
+export const MAX_PLAYER_LEVEL = 30;
 
-export type PlayerStatId = 'hp' | 'm1Damage' | 'stamina' | 'abilityDamage' | 'range' | 'moveSpeed' | 'attackSpeed';
+// ---------------------------------------------------------------- The 6 stats
+// M1 damage was removed as a player-levelable stat entirely (base weapon
+// damage is now fixed) — see GAME_DESIGN.md's balancing-pass notes.
+
+export type PlayerStatId = 'hp' | 'stamina' | 'abilityDamage' | 'range' | 'moveSpeed' | 'attackSpeed';
 
 export interface PlayerStatDefinition {
   id: PlayerStatId;
@@ -63,7 +69,6 @@ export interface PlayerStatDefinition {
 
 export const PLAYER_STATS: PlayerStatDefinition[] = [
   { id: 'hp', icon: 'heart', stat: 'maxHp', mode: 'flat', valuePerLevel: 6 },
-  { id: 'm1Damage', icon: 'blade', stat: 'damageMult', mode: 'mult', valuePerLevel: 0.04 },
   { id: 'stamina', icon: 'stamina', stat: 'staminaMax', mode: 'flat', valuePerLevel: 8 },
   { id: 'abilityDamage', icon: 'ability', stat: 'abilityDamageMult', mode: 'mult', valuePerLevel: 0.05 },
   { id: 'range', icon: 'range', stat: 'rangeMult', mode: 'mult', valuePerLevel: 0.03 },
@@ -78,7 +83,21 @@ export function getPlayerStatDef(id: PlayerStatId): PlayerStatDefinition {
 }
 
 export function createInitialStatLevels(): Record<PlayerStatId, number> {
-  return { hp: 1, m1Damage: 1, stamina: 1, abilityDamage: 1, range: 1, moveSpeed: 1, attackSpeed: 1 };
+  return { hp: 1, stamina: 1, abilityDamage: 1, range: 1, moveSpeed: 1, attackSpeed: 1 };
+}
+
+/**
+ * Whether a stat-point row is locked right now — the single source of truth
+ * both InventoryUI (hides the spend button) and Game.spendStatPoint (refuses
+ * the spend even if called directly) check, so the two can never drift out
+ * of sync. Attack Speed unlocks with the Bow; ability damage unlocks once
+ * the run reaches the Hollow Ruins (zoneIndex 1, "Level 2 du jeu") — see the
+ * balancing-pass notes in GAME_DESIGN.md.
+ */
+export function isPlayerStatLocked(statId: PlayerStatId, hasBow: boolean, zoneIndex: number): boolean {
+  if (statId === 'attackSpeed') return !hasBow;
+  if (statId === 'abilityDamage') return zoneIndex < 1;
+  return false;
 }
 
 // ---------------------------------------------------------------- In-run upgrade level cap

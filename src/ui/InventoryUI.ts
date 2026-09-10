@@ -2,7 +2,7 @@ import { el, clear } from '@/ui/dom';
 import { iconSvg } from '@/ui/icons';
 import type { RunState } from '@/progression/RunState';
 import type { Player } from '@/entities/Player';
-import { PLAYER_STATS, type PlayerStatId } from '@/data/playerProgression';
+import { PLAYER_STATS, isPlayerStatLocked, type PlayerStatId } from '@/data/playerProgression';
 import { SYNERGIES } from '@/data/synergies';
 import { playSfx } from '@/audio/SoundFactory';
 import { t, tc } from '@/i18n';
@@ -75,26 +75,39 @@ export class InventoryUI {
       const level = run.statLevels[def.id];
       const perLevelText =
         def.mode === 'flat' ? `+${def.valuePerLevel} ${t(`stat.unit.${def.id}`, '')}`.trim() : `+${Math.round(def.valuePerLevel * 100)}%`;
-      const canSpend = run.statPoints > 0;
-      const plusBtn = el(
-        'button',
-        {
-          class: 'btn small buy-btn',
-          disabled: !canSpend,
-          onClick: () => {
-            if (this.callbacks.onSpend(def.id)) {
-              playSfx('shopBuy');
-              this.render();
-            }
-          },
-        },
-        ['+']
-      );
-      return el('div', { class: 'meta-node' }, [
+      // Attack Speed and ability damage stay locked until the gameplay moment
+      // the brief ties them to (finding the Bow; reaching Level 2 of the
+      // game) — isPlayerStatLocked is the same check Game.spendStatPoint
+      // enforces server-side, so the lock can't be bypassed by spending
+      // points some other way even if this button were somehow clicked.
+      const locked = isPlayerStatLocked(def.id, this.player.unlockedWeapons.has('bow'), this.run.zoneIndex);
+      const lockReason = !locked
+        ? null
+        : def.id === 'attackSpeed'
+          ? t('stat.lockedReason.attackSpeed', "Locked — recover the Warden's Bow to unlock.")
+          : t('stat.lockedReason.abilityDamage', 'Locked — reach the Hollow Ruins (Level 2) to unlock.');
+      const canSpend = run.statPoints > 0 && !locked;
+      const plusBtn = locked
+        ? el('div', { class: 'stat-locked-badge' }, [t('stat.locked', 'Locked')])
+        : el(
+            'button',
+            {
+              class: 'btn small buy-btn',
+              disabled: !canSpend,
+              onClick: () => {
+                if (this.callbacks.onSpend(def.id)) {
+                  playSfx('shopBuy');
+                  this.render();
+                }
+              },
+            },
+            ['+']
+          );
+      return el('div', { class: locked ? 'meta-node locked' : 'meta-node' }, [
         el('div', { class: 'icon-badge', html: iconSvg(def.icon, 20) }),
         el('div', { class: 'meta-info' }, [
           el('div', { class: 'meta-name' }, [`${t(`stat.${def.id}`, def.id)} — ${t('upgrade.level', 'Level')} ${level}`]),
-          el('div', { class: 'meta-desc' }, [t('inventory.perLevelFormat', '{value} per level').replace('{value}', perLevelText)]),
+          el('div', { class: 'meta-desc' }, [locked ? lockReason : t('inventory.perLevelFormat', '{value} per level').replace('{value}', perLevelText)]),
         ]),
         plusBtn,
       ]);
