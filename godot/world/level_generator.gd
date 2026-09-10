@@ -60,6 +60,7 @@ static func generate_zone_layout(zone: ZoneDefinition, rng: RandomNumberGenerato
 	var start := RoomContainer.new()
 	parent.add_child(start)
 	start.init_grid(0, 0, RoomContainer.Type.START)
+	start.zone = zone
 	start.visited = true
 	start.cleared = true
 	rooms[start.key] = start
@@ -89,6 +90,7 @@ static func generate_zone_layout(zone: ZoneDefinition, rng: RandomNumberGenerato
 		var room := RoomContainer.new()
 		parent.add_child(room)
 		room.init_grid(nx, ny, RoomContainer.Type.COMBAT)
+		room.zone = zone
 		room.add_door(RoomContainer.OPPOSITE[dir])
 		from.add_door(dir)
 		rooms[key] = room
@@ -123,6 +125,7 @@ static func generate_zone_layout(zone: ZoneDefinition, rng: RandomNumberGenerato
 		var fallback := RoomContainer.new()
 		parent.add_child(fallback)
 		fallback.init_grid(0, 1, RoomContainer.Type.COMBAT)
+		fallback.zone = zone
 		fallback.add_door(RoomContainer.Direction.N)
 		start.add_door(RoomContainer.Direction.S)
 		fallback.distance_from_start = 1
