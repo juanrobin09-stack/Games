@@ -5,11 +5,36 @@ import { computeLevels, applyLevels, type Levels } from '@/rendering/ImageLevels
  * The floor's real photographic asset: a full top-down dungeon room render
  * (the player, the door and the torch's own light pool in this photo are
  * exactly what the floor renderer must NOT copy — only the stone material
- * itself). Two bands are sampled, both from well outside the photo's own
- * torch hotspot (roughly x:520-970, y:300-480) so a baked-in "this exact
- * spot is lit" doesn't get tiled across every floor in the game and fight
- * the actual dynamic light — everywhere else in this particular photo is
- * lit evenly enough to read as neutral, undirected ambient stone.
+ * itself). The photo's own floor is ALREADY a mosaic of large individual
+ * flagstones, each bordered by a bright, high-contrast mortar seam — which
+ * matters here because our own procedural slab grid (RoomTexture.ts) draws
+ * its own independent flagstone shapes and grout on top. Early on, the crop
+ * window sampled from two wide, loosely-bounded regions of the photo at
+ * roughly the same physical scale as the photo's own flagstones, so a crop
+ * would often straddle one of the photo's real seams — baking a second,
+ * misaligned mortar line into the middle of one of our own slabs, which
+ * read as an extra, wrong "segmentation" cutting the floor into more pieces
+ * than the procedural grid actually draws.
+ *
+ * The fix is to only ever crop from hand-picked patches that sit fully
+ * *inside* one real flagstone's interior, well clear of every seam, so no
+ * crop can ever reintroduce one. These four were found by scanning the
+ * photo for windows with no coherent high-contrast line running through
+ * them (a real seam always shows up as one column or row whose edge-pixel
+ * count towers over the rest — ordinary pebble/grain texture never
+ * concentrates that way, and — this mattered — the check has to run on
+ * the same brightness range `applyLevels` stretches into afterwards, since
+ * the raw source is dim enough that a real seam can hide under a fixed
+ * brightness threshold and only turn visible post-stretch) and then
+ * confirming each by eye at 3x, both raw and stretched — a first pass keyed
+ * on raw brightness alone quietly passed several patches that turned out to
+ * still have a seam in them once actually rendered in-game, so this second
+ * pass doesn't trust the metric without a visual check to back it up.
+ * Each patch is sized generously relative to the small crop actually taken
+ * from it, leaving real jitter room so repeated samples of the same patch
+ * still vary. Also kept clear of the photo's own torch hotspot (roughly
+ * x:540-990, y:110-690) so a baked-in "this exact spot is lit" doesn't get
+ * tiled across every floor in the game and fight the actual dynamic light.
  */
 
 interface FloorRegion {
@@ -19,9 +44,11 @@ interface FloorRegion {
   h: number;
 }
 
-const FLOOR_BANDS: FloorRegion[] = [
-  { x: 170, y: 80, w: 340, h: 740 },
-  { x: 1010, y: 80, w: 600, h: 740 },
+const FLOOR_SAFE_PATCHES: FloorRegion[] = [
+  { x: 216, y: 312, w: 130, h: 130 },
+  { x: 1432, y: 104, w: 130, h: 130 },
+  { x: 1080, y: 664, w: 130, h: 130 },
+  { x: 180, y: 642, w: 110, h: 125 },
 ];
 
 let img: HTMLImageElement | null = null;
@@ -60,23 +87,23 @@ function regionLevels(source: HTMLImageElement, region: FloorRegion): Levels {
   return levels;
 }
 
-/** Paints a randomized window of one of the two floor bands (mirrored on
- * either/both axes) into the destination rect. Unlike the wall swatches,
+/** Paints a randomized window of one of the five seam-free patches (mirrored
+ * on either/both axes) into the destination rect. Unlike the wall swatches,
  * this does NOT clip to (dx,dy,dw,dh) itself — RoomTexture.ts's organic
  * slab shapes establish their own clip path before calling this, so the
  * photo fill follows that silhouette rather than a plain rectangle.
- * `bandPick` (0..1) chooses which band; the crop is deliberately smaller
- * relative to the destination than a naive fill would use, so there's real
- * room to reposition it within the band — a crop nearly as big as the band
- * itself barely moves between draws no matter how the jitter is
- * randomized. Returns false (paints nothing) if the source isn't loaded. */
+ * `patchPick` (0..1) chooses which of the five patches; the crop stays
+ * meaningfully smaller than the patch itself (never the reverse) so it can
+ * jitter freely within the patch's verified-clean interior without ever
+ * reaching back out to a real seam. Returns false (paints nothing) if the
+ * source isn't loaded. */
 export function paintFloorSwatch(
   ctx: CanvasRenderingContext2D,
   dx: number,
   dy: number,
   dw: number,
   dh: number,
-  bandPick: number,
+  patchPick: number,
   jitterX: number,
   jitterY: number,
   flipH: boolean,
@@ -84,9 +111,10 @@ export function paintFloorSwatch(
 ): boolean {
   const source = floorImage();
   if (!source) return false;
-  const region = FLOOR_BANDS[bandPick < 0.5 ? 0 : 1];
-  const sw = Math.min(region.w, Math.max(dw * 0.5, 80));
-  const sh = Math.min(region.h, Math.max(dh * 0.5, 80));
+  const index = Math.min(FLOOR_SAFE_PATCHES.length - 1, Math.floor(patchPick * FLOOR_SAFE_PATCHES.length));
+  const region = FLOOR_SAFE_PATCHES[index];
+  const sw = Math.min(region.w, Math.max(dw * 0.35, 64));
+  const sh = Math.min(region.h, Math.max(dh * 0.35, 64));
   const sx = region.x + jitterX * Math.max(0, region.w - sw);
   const sy = region.y + jitterY * Math.max(0, region.h - sh);
 
