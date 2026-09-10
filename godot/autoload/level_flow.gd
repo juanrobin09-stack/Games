@@ -1,0 +1,404 @@
+extends Node
+## Autoload: LevelFlow
+##
+## Ports the room/zone navigation half of core/Game.ts: enterRoom,
+## checkDoorCrossing, getRoomInteraction, the scripted stairs transition
+## (begin/completeDescent/Ascent), the sanctum rite, chest/rest
+## interactions, and room-clear detection. Combat itself (damage, AI,
+## status effects) already lives in CombatManager/EnemyAI/each entity's own
+## _physics_process (build-order steps 4-5) — this is everything about
+## WHERE the player is and how they get somewhere else, wired in as its own
+## autoload with its own _physics_process rather than something player.gd
+## reaches into, since door-crossing/room-clear are environment concerns no
+## single entity owns.
+##
+## Reward-granting (the 3-choice upgrade pick on room clear, a chest's
+## single upgrade) needs the upgrade-ownership system, which doesn't exist
+## yet (real UI, build-order step 9). Every reward BEAT still plays out
+## exactly as it should (stairs open, chest opens, the rite heals and pays
+## out embers) — only the actual upgrade choice is missing, and a print()
+## stands in for it so the gap is visible, not silent.
+
+signal room_changed(room: RoomContainer)
+
+const BOSS_SCENE := preload("res://entities/boss.tscn")
+const PICKUP_SCENE := preload("res://world/pickup_node.tscn")
+
+const DESCENT_OUT_SECONDS := 1.15
+const DESCENT_IN_SECONDS := 1.35
+
+## Ports data/playerProgression.ts's getEnemyXpValue formula.
+const XP_PER_WEIGHT := 5.0
+const XP_ZONE_BONUS_PER_INDEX := 0.25
+
+var player: PlayerCharacter = null
+var _active_room: RoomContainer = null
+var _transition: Dictionary = {}
+var _interact_key_down: bool = false
+
+func _ready() -> void:
+	CombatManager.enemy_died.connect(_on_enemy_died)
+
+func _physics_process(delta: float) -> void:
+	if not _transition.is_empty():
+		_update_transition(delta)
+		return
+	if player == null or not is_instance_valid(player):
+		return
+	_check_door_crossing()
+	_check_interact_key()
+	_update_room_clear(delta)
+
+# ---------------------------------------------------------------- Run bootstrap
+
+## Generates all 3 zones' layouts up front (mirrors RunState.ts's own
+## constructor — every zone exists from minute one, so retreating into an
+## earlier zone is never a special case) and places the player in zone 0's
+## start room, bare of any scattered content — mirrors Game.ts's
+## startNewRun marking that one room spawnedContent=true directly instead
+## of routing it through populate_room_content like every other room.
+func start_new_run(seed_string: String, p_player: PlayerCharacter, parent: Node) -> void:
+	RunState.reset_for_new_run(seed_string)
+	player = p_player
+	_transition.clear()
+	_active_room = null
+
+	for zone_def in _sorted_zones():
+		var rng := LevelGenerator.rng_from("%s:zonegen:%s" % [seed_string, zone_def.id])
+		RunState.layouts[zone_def.index] = LevelGenerator.generate_zone_layout(zone_def, rng, parent)
+
+	var start_layout: Dictionary = RunState.layouts[0]
+	RunState.current_room_key = start_layout["start_key"]
+	var start_room: RoomContainer = (start_layout["rooms"] as Dictionary)[start_layout["start_key"]]
+	start_room.visited = true
+	start_room.spawned_content = true
+	player.global_position = Vector2(RoomContainer.ROOM_WIDTH / 2.0, RoomContainer.ROOM_HEIGHT / 2.0)
+	_sync_active_room(start_room)
+	room_changed.emit(start_room)
+
+func _sorted_zones() -> Array:
+	var zones: Array = DataRegistry.all("zones").duplicate()
+	zones.sort_custom(func(a, b): return a.index < b.index)
+	return zones
+
+func _spawn_options() -> Dictionary:
+	return {
+		"unlocked_enemy_ids": MetaProgression.unlocks,
+		"corruption_ratio": RunState.corruption_ratio(),
+		"rarity_luck": player.stats.rarity_luck if player != null else 0.0,
+		"run_seed": RunState.seed_value,
+	}
+
+# ---------------------------------------------------------------- Room flow
+
+## Only ever the room the player is actually standing in is visible or
+## simulating (see RoomContainer.set_active's own header). Tracked here
+## rather than derived from RunState.current_room_key, since by the time
+## enter_room() runs, whichever RunState call got us here (move_through_door/
+## advance_zone/retreat_zone) has already pointed that key at the NEW room.
+func _sync_active_room(new_room: RoomContainer) -> void:
+	if _active_room != null and _active_room != new_room and is_instance_valid(_active_room):
+		_active_room.set_active(false)
+	new_room.set_active(true)
+	_active_room = new_room
+
+func enter_room(room: RoomContainer, from_dir) -> void:
+	room.visited = true
+
+	if room.type == RoomContainer.Type.BOSS:
+		if not room.spawned_content:
+			room.spawned_content = true
+			var factors: Dictionary = CombatManager.difficulty_factors(2, RunState.corruption_ratio())
+			var boss_def: EnemyDefinition = DataRegistry.get_enemy("ashenColossus")
+			if boss_def != null:
+				var boss: BossCharacter = BOSS_SCENE.instantiate()
+				room.add_enemy(boss)
+				boss.setup(boss_def, Vector2(RoomContainer.ROOM_WIDTH / 2.0, RoomContainer.ROOM_HEIGHT * 0.32), factors["hp_mult"], factors["damage_mult"])
+	elif not room.spawned_content:
+		LevelGenerator.populate_room_content(room, RunState.current_layout()["zone"], _spawn_options())
+
+	if from_dir != null:
+		player.global_position = room.spawn_point_from(RoomContainer.OPPOSITE[from_dir])
+
+	# Coming back into an already-cleared heart room: the stairwell stays open.
+	if room.type == RoomContainer.Type.HEART and room.cleared:
+		open_stairs(room, false)
+
+	_sync_active_room(room)
+	room_changed.emit(room)
+
+func _check_door_crossing() -> void:
+	var room := RunState.current_room()
+	if room == null or room.is_locked():
+		return
+	var p := player.global_position
+	var dir: int = -1
+	if p.y < -2.0 and room.has_door(RoomContainer.Direction.N):
+		dir = RoomContainer.Direction.N
+	elif p.y > RoomContainer.ROOM_HEIGHT + 2.0 and room.has_door(RoomContainer.Direction.S):
+		dir = RoomContainer.Direction.S
+	elif p.x < -2.0 and room.has_door(RoomContainer.Direction.W):
+		dir = RoomContainer.Direction.W
+	elif p.x > RoomContainer.ROOM_WIDTH + 2.0 and room.has_door(RoomContainer.Direction.E):
+		dir = RoomContainer.Direction.E
+	if dir == -1:
+		return
+	var neighbor := RunState.move_through_door(dir)
+	if neighbor != null:
+		enter_room(neighbor, dir)
+	else:
+		# Shouldn't happen (has_door(dir) implies a neighbor was generated
+		# there) — clamp rather than let the player wander into the void.
+		player.global_position.x = clampf(player.global_position.x, -40.0, RoomContainer.ROOM_WIDTH + 40.0)
+		player.global_position.y = clampf(player.global_position.y, -40.0, RoomContainer.ROOM_HEIGHT + 40.0)
+
+func _find_obstacle(room: RoomContainer, visual: ObstacleNode.Visual) -> ObstacleNode:
+	for o in room.obstacles:
+		if o.visual == visual:
+			return o
+	return null
+
+# ---------------------------------------------------------------- Interaction
+
+## Returns {"label": String, "action": Callable} for whatever's in range to
+## interact with, or null. Mirrors Game.ts's getRoomInteraction — shop and
+## event both resolve to a real landmark you can walk up to, but their
+## actual interaction is deferred (step 9, real UI); pressing E on either
+## just prints why nothing happened instead of silently doing nothing.
+func get_interaction() -> Variant:
+	if not _transition.is_empty() or player == null:
+		return null
+	var room := RunState.current_room()
+	if room == null:
+		return null
+	var p := player.global_position
+	var center := Vector2(RoomContainer.ROOM_WIDTH / 2.0, RoomContainer.ROOM_HEIGHT / 2.0)
+	var center_dist: float = p.distance_to(center)
+
+	if room.type == RoomContainer.Type.CHEST and room.chest != null and room.chest.can_interact():
+		if p.distance_to(room.chest.position) < 75.0:
+			return {"label": "Open Chest", "action": func(): open_chest(room)}
+	if room.type == RoomContainer.Type.SHOP:
+		var stall := _find_obstacle(room, ObstacleNode.Visual.MERCHANT_STALL)
+		if stall != null and p.distance_to(stall.position) < 110.0:
+			return {"label": "Browse Wares (deferred to step 9)", "action": func(): print("LevelFlow: shop interaction needs real UI — step 9")}
+	if room.type == RoomContainer.Type.EVENT and not room.event_resolved:
+		var shrine := _find_obstacle(room, ObstacleNode.Visual.SHRINE)
+		if shrine != null and p.distance_to(shrine.position) < 110.0:
+			return {"label": "Investigate (deferred to step 9)", "action": func(): print("LevelFlow: event interaction needs real UI — step 9")}
+	if room.type == RoomContainer.Type.REST and not room.rest_used:
+		var brazier := _find_obstacle(room, ObstacleNode.Visual.BRAZIER)
+		if brazier != null and p.distance_to(brazier.position) < 110.0:
+			return {"label": "Rest at the Brazier", "action": func(): use_rest(room)}
+	if room.type == RoomContainer.Type.SANCTUM and not room.ritual_active and not room.cleared:
+		if center_dist < LevelGenerator.SANCTUM_RING_RADIUS * 0.65:
+			return {"label": "Kneel at the Circle", "action": func(): begin_rite(room)}
+	if room.type == RoomContainer.Type.START and RunState.zone_index > 0:
+		var stairs_up := _find_obstacle(room, ObstacleNode.Visual.STAIRS_UP)
+		if stairs_up != null and p.distance_to(stairs_up.position) < stairs_up.radius + 72.0:
+			return {"label": "Ascend", "action": func(): begin_ascent(stairs_up)}
+	if room.type == RoomContainer.Type.HEART and room.cleared and not RunState.is_final_zone():
+		var stairs_down := _find_obstacle(room, ObstacleNode.Visual.STAIRS_DOWN)
+		if stairs_down != null and stairs_down.activated and p.distance_to(stairs_down.position) < stairs_down.radius + 72.0:
+			return {"label": "Descend", "action": func(): begin_descent(stairs_down)}
+	return null
+
+func _check_interact_key() -> void:
+	if not Input.is_physical_key_pressed(KEY_E):
+		_interact_key_down = false
+		return
+	if _interact_key_down:
+		return
+	_interact_key_down = true
+	var interaction = get_interaction()
+	if interaction != null:
+		(interaction["action"] as Callable).call()
+
+# ---------------------------------------------------------------- Room clearing
+
+func _update_room_clear(delta: float) -> void:
+	var room := RunState.current_room()
+	if room == null:
+		return
+	if room.type == RoomContainer.Type.SANCTUM:
+		_update_rite(room, delta)
+	elif room.type != RoomContainer.Type.BOSS and room.requires_clearing() and not room.reward_granted:
+		room.check_cleared()
+		if room.cleared:
+			_grant_room_clear_reward(room)
+
+func _grant_room_clear_reward(room: RoomContainer) -> void:
+	if room.reward_granted:
+		return
+	room.reward_granted = true
+	if room.type == RoomContainer.Type.HEART:
+		open_stairs(room, true)
+	print("LevelFlow: room %s (%s) cleared — upgrade-choice reward deferred to step 9 (real UI)" % [room.key, RoomContainer.Type.keys()[room.type]])
+
+# ---------------------------------------------------------------- Stairs & descent
+
+func open_stairs(room: RoomContainer, _animate: bool) -> void:
+	var stairs := _find_obstacle(room, ObstacleNode.Visual.STAIRS_DOWN)
+	if stairs == null:
+		return
+	stairs.activate()
+
+func begin_descent(stairs: ObstacleNode) -> void:
+	if not _transition.is_empty():
+		return
+	_start_transition("descend", stairs, player.global_position, LevelGenerator.stairs_mouth_position(stairs))
+
+## Mirrors begin_descent: walks the player INTO a zone's arrival stairwell
+## (stairsUp) to retreat to zoneIndex-1. Only ever offered where a
+## stairsUp obstacle exists, i.e. zoneIndex > 0 (see place_stairs_up).
+func begin_ascent(stairs: ObstacleNode) -> void:
+	if not _transition.is_empty():
+		return
+	_start_transition("ascend", stairs, player.global_position, LevelGenerator.stairs_mouth_position(stairs))
+
+func _start_transition(kind: String, stairs: ObstacleNode, from: Vector2, to: Vector2) -> void:
+	_transition = {
+		"phase": "out", "kind": kind, "t": 0.0, "duration": DESCENT_OUT_SECONDS,
+		"from": from, "to": to, "stairs": stairs,
+	}
+	player.is_transitioning = true
+	player.velocity = Vector2.ZERO
+
+func _ease_in_out_sine(t: float) -> float:
+	return -(cos(PI * t) - 1.0) / 2.0
+
+func _ease_out_cubic(t: float) -> float:
+	var p := t - 1.0
+	return p * p * p + 1.0
+
+func _update_transition(delta: float) -> void:
+	_transition["t"] = (_transition["t"] as float) + delta
+	var k: float = clampf((_transition["t"] as float) / (_transition["duration"] as float), 0.0, 1.0)
+	var out_phase: bool = _transition["phase"] == "out"
+	var walk: float = _ease_in_out_sine(k) if out_phase else _ease_out_cubic(k)
+	var from: Vector2 = _transition["from"]
+	var to: Vector2 = _transition["to"]
+	player.global_position = from.lerp(to, walk)
+	if from.distance_squared_to(to) > 0.0001:
+		player.facing = (to - from).angle()
+
+	if k >= 1.0:
+		if out_phase:
+			if _transition["kind"] == "ascend":
+				_complete_ascent()
+			else:
+				_complete_descent()
+		else:
+			_transition.clear()
+			player.is_transitioning = false
+
+## The zone switch itself, at the bottom of the fade: new layout, player
+## placed in the mouth of the arrival stairwell, then the 'in' half of the
+## transition walks them off it.
+func _complete_descent() -> void:
+	var next_room: RoomContainer = RunState.advance_zone()
+	var zone: ZoneDefinition = RunState.current_layout()["zone"]
+	if not next_room.spawned_content:
+		LevelGenerator.populate_room_content(next_room, zone, _spawn_options())
+	var arrival := _find_obstacle(next_room, ObstacleNode.Visual.STAIRS_UP)
+	_land_after_transition(next_room, arrival, "descend")
+
+## Mirrors _complete_descent: lands the player back in the previous zone's
+## heart/boss room, at the mouth of ITS stairsDown, then walks them out to
+## its foot — the same physical stairwell, in reverse.
+func _complete_ascent() -> void:
+	var prev_room: RoomContainer = RunState.retreat_zone()
+	var zone: ZoneDefinition = RunState.current_layout()["zone"]
+	if not prev_room.spawned_content:
+		LevelGenerator.populate_room_content(prev_room, zone, _spawn_options())
+	var arrival := _find_obstacle(prev_room, ObstacleNode.Visual.STAIRS_DOWN)
+	_land_after_transition(prev_room, arrival, "ascend")
+
+func _land_after_transition(room: RoomContainer, arrival: ObstacleNode, kind: String) -> void:
+	var fallback_mouth := Vector2(RoomContainer.ROOM_WIDTH / 2.0, RoomContainer.ROOM_HEIGHT / 2.0)
+	var fallback_foot := Vector2(RoomContainer.ROOM_WIDTH / 2.0, RoomContainer.ROOM_HEIGHT / 2.0 + 40.0)
+	var mouth: Vector2 = LevelGenerator.stairs_mouth_position(arrival) if arrival != null else fallback_mouth
+	var foot: Vector2 = LevelGenerator.stairs_foot_position(arrival) if arrival != null else fallback_foot
+	player.global_position = mouth
+	_sync_active_room(room)
+	_transition = {
+		"phase": "in", "kind": kind, "t": 0.0, "duration": DESCENT_IN_SECONDS,
+		"from": mouth, "to": foot, "stairs": arrival,
+	}
+	room_changed.emit(room)
+
+# ---------------------------------------------------------------- Sanctum rite
+
+func begin_rite(room: RoomContainer) -> void:
+	if room.ritual_active or room.cleared:
+		return
+	room.ritual_active = true
+	room.ritual_wave = 0
+	room.ritual_wave_timer = 1.1
+	room.refresh_walls()
+
+func _update_rite(room: RoomContainer, delta: float) -> void:
+	if not room.ritual_active or room.cleared:
+		return
+	for e in room.enemies:
+		if e.alive:
+			return
+	room.ritual_wave_timer -= delta
+	if room.ritual_wave_timer > 0.0:
+		return
+	if room.ritual_wave >= LevelGenerator.SANCTUM_WAVE_COUNT:
+		_complete_rite(room)
+		return
+	LevelGenerator.spawn_sanctum_wave(room, RunState.current_layout()["zone"], room.ritual_wave, _spawn_options())
+	room.ritual_wave += 1
+	room.ritual_wave_timer = 1.6
+
+func _complete_rite(room: RoomContainer) -> void:
+	room.cleared = true
+	room.ritual_active = false
+	room.refresh_walls()
+	player.heal(player.stats.max_hp * 0.3)
+	RunState.embers += 35
+	print("LevelFlow: sanctum rite complete at %s — 35 embers + 30%% heal granted" % room.key)
+	_grant_room_clear_reward(room)
+
+# ---------------------------------------------------------------- Rest / Chest
+
+func use_rest(room: RoomContainer) -> void:
+	if room.rest_used:
+		return
+	room.rest_used = true
+	room.cleared = true
+	var heal_amount: float = (player.stats.max_hp - player.hp) * 0.55
+	player.heal(heal_amount)
+
+func open_chest(room: RoomContainer) -> void:
+	var chest := room.chest
+	if chest == null or not chest.can_interact():
+		return
+	chest.open()
+	print("LevelFlow: chest opened at %s (tier %s) — upgrade grant deferred to step 9 (real UI)" % [room.key, UpgradeDefinition.Rarity.keys()[chest.tier]])
+
+# ---------------------------------------------------------------- Kill rewards
+
+## Mirrors Game.ts's 'enemyKilled' handler: XP via the already-working
+## RunState.grant_xp, and up to 5 Ember pickups scattered from the corpse.
+func _on_enemy_died(enemy: Node) -> void:
+	var e := enemy as EnemyCharacter
+	if e == null or e.def == null:
+		return
+	var xp_gained: int = maxi(1, int(round(XP_PER_WEIGHT * e.def.xp_weight * (1.0 + RunState.zone_index * XP_ZONE_BONUS_PER_INDEX))))
+	RunState.grant_xp(xp_gained)
+
+	var ember_total: int = int(round(e.def.ember_value * (0.85 + randf() * 0.3)))
+	if ember_total <= 0:
+		return
+	var room := e.get_parent() as RoomContainer
+	if room == null:
+		return
+	var count: int = clampi(int(round(ember_total / 3.0)), 1, 5)
+	var per: int = maxi(1, int(round(float(ember_total) / count)))
+	for i in range(count):
+		var pickup: PickupNode = PICKUP_SCENE.instantiate()
+		room.add_pickup(pickup)
+		pickup.setup(PickupNode.Kind.EMBER, e.global_position, float(per))

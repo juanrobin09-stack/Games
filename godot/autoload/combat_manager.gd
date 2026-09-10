@@ -36,13 +36,29 @@ const HIT_ARC_COVERAGE := 0.75
 ## Damage that gets through a raised warden shield.
 const SHIELD_DAMAGE_FACTOR := 0.15
 
+## Ports world/Difficulty.ts's countZoneWeight — enemy *count* stops climbing
+## with zoneIndex past the Hollow Ruins; hp_mult/damage_mult below keep
+## scaling normally past that point instead (a composition/stats problem,
+## not a swarm-density one — see the source's own comment).
+func _count_zone_weight(zone_index: int) -> float:
+	return minf(float(zone_index), 1.0)
+
 ## Ports world/Difficulty.ts's getDifficultyFactors — pure math, no entity
 ## dependency. corruption_ratio comes from RunState.corruption_ratio().
 func difficulty_factors(zone_index: int, corruption_ratio: float) -> Dictionary:
 	return {
 		"hp_mult": 1.0 + zone_index * 0.32 + corruption_ratio * 0.55,
 		"damage_mult": 1.0 + zone_index * 0.22 + corruption_ratio * 0.35,
+		"extra_enemies": floori(_count_zone_weight(zone_index) * 0.6 + corruption_ratio * 1.6),
 	}
+
+## Ports world/Difficulty.ts's getCombatRoomEnemyCount. rng_roll is a single
+## random draw in [0,1) from the caller (LevelGenerator), kept as a plain
+## parameter rather than an RNG reference so this stays pure math.
+func get_combat_room_enemy_count(zone_index: int, corruption_ratio: float, rng_roll: float) -> int:
+	var base: int = 2 + floori(rng_roll * 2.2)
+	var extra_enemies: int = difficulty_factors(zone_index, corruption_ratio)["extra_enemies"]
+	return base + int(_count_zone_weight(zone_index)) + extra_enemies
 
 func roll_crit(chance: float) -> bool:
 	return randf() < clampf(chance, 0.0, 0.95)

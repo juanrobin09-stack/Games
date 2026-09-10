@@ -68,6 +68,9 @@ func _physics_process(delta: float) -> void:
 	if age >= max_lifetime:
 		alive = false
 
+	if alive and _blocked_by_room():
+		alive = false
+
 	if alive:
 		if from_player:
 			_check_hit_enemies()
@@ -78,6 +81,28 @@ func _physics_process(delta: float) -> void:
 		queue_free()
 	else:
 		queue_redraw()
+
+## Ports CombatSystem.ts's obstacle-blocking check inside updateProjectiles
+## plus its separate resolveProjectileWalls — both fold into one check here
+## since Area2D projectiles don't get wall collision from move_and_slide
+## the way Player/EnemyCharacter do (build-order step 6 added real wall/
+## obstacle StaticBody2D geometry; this is what stops a bolt at one instead
+## of sailing through).
+func _blocked_by_room() -> bool:
+	var room := RunState.current_room()
+	if room == null:
+		return false
+	for o in room.obstacles:
+		if o.blocks_projectiles and global_position.distance_to(o.position) <= radius + o.radius:
+			return true
+	for wall in room.get_walls(room.is_locked()):
+		var closest := Vector2(
+			clampf(global_position.x, wall.position.x, wall.position.x + wall.size.x),
+			clampf(global_position.y, wall.position.y, wall.position.y + wall.size.y)
+		)
+		if global_position.distance_to(closest) <= radius:
+			return true
+	return false
 
 func _check_hit_enemies() -> void:
 	for node in get_tree().get_nodes_in_group("enemies"):

@@ -2,10 +2,10 @@ extends Node
 ## Autoload: RunState
 ##
 ## Ports progression/RunState.ts — per-run state: seed, zone/room position,
-## the Player Level/XP layer, and (once build-order step 6 lands the level
-## generator) every zone's room graph, kept resident for the whole run so
-## retreating and re-descending never regenerates or resets anything. See
-## GODOT_MIGRATION.md §3's `layouts` note and §5 step 6.
+## the Player Level/XP layer, and every zone's room graph (build-order
+## step 6), kept resident for the whole run so retreating and re-descending
+## never regenerates or resets anything. See GODOT_MIGRATION.md §3's
+## `layouts` note and §5 step 6.
 
 const LEVEL_CAP: int = 30
 const XP_BASE_COST: float = 25.0
@@ -23,10 +23,13 @@ var seed_value: String = ""
 var zone_index: int = 0
 var current_room_key: String = ""
 
-## Populated by the level generator (build-order step 6). Keyed by zone
-## index; every zone's full room graph is generated once at run start and
-## stays here for the whole run — do NOT regenerate a zone on re-entry, or
-## the bidirectional stairs' state-preservation guarantee breaks.
+## Keyed by zone index (int) -> {"zone": ZoneDefinition, "rooms":
+## Dictionary[String, RoomContainer], "start_key": String, "end_key":
+## String} — LevelFlow.start_new_run() generates and stores all 3 zones'
+## layouts up front (mirrors RunState.ts's own constructor), and every
+## zone's full room graph stays here for the whole run — do NOT regenerate
+## a zone on re-entry, or the bidirectional stairs' state-preservation
+## guarantee breaks (see retreat_zone()'s own comment).
 var layouts: Dictionary = {}
 
 var embers: int = 0
@@ -80,6 +83,25 @@ func grant_xp(amount: float) -> void:
 func corruption_ratio() -> float:
 	return min(1.0, (elapsed_time / 60.0) / CORRUPTION_SOFT_CAP_MINUTES)
 
+func neighbor_room(dir: int) -> RoomContainer:
+	var room := current_room()
+	if room == null:
+		return null
+	var delta: Vector2i = RoomContainer.DIRECTION_DELTA[dir]
+	var key := "%d,%d" % [room.grid_x + delta.x, room.grid_y + delta.y]
+	return (current_layout()["rooms"] as Dictionary).get(key)
+
+## Mirrors RunState.ts's moveThroughDoor: steps current_room_key onto the
+## neighbor in `dir` and marks it visited, or returns null (no room there —
+## LevelFlow.check_door_crossing clamps the player back inside instead).
+func move_through_door(dir: int) -> RoomContainer:
+	var neighbor := neighbor_room(dir)
+	if neighbor == null:
+		return null
+	current_room_key = neighbor.key
+	neighbor.visited = true
+	return neighbor
+
 ## TODO (build-order step 3+, once weapon/zone-unlock state exists): mirror
 ## data/playerProgression.ts's isPlayerStatLocked and refuse server-side even
 ## if a caller bypasses the UI lock — attackSpeed needs the Bow, abilityDamage
@@ -91,17 +113,48 @@ func spend_stat_point(stat_id: String) -> bool:
 	stat_levels[stat_id] = stat_levels.get(stat_id, 0) + 1
 	return true
 
-## TODO (build-order step 6, once world/LevelGenerator + Room port): mirror
-## Game.ts's beginDescent/completeDescent — walk the physical stairsDown
-## obstacle, land in the next zone's start room, generate+cache its layout
-## into `layouts` if not already present, mark it visited.
-func advance_zone() -> void:
-	push_warning("RunState.advance_zone: not yet implemented — needs the level generator (build-order step 6)")
+func current_layout() -> Dictionary:
+	return layouts.get(zone_index, {})
 
-## TODO (build-order step 6): mirror Game.ts's beginAscent/completeAscent —
-## the same stairs, walked in reverse, landing in the previous zone's
-## heart/boss room. `layouts` staying resident for the whole run (never
-## cleared on zone change) is what makes this safe — see the field comment.
-func retreat_zone() -> void:
-	zone_index = max(zone_index - 1, 0)
-	push_warning("RunState.retreat_zone: zone_index decremented, but room landing is not yet implemented — needs the level generator (build-order step 6)")
+func current_room() -> RoomContainer:
+	var layout := current_layout()
+	if layout.is_empty():
+		return null
+	return (layout["rooms"] as Dictionary).get(current_room_key)
+
+func is_final_zone() -> bool:
+	return zone_index >= layouts.size() - 1
+
+## Mirrors RunState.ts's advanceZone(): steps into the next zone's own
+## (already generated at run start) layout, landing in its start room.
+func advance_zone() -> RoomContainer:
+	zone_index = mini(zone_index + 1, layouts.size() - 1)
+	var layout := current_layout()
+	current_room_key = layout["start_key"]
+	var start: RoomContainer = (layout["rooms"] as Dictionary)[current_room_key]
+	start.visited = true
+	zone_changed.emit(zone_index)
+	return start
+
+## Symmetric to advance_zone(): steps back into the previous zone's own
+## (already fully-generated, never-discarded) layout, landing in its
+## heart/boss room — where its own down-stairs are — rather than its start
+## room, since the return trip retraces the same physical stairwell the
+## player originally descended. Every room object (visited/cleared/chest/
+## enemy state) is untouched by a zone switch either direction, so nothing
+## needs to be saved or restored here beyond which room is current.
+func retreat_zone() -> RoomContainer:
+	zone_index = maxi(zone_index - 1, 0)
+	var layout := current_layout()
+	var rooms: Dictionary = layout["rooms"]
+	var landing: RoomContainer = null
+	for r in rooms.values():
+		if r.type == RoomContainer.Type.HEART or r.type == RoomContainer.Type.BOSS:
+			landing = r
+			break
+	if landing == null:
+		landing = rooms[layout["start_key"]]
+	current_room_key = landing.key
+	landing.visited = true
+	zone_changed.emit(zone_index)
+	return landing

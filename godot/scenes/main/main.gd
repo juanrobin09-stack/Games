@@ -1,55 +1,55 @@
 extends Node2D
-## Test scene for build-order steps 1-5: the step-1/2 diagnostic readout,
-## Player/Enemy/Boss moving and rendering (step 3), combat — enemy AI, the
-## damage pipeline, and status effects (step 4) — and now real weapon
-## behaviors, melee and ranged alike (step 5). Not a real level — no Room/
-## LevelGenerator yet (that's step 6), just an open playground with
-## placeholder circles for everything.
+## Entry point for build-order steps 1-6. Boots a real run through
+## LevelFlow.start_new_run() — 3 fully generated zones, real rooms with
+## real walls/obstacles/enemies/chests, bidirectional stairs — instead of
+## the fixed one-enemy-per-behavior "playground" earlier steps used. Real
+## rendering (sprites, tilesets) is still step 7; every room/obstacle/
+## enemy/pickup below is still a flat-colored placeholder shape.
 ##
-## Controls: WASD/arrows move, mouse aims (the white line on the player is
-## facing), left click attacks (real damage now, melee or ranged depending
-## on the equipped weapon — try it on the nearest enemy and watch its HP
-## text drop), space dodges (brief invulnerability), right click channels
-## the ability once energy is full (still no actual effect — abilities are
-## step 6, progression). Press Q to cycle the equipped weapon (Ember Blade
-## -> Void Scythe -> Solar Spear -> Bow) — a debug stand-in for the real
-## loadout screen (step 9); watch a fired bolt actually fly and land.
+## Controls: WASD/arrows move, mouse aims, left click attacks (melee or
+## ranged depending on the equipped weapon), space dodges, right click
+## channels the ability (still no effect — step 6, progression UI), Q
+## cycles the equipped weapon (debug stand-in for the real loadout screen,
+## step 9), **E interacts** (chests, the sanctum circle, resting at a
+## brazier, stairs) — new this step. Shop/event landmarks exist and are
+## walkable-up-to but their actual interaction is deferred to step 9 (real
+## UI) — pressing E on one just prints why nothing happened.
 ##
-## One of each of the 6 AI behavior families is spawned below so every
-## dispatch path in combat/enemy_ai.gd gets exercised: watch the state
-## name above each enemy's head (chase/windup/attack/cooldown/...) — a
-## melee-like enemy (Ash Crawler) will close in and swing, the ranged one
-## (Flame Wisp) will hold its distance and fire bolts, the stalker (Shadow
-## Stalker) vanishes and repositions, the warden (Hollow Warden) circles
-## and bashes then leaves its guard down, the bloat (Blightbloat) plants
-## and detonates, the elite (Ember Devourer) does both melee and ranged
-## depending on distance.
+## A run seed is generated fresh each time this scene loads (shown in the
+## debug panel) — same seed always regenerates the same 3 zone layouts in
+## this engine (GODOT_MIGRATION.md §6: seeds are engine-local, not expected
+## to match the Web build's own layouts for the same seed string).
 
 const PLAYER_SCENE := preload("res://entities/player.tscn")
-const ENEMY_SCENE := preload("res://entities/enemy.tscn")
-const BOSS_SCENE := preload("res://entities/boss.tscn")
-
-## One enemy per behavior family (chaser/ranged/stalker/warden/bloat/elite)
-## rather than all 11 — enough to exercise every dispatch path in
-## enemy_ai.gd without the playground turning into a crowd.
-const SHOWCASE_ENEMIES := ["ashCrawler", "flameWisp", "shadowStalker", "hollowWarden", "blightbloat", "emberDevourer"]
 
 @onready var debug_label: Label = $DebugLabel
 @onready var live_label: Label = $LiveLabel
 
 var player: PlayerCharacter
+var run_seed: String = ""
 
 func _ready() -> void:
 	_print_diagnostics()
-	_spawn_playground()
+	_start_run()
 
-## Live readout of input/gating/combat state, refreshed every frame.
+func _start_run() -> void:
+	run_seed = str(Time.get_unix_time_from_system()) + ":" + str(randi())
+	player = PLAYER_SCENE.instantiate()
+	add_child(player)
+	# Debug-only: the real Armory/loadout unlock flow is steps 6/9. Seeding
+	# all 4 here is what makes the Q weapon-cycle (player.gd) able to reach
+	# the ranged weapons at all before that screen exists.
+	player.unlocked_weapons = ["emberBlade", "voidScythe", "solarSpear", "bow"]
+	LevelFlow.start_new_run(run_seed, player, self)
+
+## Live readout of input/gating/combat/room state, refreshed every frame.
 func _process(_delta: float) -> void:
 	if player == null:
 		return
 	var w := player.weapon()
 	var a := player.ability()
-	var nearest_line := _nearest_enemy_line()
+	var room := RunState.current_room()
+	var interaction = LevelFlow.get_interaction()
 	live_label.text = "\n".join([
 		"LIVE (updates every frame):",
 		"LMB down: %s   RMB down: %s   Space down: %s" % [
@@ -57,7 +57,7 @@ func _process(_delta: float) -> void:
 			Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT),
 			Input.is_physical_key_pressed(KEY_SPACE),
 		],
-		"weapon: %s (%s)   ability() found: %s   [Q to cycle weapon]" % [
+		"weapon: %s (%s)   ability() found: %s   [Q cycle weapon]" % [
 			w.name if w != null else "<none>",
 			WeaponDefinition.Kind.keys()[w.kind] if w != null else "?",
 			a != null,
@@ -70,8 +70,22 @@ func _process(_delta: float) -> void:
 		"can_attack(): %s   can_dodge(): %s   can_use_ability(): %s" % [
 			player.can_attack(), player.can_dodge(), player.can_use_ability()
 		],
-		nearest_line,
+		"zone: %d/3   embers: %d   level: %d   xp: %.0f/%.0f" % [
+			RunState.zone_index + 1, RunState.embers, RunState.player_level,
+			RunState.xp, RunState.xp_required_for_next_level(),
+		],
+		_room_line(room),
+		"interact [E]: %s" % (interaction["label"] if interaction != null else "-"),
+		_nearest_enemy_line(),
 	])
+
+func _room_line(room: RoomContainer) -> String:
+	if room == null:
+		return "room: <none>"
+	return "room: %s type=%s locked=%s cleared=%s doors=%d enemies=%d" % [
+		room.key, RoomContainer.Type.keys()[room.type], room.is_locked(), room.cleared,
+		room.doors.size(), room.enemies.size(),
+	]
 
 func _nearest_enemy_line() -> String:
 	var nearest: EnemyCharacter = null
@@ -106,13 +120,10 @@ func _print_diagnostics() -> void:
 		data_lines.append("  %-18s %d%s" % [category, got, flag])
 
 	var lines: Array[String] = [
-		"EMBERFALL: LAST LIGHT — Godot scaffold (build-order step 5 of 12)",
-		"WASD move, mouse aim, LMB attack (real damage), Space dodge, RMB ability, Q cycle weapon",
+		"EMBERFALL: LAST LIGHT — Godot scaffold (build-order step 6 of 12)",
+		"WASD move, mouse aim, LMB attack, Space dodge, RMB ability, Q cycle weapon, E interact",
 		"",
 		"GameState  : %s (simulating: %s)" % [state_name, GameState.is_simulating()],
-		"RunState   : zone_index=%d, player_level=%d, xp_to_next=%.0f" % [
-			RunState.zone_index, RunState.player_level, RunState.xp_required_for_next_level()
-		],
 		"MetaProgress: Soul Ash=%d, save file loaded: %s" % [
 			MetaProgression.soul_ash, str(FileAccess.file_exists(MetaProgression.SAVE_PATH))
 		],
@@ -127,31 +138,3 @@ func _print_diagnostics() -> void:
 	var text := "\n".join(lines)
 	debug_label.text = text
 	print(text)
-
-func _spawn_playground() -> void:
-	player = PLAYER_SCENE.instantiate()
-	add_child(player)
-	player.global_position = Vector2.ZERO
-	# Debug-only: the real Armory/loadout unlock flow is step 6/9. Seeding
-	# all 4 here is what makes the Q weapon-cycle (player.gd) able to reach
-	# the ranged weapons at all in this playground.
-	player.unlocked_weapons = ["emberBlade", "voidScythe", "solarSpear", "bow"]
-
-	var angle_step: float = TAU / SHOWCASE_ENEMIES.size()
-	for i in range(SHOWCASE_ENEMIES.size()):
-		var def: EnemyDefinition = DataRegistry.get_enemy(SHOWCASE_ENEMIES[i])
-		if def == null:
-			push_warning("Playground: enemy id not found in DataRegistry: %s" % SHOWCASE_ENEMIES[i])
-			continue
-		var enemy: EnemyCharacter = ENEMY_SCENE.instantiate()
-		add_child(enemy)
-		var pos: Vector2 = Vector2(cos(i * angle_step), sin(i * angle_step)) * 280.0
-		enemy.setup(def, pos, 1.0, 1.0)
-
-	var boss_def: EnemyDefinition = DataRegistry.get_enemy("ashenColossus")
-	if boss_def != null:
-		var boss: BossCharacter = BOSS_SCENE.instantiate()
-		add_child(boss)
-		boss.setup(boss_def, Vector2(0.0, -480.0), 1.0, 1.0)
-	else:
-		push_warning("Playground: ashenColossus not found in DataRegistry")

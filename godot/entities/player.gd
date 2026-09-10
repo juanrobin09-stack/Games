@@ -53,6 +53,12 @@ var death_timer: float = 0.0
 var invuln_timer: float = 0.0
 var hit_flash_timer: float = 0.0
 
+## Set by LevelFlow during the scripted stairwell walk (build-order step 6):
+## no input, no regen/status-effect ticking, position driven externally —
+## mirrors Game.ts's updatePlaying short-circuiting entirely to
+## updateTransition while a stairs transition is in progress.
+var is_transitioning: bool = false
+
 var attack_cooldown_timer: float = 0.0
 var attack_anim_timer: float = 0.0
 var is_attacking: bool = false
@@ -224,10 +230,11 @@ func _ready() -> void:
 		(shape.shape as CircleShape2D).radius = radius
 
 func _physics_process(delta: float) -> void:
-	_read_input()
-	_update_state(delta)
-	move_and_slide()
-	StatusEffectRuntime.process(self, delta)
+	if not is_transitioning:
+		_read_input()
+		_update_state(delta)
+		move_and_slide()
+		StatusEffectRuntime.process(self, delta)
 	queue_redraw()
 
 func _read_input() -> void:
