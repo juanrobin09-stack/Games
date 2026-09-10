@@ -16,8 +16,9 @@ extends CharacterBody2D
 ## Not ported yet, on purpose (see build-order step 6, Progression):
 ## recomputeStats()/addUpgrade()/addBonusModifier()/synergies. `stats` sits
 ## at StatBlock.fresh() — no owned upgrades exist yet, so there is nothing
-## to recompute from. cloakPhase (a pure rendering-animation timer) is
-## skipped until real rendering (step 7) needs it.
+## to recompute from. cloakPhase WAS deferred here the same way, until real
+## rendering (step 7) needed it for the cape's idle sway — see cloak_phase's
+## own doc-comment below.
 
 signal died
 signal hp_changed(current: float, max: float)
@@ -77,6 +78,15 @@ var ability_anim_timer: float = 0.0
 var anim_state: AnimState = AnimState.IDLE
 var anim_time: float = 0.0
 var move_cycle_phase: float = 0.0
+## Pure cosmetic timer for the cape's idle sway (drawPlayer.ts's cloakPhase)
+## — deferred at build-order step 3 (see this file's own class doc-comment
+## above) until real rendering (step 7) needed it, which it now does. Ticks
+## unconditionally by dt each physics step, same as Player.ts's cloakPhase,
+## but — also like the TS source — only while alive: _update_state()
+## returns before reaching this once `alive` goes false, so it (and the
+## cape sway it drives) freezes at the moment of death instead of drifting
+## through the death animation.
+var cloak_phase: float = 0.0
 
 var move_input := Vector2.ZERO
 var facing: float = 0.0
@@ -318,6 +328,7 @@ func _update_state(dt: float) -> void:
 	if moving:
 		var speed_ratio: float = velocity.length() / maxf(1.0, stats.move_speed)
 		move_cycle_phase += dt * 7.2 * maxf(0.4, speed_ratio)
+	cloak_phase += dt
 
 	if is_channeling_ability:
 		ability_anim_timer += dt
@@ -327,9 +338,281 @@ func _update_state(dt: float) -> void:
 	if not is_attacking and not is_dodging and not is_channeling_ability:
 		anim_state = AnimState.RUN if moving else AnimState.IDLE
 
+## Ports rendering/draw/drawPlayer.ts. _draw() runs in this node's own local
+## space (a Node2D's origin is already its own global_position), so the
+## source's outer `ctx.translate(screenX, screenY)` is simply dropped —
+## everything below is already relative to that.
+##
+## Every shape's points funnel through _body_xf(), which reproduces the
+## source's own transform stack in order: the idle-breathing/run bob offset
+## and dodge squash-stretch (`ctx.translate(0, bob); ctx.scale(1/squash,
+## squash)`), composed with the on-death fall-over rotate+drop (identity —
+## angle 0, offset 0 — while alive, so it's safe to apply unconditionally
+## to every point). A shape with its own additional local rotate/translate
+## (the cape, the head/hood, the weapon+arm) applies that first — via
+## Vector2.rotated()/plain addition — before handing the result to
+## _body_xf, the same "compute the already-transformed points yourself"
+## convention obstacle_node.gd's _rot_point already established in this
+## project instead of draw_set_transform (which would leak into whatever
+## draws next in the same _draw() call).
+##
+## Simplifications (Godot's immediate-mode _draw() has no equivalent):
+## - Every ctx.createLinearGradient/createRadialGradient fill becomes a
+##   single flat color — its stops' midpoint via DrawUtils.lerp_color_hex,
+##   except the 3-stop weapon blade, which uses the weapon's own true color
+##   (its middle and most identity-defining stop). Same convention
+##   obstacle_node.gd already uses throughout (see its own gradient notes).
+## - ctx.shadowBlur/shadowColor glow-on-stroke/fill effects are dropped
+##   (plain flat color instead) — there's no blur primitive to reach for.
+##   Where the source used drawGlowCircle instead (the chest ember), that's
+##   kept via DrawUtils.draw_glow_circle exactly as written.
+## - ctx.globalCompositeOperation = 'lighter' (additive) for the hit-flash
+##   overlay is simplified to a plain alpha-blended overlay, matching
+##   enemy.gd's own existing hit-flash treatment.
+## - drawWeapon's swingProgress param only ever fed shadowBlur's intensity
+##   (8 vs 18), so with shadowBlur dropped it has no remaining visual
+##   effect and isn't threaded into _draw_weapon() at all.
 func _draw() -> void:
-	draw_circle(Vector2.ZERO, radius, body_color)
-	if hit_flash_timer > 0.0:
-		draw_circle(Vector2.ZERO, radius, Color(1.0, 1.0, 1.0, hit_flash_timer / 0.28 * 0.5))
-	# Facing indicator — the only way to see aim direction without real art.
-	draw_line(Vector2.ZERO, Vector2(cos(facing), sin(facing)) * radius * 1.4, Color.WHITE, 2.0)
+	var w: WeaponDefinition = weapon()
+	var draw_facing: float = attack_facing_lock if is_attacking else facing
+	var moving: bool = velocity.length() > 6.0 and not is_dodging
+	var bob: float = sin(move_cycle_phase) * 2.4 if moving else sin(anim_time * 2.0) * 0.8
+	var squash: float = 1.15 if is_dodging else 1.0
+
+	var is_dead: bool = not alive
+	var death_t: float = minf(1.0, death_timer / 0.6)
+	var death_angle := 0.0
+	var death_offset_y := 0.0
+	var death_alpha := 1.0
+	if is_dead:
+		death_alpha = maxf(0.15, 1.0 - death_t * 0.6)
+		# Uses the raw `facing` field (not draw_facing) — matches the
+		# source, which reads player.facing here even mid-attack.
+		death_angle = (PI / 2.0) * _ease_out_cubic(death_t) * (1.0 if facing > 0.0 else -1.0)
+		death_offset_y = _ease_out_cubic(death_t) * 10.0
+
+	# Shadow anchors to the ground — drawn before bob/squash/death so it
+	# doesn't move with the body above it.
+	DrawUtils.draw_soft_shadow(self, 0.0, 20.0, 22.0, 9.0, 0.42)
+
+	# --- Cape ---
+	var cape_angle: float = atan2(velocity.y, velocity.x) if moving else draw_facing
+	var cape_sway: float = sin(cloak_phase * 3.4) * 5.0
+	var cape_local_angle: float = cape_angle + PI
+	var cape_seg1 := _quad_bezier_points(Vector2(-4.0, -12.0), Vector2(18.0 + absf(cape_sway) * 0.4, -18.0 + cape_sway), Vector2(30.0, -4.0 + cape_sway * 0.6), 8)
+	var cape_seg2 := _quad_bezier_points(Vector2(30.0, -4.0 + cape_sway * 0.6), Vector2(24.0, 6.0), Vector2(14.0, 10.0), 8)
+	var cape_seg3 := _quad_bezier_points(Vector2(14.0, 10.0), Vector2(6.0, 14.0), Vector2(-4.0, 12.0), 8)
+	var cape_raw := cape_seg1
+	for i in range(1, cape_seg2.size()):
+		cape_raw.append(cape_seg2[i])
+	for i in range(1, cape_seg3.size()):
+		cape_raw.append(cape_seg3[i])
+	var cape_pts := PackedVector2Array()
+	for p in cape_raw:
+		cape_pts.append(_body_xf(p.rotated(cape_local_angle), bob, squash, death_angle, death_offset_y))
+	# Gradient (bg1 -> near-black) simplified to its midpoint tone.
+	var cape_color: Color = DrawUtils.lerp_color_hex(Palette.BG1, "#0a0810", 0.5)
+	cape_color.a = death_alpha
+	draw_colored_polygon(cape_pts, cape_color)
+	var cape_outline := cape_pts.duplicate()
+	cape_outline.append(cape_pts[0])
+	var cape_stroke_color := Color(Palette.EMBER3)
+	cape_stroke_color.a = 0.35 * death_alpha
+	draw_polyline(cape_outline, cape_stroke_color, 1.2, true)
+
+	# --- Body ---
+	var body_pts := PackedVector2Array()
+	for p in _ellipse_points(0.0, 2.0, 13.0, 16.0):
+		body_pts.append(_body_xf(p, bob, squash, death_angle, death_offset_y))
+	# Radial gradient (small inner highlight -> bg1) simplified to its midpoint tone.
+	var body_color: Color = DrawUtils.lerp_color_hex("#3a3444", Palette.BG1, 0.5)
+	body_color.a = death_alpha
+	draw_colored_polygon(body_pts, body_color)
+
+	# --- Chest ember (the light he guards) ---
+	var pulse: float = 0.75 + sin(run_time * 3.2) * 0.25
+	# draw_glow_circle draws directly in raw local space with no per-point
+	# transform hook, so its center can follow bob and the death rotate/
+	# drop (applied explicitly below, mirroring _body_xf's own math) but
+	# not the dodge squash — that would need to turn the circle into an
+	# ellipse, which this shared, already-written helper can't do. An
+	# acceptable, small (dodge-only, sub-2px) discrepancy.
+	var ember_center := Vector2(0.0, 4.0 + bob)
+	if is_dead:
+		ember_center = (ember_center + Vector2(0.0, death_offset_y)).rotated(death_angle)
+	DrawUtils.draw_glow_circle(self, ember_center.x, ember_center.y, 13.0 * pulse, Palette.EMBER4, 0.9 * death_alpha)
+	var ember_dot_pts := PackedVector2Array()
+	for p in _ellipse_points(0.0, 4.0, 3.0, 3.0):
+		ember_dot_pts.append(_body_xf(p, bob, squash, death_angle, death_offset_y))
+	var ember_dot_color := Color(Palette.EMBER6)
+	ember_dot_color.a = death_alpha
+	draw_colored_polygon(ember_dot_pts, ember_dot_color)
+
+	# --- Head + hood ---
+	var head_angle: float = draw_facing * 0.18
+	var skull_pts := PackedVector2Array()
+	for p in _ellipse_points(0.0, -16.0, 9.0, 9.0):
+		skull_pts.append(_body_xf(p.rotated(head_angle), bob, squash, death_angle, death_offset_y))
+	var skull_color := Color("#2a2632")
+	skull_color.a = death_alpha
+	draw_colored_polygon(skull_pts, skull_color)
+
+	var hood_seg1 := _quad_bezier_points(Vector2(-9.0, -18.0), Vector2(0.0, -30.0), Vector2(9.0, -18.0), 8)
+	var hood_seg2 := _quad_bezier_points(Vector2(9.0, -18.0), Vector2(6.0, -12.0), Vector2(0.0, -10.0), 8)
+	var hood_seg3 := _quad_bezier_points(Vector2(0.0, -10.0), Vector2(-6.0, -12.0), Vector2(-9.0, -18.0), 8)
+	var hood_raw := hood_seg1
+	for i in range(1, hood_seg2.size()):
+		hood_raw.append(hood_seg2[i])
+	for i in range(1, hood_seg3.size()):
+		hood_raw.append(hood_seg3[i])
+	var hood_pts := PackedVector2Array()
+	for p in hood_raw:
+		hood_pts.append(_body_xf(p.rotated(head_angle), bob, squash, death_angle, death_offset_y))
+	var hood_color := Color(Palette.BG0)
+	hood_color.a = death_alpha
+	draw_colored_polygon(hood_pts, hood_color)
+
+	# Eye glow (shadowBlur-based in the source) simplified to a flat fill.
+	var eye_x: float = cos(draw_facing) * 4.0
+	var eye_y: float = -16.0 + sin(draw_facing) * 2.0
+	var eye_pts := PackedVector2Array()
+	for p in _ellipse_points(eye_x, eye_y, 2.6, 1.6):
+		eye_pts.append(_body_xf(p.rotated(head_angle), bob, squash, death_angle, death_offset_y))
+	var eye_color := Color(Palette.EMBER5)
+	eye_color.a = death_alpha
+	draw_colored_polygon(eye_pts, eye_color)
+
+	# --- Arm + Weapon ---
+	# (weapon() can return null on a missing/misconfigured DataRegistry
+	# entry — see weapon()'s own push_error above. Not something the
+	# source's player.weapon getter has to account for, but skipping the
+	# arm/weapon silhouette entirely is the safe fallback here rather than
+	# guessing at a placeholder weapon.)
+	if w != null:
+		var weapon_angle: float = draw_facing
+		if is_attacking:
+			var swing_duration: float = minf(0.32, attack_cooldown_duration() * 0.85)
+			var swing_progress: float = minf(1.0, attack_anim_timer / swing_duration)
+			# `?? 90` in the source: arc_degrees is 0.0 (unset) on both
+			# ranged weapons' resources, same as an absent field in TS —
+			# same fallback idiom enemy_ai.gd already uses for other
+			# optional EnemyDefinition floats (e.g. vanish_duration).
+			var arc_degrees: float = w.arc_degrees if w.arc_degrees > 0.0 else 90.0
+			var arc: float = arc_degrees * PI / 180.0
+			var swing_angle: float = -arc / 2.0 + arc * _ease_out_cubic(swing_progress)
+			weapon_angle = draw_facing + swing_angle
+		var arm_offset := 10.0
+		# Melee blade length is derived from the weapon's actual (stat-scaled) range so the
+		# sprite always reaches exactly as far as the hitbox does — armOffset (above) and the
+		# blade tip's own +4 extension (_draw_weapon's path) are both part of that total reach.
+		var melee_length: float = maxf(20.0, w.range * stats.range_mult - arm_offset - 4.0)
+		var weapon_length: float = melee_length if w.kind == WeaponDefinition.Kind.MELEE else 40.0
+		_draw_weapon(w, weapon_length, weapon_angle, arm_offset, bob, squash, death_angle, death_offset_y, death_alpha)
+
+	# --- Hit flash overlay ---
+	if hit_flash_timer > 0.0 and not is_dead:
+		var flash_pts := PackedVector2Array()
+		for p in _ellipse_points(0.0, 0.0, 18.0, 20.0):
+			flash_pts.append(_body_xf(p, bob, squash, death_angle, death_offset_y))
+		var flash_color := Color(Palette.BLOOD_BRIGHT)
+		flash_color.a = (hit_flash_timer / 0.28) * 0.55
+		draw_colored_polygon(flash_pts, flash_color)
+
+	if is_invulnerable() and alive and not is_dodging:
+		var ring_pts := PackedVector2Array()
+		for p in _ellipse_points(0.0, 2.0, 17.0, 20.0):
+			ring_pts.append(_body_xf(p, bob, squash, death_angle, death_offset_y))
+		ring_pts.append(ring_pts[0])
+		var ring_pulse: float = 0.5 + sin(run_time * 30.0) * 0.2
+		var ring_color := Color(Palette.EMBER5)
+		ring_color.a = 0.6 * ring_pulse
+		draw_polyline(ring_pts, ring_color, 1.5, true)
+
+## Ports drawPlayer.ts's local drawWeapon() helper. `weapon_angle`/`arm_offset`
+## are the arm's own rotate/translate: the source calls `ctx.rotate(weaponAngle)`
+## then `ctx.translate(armOffset, 0)`, so — per the reverse-of-call-order
+## composition this whole file follows — a raw point is translated first,
+## then rotated, before being handed to _body_xf for the outer bob/squash/
+## death transform.
+func _draw_weapon(w: WeaponDefinition, length: float, weapon_angle: float, arm_offset: float, bob: float, squash: float, death_angle: float, death_offset_y: float, death_alpha: float) -> void:
+	if w.kind == WeaponDefinition.Kind.MELEE:
+		var width: float = 9.0 if w.id == "voidScythe" else 6.0
+		var curve: float = 0.55 if w.id == "voidScythe" else 0.15
+		var raw := _quad_bezier_points(Vector2(6.0, 3.0), Vector2(length * 0.55, -width - length * curve), Vector2(length, -width * 0.4), 8)
+		raw.append(Vector2(length + 4.0, 0.0))
+		var raw_seg2 := _quad_bezier_points(Vector2(length + 4.0, 0.0), Vector2(length * 0.55, width * 0.7 + length * curve * 0.6), Vector2(6.0, -3.0), 8)
+		for i in range(1, raw_seg2.size()):
+			raw.append(raw_seg2[i])
+		var blade_pts := PackedVector2Array()
+		for p in raw:
+			blade_pts.append(_body_xf((p + Vector2(arm_offset, 0.0)).rotated(weapon_angle), bob, squash, death_angle, death_offset_y))
+		# 3-stop gradient (bg3 -> weapon color -> near-white) simplified to
+		# the weapon's own (middle, most identity-defining) flat color.
+		var blade_color := Color(w.color)
+		blade_color.a = death_alpha
+		draw_colored_polygon(blade_pts, blade_color)
+
+		var grip_raw := PackedVector2Array([Vector2(-6.0, -3.0), Vector2(6.0, -3.0), Vector2(6.0, 3.0), Vector2(-6.0, 3.0)])
+		var grip_pts := PackedVector2Array()
+		for p in grip_raw:
+			grip_pts.append(_body_xf((p + Vector2(arm_offset, 0.0)).rotated(weapon_angle), bob, squash, death_angle, death_offset_y))
+		var grip_color := Color(Palette.BG2)
+		grip_color.a = death_alpha
+		draw_colored_polygon(grip_pts, grip_color)
+	else:
+		var head_raw := PackedVector2Array([Vector2(4.0, 0.0), Vector2(length - 14.0, -4.0), Vector2(length, 0.0), Vector2(length - 14.0, 4.0)])
+		var head_pts := PackedVector2Array()
+		for p in head_raw:
+			head_pts.append(_body_xf((p + Vector2(arm_offset, 0.0)).rotated(weapon_angle), bob, squash, death_angle, death_offset_y))
+		# Gradient (bg3 -> weapon color) simplified to its midpoint tone.
+		var head_color: Color = DrawUtils.lerp_color_hex(Palette.BG3, w.color, 0.5)
+		head_color.a = death_alpha
+		draw_colored_polygon(head_pts, head_color)
+
+		var grip_raw := PackedVector2Array([Vector2(-4.0, -2.5), Vector2(6.0, -2.5), Vector2(6.0, 2.5), Vector2(-4.0, 2.5)])
+		var grip_pts := PackedVector2Array()
+		for p in grip_raw:
+			grip_pts.append(_body_xf((p + Vector2(arm_offset, 0.0)).rotated(weapon_angle), bob, squash, death_angle, death_offset_y))
+		var grip_color := Color(Palette.BG2)
+		grip_color.a = death_alpha
+		draw_colored_polygon(grip_pts, grip_color)
+
+## Applies drawPlayer.ts's outer per-shape transform stack to a point
+## already expressed in the character's own undistorted local draw space:
+## the always-on dodge squash-stretch + idle/run bob offset, composed with
+## the on-death fall-over rotate+drop (identity — angle 0, offset 0 — while
+## alive, so this is safe to call unconditionally for every point).
+func _body_xf(p: Vector2, bob: float, squash: float, death_angle: float, death_offset_y: float) -> Vector2:
+	var q := Vector2(p.x / squash, p.y * squash)
+	q.y += bob + death_offset_y
+	return q.rotated(death_angle)
+
+## Filled-ellipse point sampler — Godot's _draw() has no ellipse primitive.
+## Mirrors DrawUtils' own internal ellipse loop, kept as a private copy
+## here (rather than calling its underscore-prefixed _draw_ellipse) since
+## every use in this file needs the raw points back to run through
+## _body_xf first, not an immediate draw.
+func _ellipse_points(cx: float, cy: float, rx: float, ry: float, segments: int = 20) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for i in range(segments + 1):
+		var angle: float = (float(i) / float(segments)) * TAU
+		pts.append(Vector2(cx + cos(angle) * rx, cy + sin(angle) * ry))
+	return pts
+
+## Samples a quadratic Bézier curve into straight segments — Canvas2D's
+## quadraticCurveTo has no direct Godot draw-API equivalent. Same
+## name/signature/formula as obstacle_node.gd's own private helper.
+func _quad_bezier_points(p0: Vector2, control: Vector2, p1: Vector2, segments: int = 8) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for i in range(segments + 1):
+		var t: float = float(i) / float(segments)
+		var mt: float = 1.0 - t
+		pts.append(p0 * (mt * mt) + control * (2.0 * mt * t) + p1 * (t * t))
+	return pts
+
+## Mirrors MathUtils.ts's easeOutCubic — no shared MathUtils.gd exists yet
+## in Godot, so (like level_flow.gd's own private _ease_out_cubic) this
+## file keeps its own small private copy of the same formula.
+func _ease_out_cubic(t: float) -> float:
+	var p := t - 1.0
+	return p * p * p + 1.0
