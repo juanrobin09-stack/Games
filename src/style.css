@@ -527,24 +527,63 @@ body.high-contrast {
   transition: width 0.4s ease;
 }
 
+.hud-minimap-wrap {
+  overflow: visible;
+}
 .hud-minimap {
   display: grid;
-  gap: 3px;
-  background: rgba(8,6,12,0.55);
+  background: rgba(8,6,12,0.6);
   border: 1px solid var(--c-border);
   border-radius: 8px;
-  padding: 6px;
+  padding: 7px;
+  transition: transform 0.2s ease;
 }
 .hud-minimap-cell {
-  width: 12px;
-  height: 12px;
-  border-radius: 3px;
-  background: var(--c-bg-2);
-  opacity: 0.35;
+  width: 100%;
+  height: 100%;
+  border-radius: 4px;
+  background: transparent;
 }
-.hud-minimap-cell.visited { opacity: 0.75; }
-.hud-minimap-cell.current { opacity: 1; box-shadow: 0 0 6px var(--c-ember-4); }
-.hud-minimap-cell.empty { visibility: hidden; }
+/* Known to exist (a door leads to it from an already-visited room) but not
+ * yet entered: a faint outline only — the map grows as doors are found,
+ * rather than jumping straight from nothing to fully revealed. */
+.hud-minimap-cell.hint {
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.04);
+}
+.hud-minimap-cell.shown {
+  background: var(--room-tint, var(--c-bg-3));
+  border: 1px solid rgba(0,0,0,0.35);
+}
+.hud-minimap-cell.current {
+  box-shadow: 0 0 0 2px var(--c-ember-4), 0 0 8px 1px var(--c-ember-4);
+}
+/* The zone's heart/boss room: always shown regardless of discovery, and
+ * always this same gold, pulsing, oversized marker — a stable, unmistakable
+ * "this is the destination" landmark every run, whatever the room graph
+ * around it looks like. */
+.hud-minimap-cell.destination {
+  background: linear-gradient(145deg, var(--rarity-legendary), #7a3a12);
+  border: 1px solid var(--rarity-legendary);
+  border-radius: 3px;
+  transform: scale(1.35) rotate(45deg);
+  box-shadow: 0 0 10px 1px rgba(242,181,61,0.5);
+  z-index: 1;
+  animation: legendaryPulse 2.4s ease-in-out infinite;
+}
+/* Standing in the destination room itself: still needs its own "you are
+ * here" tell, not just the pulse it always has — a bright ring on top of
+ * the same gold glow, since a plain box-shadow swap would otherwise lose
+ * one or the other. */
+.hud-minimap-cell.destination.current {
+  box-shadow: 0 0 0 2px var(--c-ember-4), 0 0 10px 2px rgba(242,181,61,0.7);
+}
+.hud-minimap-connector {
+  background: rgba(255,255,255,0.14);
+}
+.hud-minimap-connector.h { width: 100%; height: 3px; align-self: center; }
+.hud-minimap-connector.v { width: 3px; height: 100%; justify-self: center; }
+.hud-minimap-connector.active { background: var(--c-ember-4); box-shadow: 0 0 4px var(--c-ember-4); }
 
 .hud-ability-slot {
   position: relative;
@@ -1059,6 +1098,18 @@ input[type="range"]::-moz-range-thumb {
   color: var(--c-text-dim);
   border: 1px solid var(--c-border);
   white-space: nowrap;
+}
+.stat-value-badge {
+  flex: none;
+  font-family: var(--font-display);
+  font-size: 1.05em;
+  min-width: 34px;
+  text-align: center;
+  padding: 5px 10px;
+  border-radius: var(--radius-s, 6px);
+  background: var(--c-bg-2);
+  color: var(--c-ember-4);
+  border: 1px solid var(--c-border);
 }
 
 .soul-ash-balance {

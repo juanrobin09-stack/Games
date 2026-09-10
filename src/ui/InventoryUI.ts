@@ -2,7 +2,7 @@ import { el, clear } from '@/ui/dom';
 import { iconSvg } from '@/ui/icons';
 import type { RunState } from '@/progression/RunState';
 import type { Player } from '@/entities/Player';
-import { PLAYER_STATS, isPlayerStatLocked, type PlayerStatId } from '@/data/playerProgression';
+import { PLAYER_STATS, isPlayerStatLocked, getAbilityRangeDisplay, type PlayerStatId } from '@/data/playerProgression';
 import { SYNERGIES } from '@/data/synergies';
 import { playSfx } from '@/audio/SoundFactory';
 import { t, tc } from '@/i18n';
@@ -71,7 +71,7 @@ export class InventoryUI {
         : null,
     ]);
 
-    const rows = PLAYER_STATS.map((def) => {
+    const rows = PLAYER_STATS.flatMap((def) => {
       const level = run.statLevels[def.id];
       const perLevelText =
         def.mode === 'flat' ? `+${def.valuePerLevel} ${t(`stat.unit.${def.id}`, '')}`.trim() : `+${Math.round(def.valuePerLevel * 100)}%`;
@@ -103,7 +103,7 @@ export class InventoryUI {
             },
             ['+']
           );
-      return el('div', { class: locked ? 'meta-node locked' : 'meta-node' }, [
+      const statRow = el('div', { class: locked ? 'meta-node locked' : 'meta-node' }, [
         el('div', { class: 'icon-badge', html: iconSvg(def.icon, 20) }),
         el('div', { class: 'meta-info' }, [
           el('div', { class: 'meta-name' }, [`${t(`stat.${def.id}`, def.id)} — ${t('upgrade.level', 'Level')} ${level}`]),
@@ -111,6 +111,22 @@ export class InventoryUI {
         ]),
         plusBtn,
       ]);
+      if (def.id !== 'abilityDamage') return [statRow];
+      // Ability Range isn't a stat-point row (it's driven entirely by the
+      // in-run range upgrades — Keen Aim/Far Reach/Wide Blast/Eagle Eye), so
+      // it's shown as a read-only value right next to Ability Damage rather
+      // than in the spendable list: base 10, scaling with the same
+      // areaDamageMult those upgrades already apply.
+      const rangeValue = getAbilityRangeDisplay(this.player.stats.areaDamageMult);
+      const rangeRow = el('div', { class: 'meta-node' }, [
+        el('div', { class: 'icon-badge', html: iconSvg('range', 20) }),
+        el('div', { class: 'meta-info' }, [
+          el('div', { class: 'meta-name' }, [t('stat.abilityRange', 'Ability Range')]),
+          el('div', { class: 'meta-desc' }, [t('inventory.abilityRangeDesc', 'Base 10 — grows with range upgrades found this run.')]),
+        ]),
+        el('div', { class: 'stat-value-badge' }, [String(rangeValue)]),
+      ]);
+      return [statRow, rangeRow];
     });
 
     return el('div', {}, [header, el('div', { class: 'button-column' }, rows)]);

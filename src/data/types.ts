@@ -53,7 +53,7 @@ export interface StatBlock {
 
 export function createBaseStats(): StatBlock {
   return {
-    maxHp: 130,
+    maxHp: 100,
     hpRegen: 0.4,
     moveSpeed: 190,
     damageMult: 1,

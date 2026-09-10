@@ -4,6 +4,7 @@ import type { Player } from '@/entities/Player';
 import type { RunState } from '@/progression/RunState';
 import { formatNumber, formatTime, clamp } from '@/utils/MathUtils';
 import type { UpgradeIconId } from '@/data/types';
+import { DIRECTION_DELTA, type Room } from '@/world/Room';
 import { t, tc } from '@/i18n';
 
 export interface BossHudInfo {
@@ -51,6 +52,7 @@ export class HUD {
   private embersText!: HTMLElement;
   private zoneLabel!: HTMLElement;
   private corruptionFill!: HTMLElement;
+  private minimapWrap!: HTMLElement;
   private minimapEl!: HTMLElement;
   private abilitySlot!: HTMLElement;
   private abilitySweep!: HTMLElement;
@@ -98,6 +100,7 @@ export class HUD {
     this.zoneLabel = el('div', { class: 'hud-zone-label' }, ['—']);
     this.corruptionFill = el('div', { class: 'hud-corruption-fill' });
     this.minimapEl = el('div', { class: 'hud-minimap' });
+    this.minimapWrap = el('div', { class: 'hud-minimap-wrap' }, [this.minimapEl]);
     this.abilitySweep = el('div', { class: 'cooldown-sweep' });
     this.abilityIconEl = el('div', { html: iconSvg('ability', 22) });
     this.weaponNameEl = el('span', { class: 'name' }, [tc('emberBlade', 'name', 'Ember Blade')]);
@@ -146,7 +149,7 @@ export class HUD {
       el('div', { class: 'hud-zone-label' }, [this.timerLabel]),
       this.zoneLabel,
       el('div', { class: 'hud-corruption' }, [this.corruptionFill]),
-      this.minimapEl,
+      this.minimapWrap,
     ]);
 
     this.abilitySlot = el('div', { class: 'hud-ability-slot' }, [this.abilityIconEl, this.abilitySweep, el('span', { class: 'key-hint' }, [t('hud.rmbHint', 'RMB')])]);
@@ -175,6 +178,38 @@ export class HUD {
     ]);
   }
 
+  /** Room-type tint for a discovered, non-destination cell — the heart/boss
+   * room gets its own distinct "destination" treatment instead (see below),
+   * so it's never confused with an ordinary special room. */
+  private static readonly MINIMAP_TINT: Record<string, string> = {
+    chest: '#f2b53d',
+    shop: '#6fc3d9',
+    elite: '#e74c3c',
+    event: '#7dd35a',
+    rest: '#ffab54',
+    sanctum: '#6fe3c4',
+  };
+
+  private static readonly MINIMAP_ROOM_PX = 18;
+  private static readonly MINIMAP_GAP_PX = 8;
+  /** The widget scales down uniformly past this footprint so a large zone's
+   * map never grows "huge" — reasonably bigger than the old 12px grid, but
+   * still reads as a *mini*map at any zone size or viewport. */
+  private static readonly MINIMAP_MAX_PX = 176;
+
+  /**
+   * Rebuilds the minimap as a double-resolution CSS grid — even track
+   * indices are rooms, odd ones are thin connector bars in the gaps between
+   * door-linked rooms — so corridors are real grid cells rather than
+   * absolutely-positioned overlays. A room is drawn once visited, once
+   * current, or (the zone's heart/boss room specifically) always: that one
+   * destination is revealed from the start, with its own unmistakable
+   * marker, per the brief — every other room stays hidden until reached. A
+   * room adjacent to an already-visited one but not itself visited gets a
+   * faint "known to exist" hint pip instead of staying fully blank, so the
+   * map grows legibly as doors are found rather than jumping straight from
+   * nothing to fully revealed.
+   */
   refreshMinimap(runState: RunState): void {
     const layout = runState.currentLayout;
     const rooms = Array.from(layout.rooms.values());
@@ -187,39 +222,98 @@ export class HUD {
     }
     const cols = maxX - minX + 1;
     const rows = maxY - minY + 1;
-    this.minimapEl.style.gridTemplateColumns = `repeat(${cols}, 12px)`;
-    this.minimapEl.style.gridTemplateRows = `repeat(${rows}, 12px)`;
-    this.minimapEl.innerHTML = '';
-    const byPos = new Map<string, (typeof rooms)[number]>();
+    const byPos = new Map<string, Room>();
     for (const r of rooms) byPos.set(`${r.gridX - minX},${r.gridY - minY}`, r);
+
+    const isDestination = (r: Room) => r.type === 'heart' || r.type === 'boss';
+    const isShown = (r: Room) => r.visited || r.key === runState.currentRoomKey || isDestination(r);
+    const hasShownNeighbor = (r: Room): boolean => {
+      for (const dir of r.doors) {
+        const d = DIRECTION_DELTA[dir];
+        const n = byPos.get(`${r.gridX - minX + d.dx},${r.gridY - minY + d.dy}`);
+        if (n && isShown(n)) return true;
+      }
+      return false;
+    };
+
+    const ROOM = HUD.MINIMAP_ROOM_PX;
+    const GAP = HUD.MINIMAP_GAP_PX;
+    const colTemplate: string[] = [];
+    for (let i = 0; i < cols; i++) {
+      if (i > 0) colTemplate.push(`${GAP}px`);
+      colTemplate.push(`${ROOM}px`);
+    }
+    const rowTemplate: string[] = [];
+    for (let i = 0; i < rows; i++) {
+      if (i > 0) rowTemplate.push(`${GAP}px`);
+      rowTemplate.push(`${ROOM}px`);
+    }
+    this.minimapEl.style.gridTemplateColumns = colTemplate.join(' ');
+    this.minimapEl.style.gridTemplateRows = rowTemplate.join(' ');
+    this.minimapEl.innerHTML = '';
+
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
         const room = byPos.get(`${x},${y}`);
-        if (!room) {
-          this.minimapEl.appendChild(el('div', { class: 'hud-minimap-cell empty' }));
-          continue;
-        }
+        if (!room) continue;
+        const col = x * 2 + 1;
+        const row = y * 2 + 1;
+        const shown = isShown(room);
+        const dest = isDestination(room);
         const isCurrent = room.key === runState.currentRoomKey;
-        const cls = ['hud-minimap-cell'];
-        if (room.visited) cls.push('visited');
-        if (isCurrent) cls.push('current');
-        const cell = el('div', { class: cls.join(' ') });
-        if (room.visited || isCurrent) {
-          const tint: Record<string, string> = {
-            chest: '#f2b53d',
-            shop: '#6fc3d9',
-            elite: '#e74c3c',
-            heart: '#9b7ed9',
-            boss: '#c0392b',
-            event: '#7dd35a',
-            rest: '#ffab54',
-            sanctum: '#6fe3c4',
-          };
-          if (tint[room.type]) cell.style.background = tint[room.type];
+
+        if (shown || hasShownNeighbor(room)) {
+          const cls = ['hud-minimap-cell'];
+          if (dest) cls.push('destination');
+          if (shown) cls.push('shown');
+          else cls.push('hint');
+          if (isCurrent) cls.push('current');
+          const cell = el('div', { class: cls.join(' '), style: `grid-column:${col};grid-row:${row};` });
+          if (shown && !dest && HUD.MINIMAP_TINT[room.type]) {
+            cell.style.setProperty('--room-tint', HUD.MINIMAP_TINT[room.type]);
+          }
+          this.minimapEl.appendChild(cell);
         }
-        this.minimapEl.appendChild(cell);
+
+        // Connectors: only check E/S so each door pair is drawn once (the
+        // neighbor's own W/N is the same connection). A corridor is only
+        // ever drawn between two rooms that are BOTH shown — never toward a
+        // hinted-but-unvisited room, so a line never spoils a destination.
+        if (room.doors.has('E')) {
+          const neighbor = byPos.get(`${x + 1},${y}`);
+          if (neighbor && shown && isShown(neighbor)) {
+            const active = isCurrent || neighbor.key === runState.currentRoomKey;
+            this.minimapEl.appendChild(
+              el('div', { class: `hud-minimap-connector h${active ? ' active' : ''}`, style: `grid-column:${col + 1};grid-row:${row};` })
+            );
+          }
+        }
+        if (room.doors.has('S')) {
+          const neighbor = byPos.get(`${x},${y + 1}`);
+          if (neighbor && shown && isShown(neighbor)) {
+            const active = isCurrent || neighbor.key === runState.currentRoomKey;
+            this.minimapEl.appendChild(
+              el('div', { class: `hud-minimap-connector v${active ? ' active' : ''}`, style: `grid-column:${col};grid-row:${row + 1};` })
+            );
+          }
+        }
       }
     }
+
+    // Responsive: scale the whole widget down uniformly once a large zone's
+    // natural footprint would otherwise grow past "mini" — never upward, so
+    // small zones stay at their crisp native size. Measured off the real
+    // rendered box (padding/border included) rather than hand-computed, and
+    // the wrap reserves exactly the post-scale footprint so the flex column
+    // it sits in never leaves a stale gap or clips the scaled-down result.
+    this.minimapEl.style.transform = '';
+    const w = this.minimapEl.offsetWidth;
+    const h = this.minimapEl.offsetHeight;
+    const scale = Math.min(1, HUD.MINIMAP_MAX_PX / Math.max(w, h, 1));
+    this.minimapWrap.style.width = `${w * scale}px`;
+    this.minimapWrap.style.height = `${h * scale}px`;
+    this.minimapEl.style.transformOrigin = 'top right';
+    this.minimapEl.style.transform = scale < 1 ? `scale(${scale})` : '';
   }
 
   showToast(text: string, durationMs = 4200): void {

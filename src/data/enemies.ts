@@ -8,7 +8,7 @@ export const ENEMIES: Record<string, EnemyDefinition> = {
     behavior: 'chaser',
     baseHp: 200,
     baseDamage: 8,
-    moveSpeed: 255,
+    moveSpeed: 220,
     radius: 12,
     emberValue: 2,
     attackRange: 24,

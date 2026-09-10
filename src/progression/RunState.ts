@@ -111,6 +111,22 @@ export class RunState {
     return start;
   }
 
+  /** Symmetric to advanceZone(): steps back into the previous zone's own
+   * (already fully-generated, never-discarded) layout, landing in its
+   * heart/boss room — where its own down-stairs are — rather than its start
+   * room, since the return trip retraces the same physical stairwell the
+   * player originally descended. Every room object (visited/cleared/chest/
+   * enemy state) is untouched by a zone switch either direction, so nothing
+   * needs to be saved or restored here beyond which room is current. */
+  retreatZone(): Room {
+    this.zoneIndex = Math.max(this.zoneIndex - 1, 0);
+    const layout = this.currentLayout;
+    const landing = Array.from(layout.rooms.values()).find((r) => r.type === 'heart' || r.type === 'boss') ?? layout.rooms.get(layout.startKey)!;
+    this.currentRoomKey = landing.key;
+    landing.visited = true;
+    return landing;
+  }
+
   addEmbers(amount: number): void {
     if (amount <= 0) return;
     this.embers += amount;

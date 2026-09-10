@@ -100,6 +100,24 @@ export function isPlayerStatLocked(statId: PlayerStatId, hasBow: boolean, zoneIn
   return false;
 }
 
+// ---------------------------------------------------------------- Ability range display
+
+/**
+ * Purely presentational base value for the ability's range, shown to the
+ * player as "10" per the brief — scales with the exact same `areaDamageMult`
+ * the in-run range upgrades (Keen Aim +5%, Far Reach +10%, Wide Blast +15%,
+ * Eagle Eye +17%) already apply, so the displayed number moves in lockstep
+ * with the real mechanic (10 -> 10.5 -> 11.55 -> ...) without introducing a
+ * second, competing formula. The actual gameplay radius (Ember Burst's own
+ * 140px base × areaDamageMult) is untouched — this is a display unit layered
+ * on top of it, not a replacement for it.
+ */
+export const ABILITY_RANGE_DISPLAY_BASE = 10;
+
+export function getAbilityRangeDisplay(areaDamageMult: number): number {
+  return Math.round(ABILITY_RANGE_DISPLAY_BASE * areaDamageMult * 10) / 10;
+}
+
 // ---------------------------------------------------------------- In-run upgrade level cap
 
 /** How high an in-run upgrade's level (stack count) can climb while in a

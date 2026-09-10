@@ -113,6 +113,10 @@ function roomTypeLabel(type: Room['type']): string {
  */
 interface ZoneTransition {
   phase: 'out' | 'in';
+  /** Which way this transition resolves once phase 'out' finishes — descend
+   * advances to zoneIndex+1 (a heart/boss room's stairsDown), ascend retreats
+   * to zoneIndex-1 (a start room's stairsUp, walked in reverse). */
+  kind: 'descend' | 'ascend';
   t: number;
   duration: number;
   fromX: number;
@@ -751,6 +755,15 @@ export class Game {
     if (room.type === 'sanctum' && !room.ritualActive && !room.cleared && centerDist < SANCTUM_RING_RADIUS * 0.65) {
       return { label: t('interact.kneelAtCircle', 'Kneel at the Circle'), action: () => this.beginRite(room) };
     }
+    if (room.type === 'start' && run.zoneIndex > 0) {
+      const stairs = room.obstacles.find((o) => o.visual === 'stairsUp');
+      if (stairs && Math.hypot(player.x - stairs.x, player.y - stairs.y) < stairs.radius + 72) {
+        const prevZone = ZONES[run.zoneIndex - 1];
+        const prevName = prevZone ? tc(prevZone.id, 'name', prevZone.name) : t('interact.thePreviousZone', 'the previous zone');
+        const ascendLabel = t('interact.ascendToFormat', 'Ascend to {name}').replace('{name}', prevName);
+        return { label: ascendLabel, action: () => this.beginAscent(stairs) };
+      }
+    }
     if (room.type === 'heart' && room.cleared && !run.isFinalZone()) {
       const nextZone = ZONES[run.zoneIndex + 1];
       const nextName = nextZone ? tc(nextZone.id, 'name', nextZone.name) : t('interact.theNextZone', 'the next zone');
@@ -996,6 +1009,37 @@ export class Game {
     const mouth = stairsMouthPosition(stairs);
     this.transition = {
       phase: 'out',
+      kind: 'descend',
+      t: 0,
+      duration: DESCENT_OUT_SECONDS,
+      fromX: player.x,
+      fromY: player.y,
+      toX: mouth.x,
+      toY: mouth.y,
+      stairs,
+      sporeTimer: 0,
+    };
+    player.moveInputX = 0;
+    player.moveInputY = 0;
+    player.vx = 0;
+    player.vy = 0;
+    player.invulnTimer = Math.max(player.invulnTimer, DESCENT_OUT_SECONDS + DESCENT_IN_SECONDS + 0.4);
+    playSfx('stairsDescend');
+    music.setIntensity(0);
+  }
+
+  /** Mirrors beginDescent: walks the player INTO a zone's arrival stairwell
+   * (stairsUp) to retreat to zoneIndex-1, landing back in that zone's own
+   * heart/boss room — the same physical stairwell the player descended,
+   * used in reverse. Only ever offered where a stairsUp obstacle actually
+   * exists, i.e. zoneIndex > 0 (see placeStairsUp in LevelGenerator). */
+  private beginAscent(stairs: Obstacle): void {
+    if (this.transition) return;
+    const player = this.player!;
+    const mouth = stairsMouthPosition(stairs);
+    this.transition = {
+      phase: 'out',
+      kind: 'ascend',
       t: 0,
       duration: DESCENT_OUT_SECONDS,
       fromX: player.x,
@@ -1040,8 +1084,10 @@ export class Game {
     }
 
     if (k >= 1) {
-      if (tr.phase === 'out') this.completeDescent();
-      else {
+      if (tr.phase === 'out') {
+        if (tr.kind === 'ascend') this.completeAscent();
+        else this.completeDescent();
+      } else {
         this.transition = null;
         player.animState = 'idle';
       }
@@ -1076,6 +1122,7 @@ export class Game {
     this.camera.snapTo(player.x, player.y);
     this.transition = {
       phase: 'in',
+      kind: 'descend',
       t: 0,
       duration: DESCENT_IN_SECONDS,
       fromX: mouth.x,
@@ -1090,6 +1137,54 @@ export class Game {
     this.hud?.showPhaseBanner(tc(zone.id, 'name', zone.name).toUpperCase());
     const subtitleTimer = window.setTimeout(() => this.hud?.showToast(`<em>${tc(zone.id, 'subtitle', zone.subtitle)}</em>`), 1100);
     this.synergyBannerTimers.push(subtitleTimer);
+    playSfx('zoneArrive');
+    music.setMood(run.zoneIndex);
+  }
+
+  /** Mirrors completeDescent: lands the player back in the previous zone's
+   * heart/boss room, at the mouth of ITS stairsDown, then walks them out to
+   * its foot — the same physical stairwell, in reverse. The landing room is
+   * always already populated (you can't have advanced past it otherwise),
+   * but populateRoomContent is called defensively anyway for symmetry with
+   * completeDescent — it's a no-op once already spawned. */
+  private completeAscent(): void {
+    const run = this.run!;
+    const player = this.player!;
+    const tr = this.transition!;
+    const prevRoom = run.retreatZone();
+    const zone = run.currentZoneDef;
+    this.particles.clear();
+    this.combat.reset();
+    this.boss = null;
+    if (!prevRoom.spawnedContent) {
+      populateRoomContent(prevRoom, zone, {
+        unlockedEnemyIds: meta.getUnlockedGateIds(),
+        runMinutes: run.elapsedMinutes(),
+        rarityLuck: player.stats.rarityLuck,
+        runSeed: run.runSeedString,
+      });
+    }
+    const arrival = prevRoom.obstacles.find((o) => o.visual === 'stairsDown') ?? null;
+    const mouth = arrival ? stairsMouthPosition(arrival) : { x: ROOM_WIDTH / 2, y: ROOM_HEIGHT / 2 };
+    const foot = arrival ? stairsFootPosition(arrival) : { x: ROOM_WIDTH / 2, y: ROOM_HEIGHT / 2 + 40 };
+    player.x = mouth.x;
+    player.y = mouth.y;
+    this.camera.snapTo(player.x, player.y);
+    this.transition = {
+      phase: 'in',
+      kind: 'ascend',
+      t: 0,
+      duration: DESCENT_IN_SECONDS,
+      fromX: mouth.x,
+      fromY: mouth.y,
+      toX: foot.x,
+      toY: foot.y,
+      stairs: arrival ?? tr.stairs,
+      sporeTimer: 0,
+    };
+    this.syncCombatState();
+    this.hud?.refreshMinimap(run);
+    this.hud?.showPhaseBanner(tc(zone.id, 'name', zone.name).toUpperCase());
     playSfx('zoneArrive');
     music.setMood(run.zoneIndex);
   }
@@ -1185,11 +1280,12 @@ export class Game {
     room.rewardGranted = true;
     const player = this.player!;
     const run = this.run!;
-    // The Hollow Ruins' elite den is the one guaranteed elite fight of Level 2
-    // ("Level 2 du jeu" — see the brief) — clearing it hands over the Warden's
-    // Bow directly, on top of (not instead of) the room's normal upgrade-choice
-    // reward below, the same way the Sanctum's own bonus reward stacks with it.
-    if (room.type === 'elite' && run.zoneIndex === 1 && !player.unlockedWeapons.has('bow')) {
+    // Corrected per a later brief: the Bow now ties to Level 3 of the dungeon
+    // (the Ember Citadel, zoneIndex 2), not Level 2 — its one guaranteed elite
+    // den. Clearing it hands over the Warden's Bow directly, on top of (not
+    // instead of) the room's normal upgrade-choice reward below, the same way
+    // the Sanctum's own bonus reward stacks with it.
+    if (room.type === 'elite' && run.zoneIndex === 2 && !player.unlockedWeapons.has('bow')) {
       player.unlockedWeapons.add('bow');
       player.weaponId = 'bow';
       playSfx('chestOpenLegendary');

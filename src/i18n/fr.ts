@@ -317,8 +317,10 @@ export const FR_UI: Record<string, string> = {
   'stat.range': 'Portée',
   'stat.moveSpeed': 'Vitesse de Déplacement',
   'stat.attackSpeed': 'Vitesse d’Attaque',
+  'stat.abilityRange': 'Portée de Compétence',
+  'inventory.abilityRangeDesc': 'Base 10 — augmente avec les améliorations de portée trouvées durant la run.',
   'stat.locked': 'Verrouillé',
-  'stat.lockedReason.attackSpeed': 'Verrouillé — récupérez l’Arc du Gardien pour débloquer.',
+  'stat.lockedReason.attackSpeed': 'Verrouillé — débloqué au Level 3 du donjon, avec l’Arc du Gardien.',
   'stat.lockedReason.abilityDamage': 'Verrouillé — atteignez les Ruines Noyées (Level 2) pour débloquer.',
   'stat.unit.hp': 'PV',
   'stat.unit.stamina': 'Endurance',
@@ -395,4 +397,6 @@ export const FR_UI: Record<string, string> = {
   'interact.kneelAtCircle': 'S’Agenouiller au Cercle',
   'interact.theNextZone': 'la zone suivante',
   'interact.descendToFormat': 'Descendre vers {name}',
+  'interact.thePreviousZone': 'la zone précédente',
+  'interact.ascendToFormat': 'Remonter vers {name}',
 };
