@@ -1,15 +1,19 @@
 extends Node2D
-## Test scene for build-order steps 1-4: the step-1/2 diagnostic readout,
-## Player/Enemy/Boss moving and rendering (step 3), and now real combat —
-## enemy AI, the damage pipeline, and status effects (step 4). Not a real
-## level — no Room/LevelGenerator yet (that's step 6), just an open
-## playground with placeholder circles for everything.
+## Test scene for build-order steps 1-5: the step-1/2 diagnostic readout,
+## Player/Enemy/Boss moving and rendering (step 3), combat — enemy AI, the
+## damage pipeline, and status effects (step 4) — and now real weapon
+## behaviors, melee and ranged alike (step 5). Not a real level — no Room/
+## LevelGenerator yet (that's step 6), just an open playground with
+## placeholder circles for everything.
 ##
 ## Controls: WASD/arrows move, mouse aims (the white line on the player is
-## facing), left click attacks (real melee damage now — try it on the
-## nearest enemy and watch its HP text drop), space dodges (brief
-## invulnerability), right click channels the ability once energy is full
-## (still no actual effect — that's step 5, weapon/ability behaviors).
+## facing), left click attacks (real damage now, melee or ranged depending
+## on the equipped weapon — try it on the nearest enemy and watch its HP
+## text drop), space dodges (brief invulnerability), right click channels
+## the ability once energy is full (still no actual effect — abilities are
+## step 6, progression). Press Q to cycle the equipped weapon (Ember Blade
+## -> Void Scythe -> Solar Spear -> Bow) — a debug stand-in for the real
+## loadout screen (step 9); watch a fired bolt actually fly and land.
 ##
 ## One of each of the 6 AI behavior families is spawned below so every
 ## dispatch path in combat/enemy_ai.gd gets exercised: watch the state
@@ -53,7 +57,11 @@ func _process(_delta: float) -> void:
 			Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT),
 			Input.is_physical_key_pressed(KEY_SPACE),
 		],
-		"weapon() found: %s   ability() found: %s" % [w != null, a != null],
+		"weapon: %s (%s)   ability() found: %s   [Q to cycle weapon]" % [
+			w.name if w != null else "<none>",
+			WeaponDefinition.Kind.keys()[w.kind] if w != null else "?",
+			a != null,
+		],
 		"stamina: %.1f/%.1f   energy: %.1f/%.1f   hp: %.1f/%.1f" % [
 			player.stamina, player.stats.stamina_max,
 			player.energy, player.stats.energy_max,
@@ -98,8 +106,8 @@ func _print_diagnostics() -> void:
 		data_lines.append("  %-18s %d%s" % [category, got, flag])
 
 	var lines: Array[String] = [
-		"EMBERFALL: LAST LIGHT — Godot scaffold (build-order step 4 of 12)",
-		"WASD move, mouse aim, LMB attack (real damage), Space dodge, RMB ability",
+		"EMBERFALL: LAST LIGHT — Godot scaffold (build-order step 5 of 12)",
+		"WASD move, mouse aim, LMB attack (real damage), Space dodge, RMB ability, Q cycle weapon",
 		"",
 		"GameState  : %s (simulating: %s)" % [state_name, GameState.is_simulating()],
 		"RunState   : zone_index=%d, player_level=%d, xp_to_next=%.0f" % [
@@ -124,6 +132,10 @@ func _spawn_playground() -> void:
 	player = PLAYER_SCENE.instantiate()
 	add_child(player)
 	player.global_position = Vector2.ZERO
+	# Debug-only: the real Armory/loadout unlock flow is step 6/9. Seeding
+	# all 4 here is what makes the Q weapon-cycle (player.gd) able to reach
+	# the ranged weapons at all in this playground.
+	player.unlocked_weapons = ["emberBlade", "voidScythe", "solarSpear", "bow"]
 
 	var angle_step: float = TAU / SHOWCASE_ENEMIES.size()
 	for i in range(SHOWCASE_ENEMIES.size()):

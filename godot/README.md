@@ -7,81 +7,73 @@ kept/improved/rebuilt, the recommended architecture, and the complete
 [`GODOT_MIGRATION.md`](../GODOT_MIGRATION.md) at the repo root. Read that
 first; this file only tracks what's actually been built here so far.
 
-## Status: build-order step 4 of 12 — combat, AI, status effects
+## Status: build-order step 5 of 12 — weapon behaviors
 
 **Important caveat:** this project was authored without access to the
 Godot editor or engine binary — this environment doesn't have Godot
 installed, so most of it has not been opened, run, or validated by the
-actual engine. **Steps 1-3 have been confirmed working** by the user
-running them in their own Godot 4.3 editor, including live debugging of
-two real issues this session surfaced and fixed (a null-guard gap in
-`weapon()`/`ability()`, and a debug-label layout overlap). **Step 4 below
-has NOT yet had that same live confirmation** — treat it as unverified
-until you run it and report back. If anything fails to parse or run,
-report the exact error; this is by far the largest single step so far, so
-expect a real chance of something needing a fix.
+actual engine. **Steps 1-4 have been confirmed working** by the user
+running them in their own Godot editor, including live debugging of three
+real issues this session surfaced and fixed (a null-guard gap in
+`weapon()`/`ability()`, a debug-label layout overlap, and a duplicate
+`combo_step` field GDScript rejects that TypeScript silently allows).
+**Step 5 below has NOT yet had that same live confirmation** — treat it as
+unverified until you run it and report back. If anything fails to parse or
+run, report the exact error.
 
-### Steps 1-3 — scaffold, data as Resources, core entities (confirmed working)
+### Steps 1-4 — scaffold, data as Resources, core entities, combat+AI (confirmed working)
 
-5 Autoloads, 80 `.tres` Resource files across 10 content categories, and
+5 Autoloads, 80 `.tres` Resource files across 10 content categories,
 Player/Enemy/Boss as `CharacterBody2D` entities with real movement/
-stamina/dodge/cooldown gating. Full detail in git history — see the
-step-1/2/3 commits, or `GODOT_MIGRATION.md` for the architecture.
+stamina/dodge/cooldown gating, the full damage pipeline (melee arc,
+projectiles, contact damage, warden bash, bloat detonation), all 6 enemy
+AI behavior families, and the generic status-effect runtime (Burn procs
+for real off player hits). Full detail in git history — see the
+step-1/2/3/4 commits, or `GODOT_MIGRATION.md` for the architecture.
 
-### Step 4 — combat pipeline, enemy AI, status-effect runtime (just added, unverified)
+### Step 5 — weapon behaviors: the Strategy split (just added, unverified)
 
-The biggest step yet. Every number below was read directly from
-`CombatSystem.ts`/`EnemyAI.ts`/`Enemy.ts`/`Projectile.ts` this session —
-not approximated.
+`GODOT_MIGRATION.md` §8's whole point: `CombatSystem.ts` executes every
+weapon through one function per `kind`, so a third archetype means a third
+branch in that same function. Godot instead gets one `WeaponBehavior`
+subclass per attack archetype — adding a new attack shape later means one
+new subclass file, never a wider `if/else` anywhere.
 
 | File | Ports | State |
 |---|---|---|
-| `autoload/combat_manager.gd` | `combat/CombatSystem.ts` | The real damage pipeline: `damage_player_to_enemy`/`damage_enemy_to_player` (crit rolls, the warden frontal-shield block, knockback, lifesteal, crit-interrupt-to-stagger), `perform_melee_attack` (the player's own M1, instant-arc hit check), contact damage, warden bash hits, Bloat detonation, the champion shield-break beat (spawns its 2 Blightbloat reinforcements) |
-| `combat/enemy_ai.gd` | `ai/EnemyAI.ts` | All 6 behavior state machines verbatim — melee-like (chaser/tank/heavy), ranged, stalker, elite (hybrid melee/ranged by distance), bloat, and the full warden (shield/bash/exposed-window, plus the champion's flat-50%-HP phase break and faster double-bash) |
-| `combat/status_effect_instance.gd` + `status_effect_runtime.gd` | New for Godot, §7 | The real runtime this session's architecture work was building toward: `apply()`/`process()` shared by both Player and Enemy, ticking damage through `CombatManager`. Burn now genuinely procs off player hits (`burn_chance` roll → applies the real `StatusEffectDefinition`) |
-| `entities/projectile.gd` + `.tscn` | `entities/Projectile.ts` | Self-contained `Area2D` — checks its own overlap against the `enemies`/`player` groups every physics tick, pierce-dedups via `register_hit`, expires on lifetime or first non-piercing hit |
-| `entities/player.gd`, `enemy.gd` | — | Wired to the above: `start_attack()` now calls `perform_melee_attack`; `EnemyCharacter` gained `ai_velocity` (kept deliberately separate from `knockback_velocity` — see the file's own header comment for why merging them would be a real bug), the warden/bloat/champion state fields, and a debug HP/state-name label drawn above each enemy |
+| `combat/weapon_behavior.gd` | §8's `WeaponBehavior` concept | The base Strategy class + `for_kind(kind)`, the one place a `WeaponDefinition.Kind` maps to its behavior instance |
+| `combat/melee_arc_behavior.gd` | `CombatSystem.ts`'s melee branch | Thin entry point into `CombatManager.perform_melee_attack` (step 4, already confirmed working) — no logic duplicated |
+| `combat/projectile_shot_behavior.gd` + `CombatManager.fire_player_projectile` | `fireProjectileWeapon` | New: the player can now actually fire projectiles — shot count from `stats.projectile_count`, fanned across a spread when >1, every stat (crit chance, pierce, knockback, lifesteal, burn chance) baked into the bolt at fire time exactly like the Web build |
+| `entities/player.gd` | — | `start_attack()` now dispatches through `WeaponBehavior.for_kind(w.kind).execute(self, w)` instead of the old melee-only shortcut. Also gained a **debug-only** weapon-cycle: press **Q** to cycle Ember Blade → Void Scythe → Solar Spear → Bow (a stand-in for `LoadoutSelectUI.ts`'s real screen, still step 9) |
 
-**Deferred this pass, on purpose** (see `combat_manager.gd`'s and
-`enemy_ai.gd`'s own header comments for the full list): synergies
-(depend on the upgrade-ownership system, step 6), abilities' actual
-effects and ranged/projectile weapon firing (weapon-behavior execution,
-step 5), damage numbers/particles/camera shake/SFX (step 8/9), hazards —
-lingering spore clouds (Bloat and the champion still deal their direct-hit
-damage, just not the cloud that's supposed to follow), and enemy-crowd
-separation (`applyEnemySeparation` — cosmetic, wants a spatial grid this
-project doesn't have yet). One function, `resolve_melee_land`, is *not* a
-byte-exact port — the Web build's own callback body wasn't in the portion
-of `Game.ts` read this session, so it's implemented from the same
-"did-you-stay-in-the-blast" principle every other telegraphed-hit check
-here already uses verbatim; flagged in its own comment.
+**Deferred this pass, on purpose:** abilities' actual effects and synergies
+still depend on the upgrade-ownership system (step 6) — right-click still
+just drains/refills energy with no effect. Weapon *art* (a sprite per
+weapon on a hand marker, per §8) is step 7; SFX is step 10.
 
-`scenes/main/`'s playground now spawns one enemy per behavior family
-(Ash Crawler/Flame Wisp/Shadow Stalker/Hollow Warden/Blightbloat/Ember
-Devourer) instead of a less-representative sample, so every dispatch path
-in `enemy_ai.gd` actually gets exercised. The live debug panel now also
-shows the nearest enemy's name/distance/state/HP.
+`scenes/main/`'s playground now seeds the player's `unlocked_weapons` with
+all 4 weapons (debug-only — the real Armory unlock flow is steps 6/9) so
+Q-cycling can actually reach the ranged weapons. The live debug panel now
+also shows the currently-equipped weapon's name and kind.
 
-**How to test it:** run the project. Approach the Ash Crawler and left-click
-— its HP text (drawn above its head) should drop, and its state should
-cycle chase → windup → attack → cooldown → chase. Watch the Hollow Warden:
-it should circle to face you before bashing, then sit exposed (guard
-down, a visible arc no longer drawn) for a beat afterward — hit it during
-that window versus while the arc is showing and compare the damage
-(should be ~15% while shielded). The Flame Wisp should hold distance and
-fire bolts rather than closing in. The Blightbloat should walk up, plant,
-swell, and detonate — check its HP hits 0 and it disappears. Take a few
-hits and confirm your own HP in the live panel actually drops (contact
-damage, bolts, bashes). None of this has been confirmed working yet —
-report exactly what you see, including anything that looks wrong or any
-error text in the Output panel.
+**How to test it:** run the project — steps 1-4 should behave exactly as
+before (see the confirmed-working summary above; if any of that regressed,
+that's a real bug to report). Then press **Q** a couple of times to cycle
+to the Solar Spear or Bow (the live panel's `weapon:` line should read
+`RANGED`), aim at an enemy, and left-click: a small bolt should actually
+fly out and travel toward your cursor direction, landing on the first
+enemy it touches (their HP text should drop, same as melee) and either
+disappearing (Bow, pierce 1) or continuing through up to 2 enemies (Solar
+Spear). Cycle back to a melee weapon and confirm swings still work as
+before. None of step 5 has been confirmed working yet — report exactly
+what you see, including anything that looks wrong or any error text in the
+Output panel.
 
 ### Next steps (not started)
 
-Per `GODOT_MIGRATION.md` §5: the weapon-behavior Strategy split from §8
-(step 5) — `WeaponBehavior` per attack archetype (`MeleeArc`,
-`ProjectileShot`), so the Bow/Solar Spear can actually fire, replacing
-`player.gd`'s current "melee only" shortcut — then progression (step 6):
-XP/Level, the in-run upgrade pool, and the permanent Soul Ash tree, which
-is also when synergies and the deferred ability effects become meaningful
-to wire up.
+Per `GODOT_MIGRATION.md` §5, step 6: level generation — port
+`LevelGenerator.ts` and build the *bidirectional* room-transition flow
+from day one (retreat-to-previous-zone is the current design, not a later
+add-on), get a full run navigable start-to-boss-and-back with placeholder
+visuals. This is also when the upgrade-ownership system goes in, which is
+what unlocks synergies and abilities' actual effects.

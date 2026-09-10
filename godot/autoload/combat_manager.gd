@@ -11,8 +11,9 @@ extends Node
 ## function's own comment for exactly what and why):
 ## - Synergies (ashFire/emberCritical/lightHealing/wrath/shadowDodge) —
 ##   depend on the upgrade-ownership system, build-order step 6.
-## - Abilities' actual effects (Ember Burst, Warding Sigil) — tied to
-##   weapon/ability behavior execution, step 5.
+## - Abilities' actual effects (Ember Burst, Warding Sigil) — deferred to
+##   progression, step 6, alongside synergies (see below); weapon execution
+##   itself (melee arc + projectile shot) is done, in combat/weapon_behavior.gd.
 ## - Damage numbers, particles, camera shake, hit-stop, SFX — step 8/9.
 ## - Hazards (spore clouds) — Bloat and the Warden champion still deal
 ##   their direct-hit damage below; the lingering cloud they'd normally
@@ -90,6 +91,38 @@ func spawn_enemy_projectile(enemy: EnemyCharacter, angle: float) -> void:
 	var speed: float = enemy.def.projectile_speed if enemy.def.projectile_speed > 0.0 else 220.0
 	proj.from_player = false
 	proj.setup(spawn_pos, angle, speed, enemy.attack_damage(), 7.0)
+
+## Ports fireProjectileWeapon: ProjectileShotBehavior's own entry point
+## (build-order step 5). Shot count is 1 + floor(stats.projectile_count),
+## fanned across a small spread once there's more than one — everything
+## baked from the player's live stats at fire time into each bolt, exactly
+## like the Web build's own spawnProjectile(options) snapshot (a projectile
+## never re-reads the player after launch).
+func fire_player_projectile(player: PlayerCharacter, weapon: WeaponDefinition) -> void:
+	var parent := player.get_parent()
+	if parent == null:
+		return
+	var count: int = 1 + int(floor(player.stats.projectile_count))
+	var spread: float = 0.18 if count > 1 else 0.0
+	var speed: float = weapon.projectile_speed if weapon.projectile_speed > 0.0 else 500.0
+	var range_val: float = weapon.range if weapon.range > 0.0 else 400.0
+	var base_damage: float = weapon.base_damage * player.stats.damage_mult
+	for i in range(count):
+		var t: float = (float(i) / float(count - 1) - 0.5) if count > 1 else 0.0
+		var angle: float = player.attack_facing_lock + t * spread * count
+		var proj: ProjectileEntity = PROJECTILE_SCENE.instantiate()
+		parent.add_child(proj)
+		var spawn_pos: Vector2 = player.global_position + Vector2(cos(angle), sin(angle)) * 22.0
+		proj.setup(spawn_pos, angle, speed, base_damage, 6.0)
+		proj.from_player = true
+		proj.pierce = weapon.pierce
+		proj.knockback = weapon.knockback
+		proj.crit_chance = player.stats.crit_chance + weapon.crit_bonus
+		proj.crit_damage_mult = player.stats.crit_damage
+		proj.burn_chance = player.stats.burn_chance
+		proj.lifesteal = player.stats.lifesteal
+		proj.source_player = player
+		proj.max_lifetime = range_val / speed + 0.3
 
 ## The Web build's exact onMeleeLand callback body wasn't in the portion of
 ## Game.ts read this session — implemented here from the same "did you stay
