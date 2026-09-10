@@ -2,7 +2,7 @@ import { Vector2 } from '@/utils/Vector2';
 
 export type InputMode = 'desktop' | 'touch';
 
-export type InputAction = 'dodge' | 'ability' | 'interact' | 'pause' | 'attack' | 'confirm';
+export type InputAction = 'dodge' | 'ability' | 'interact' | 'pause' | 'attack' | 'confirm' | 'inventory';
 
 const KEY_ACTIONS: Record<string, InputAction> = {
   Space: 'dodge',
@@ -11,6 +11,7 @@ const KEY_ACTIONS: Record<string, InputAction> = {
   KeyE: 'interact',
   Escape: 'pause',
   Enter: 'confirm',
+  KeyI: 'inventory',
 };
 
 /**

@@ -346,6 +346,34 @@ body.high-contrast {
   gap: 6px;
   width: min(340px, 40vw);
 }
+.hud-level-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+.hud-level-label {
+  font-family: var(--font-display);
+  font-size: 0.82em;
+  color: var(--c-gold-bright);
+  flex: none;
+}
+.hud-bar-fill.xp { background: linear-gradient(90deg, var(--c-gold-dim), var(--c-gold-bright)); }
+.hud-points-hint {
+  flex: none;
+  font-size: 0.72em;
+  color: var(--c-gold-bright);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.hud-points-hint.visible { opacity: 1; animation: pointsHintPulse 1.6s ease-in-out infinite; }
+@keyframes pointsHintPulse {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.5); }
+}
 .hud-bar-row {
   display: flex;
   align-items: center;
@@ -1020,6 +1048,19 @@ input[type="range"]::-moz-range-thumb {
   letter-spacing: 0.05em;
 }
 .tab-row button.active { background: var(--c-ember-3); color: #180a04; border-color: var(--c-ember-4); }
+
+.inventory-header { text-align: center; margin-bottom: 14px; }
+.inventory-level {
+  font-family: var(--font-display);
+  font-size: 1.15em;
+  color: var(--c-gold-bright);
+  letter-spacing: 0.04em;
+}
+.inventory-points-available {
+  margin-top: 6px;
+  font-size: 0.88em;
+  color: var(--c-gold-bright);
+}
 
 /* Shop */
 .shop-item {

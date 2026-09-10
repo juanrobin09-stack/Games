@@ -35,8 +35,11 @@ All hints are shown at most once, ever, tracked per-hint key via `hintsShown` in
 
 | Layer | Currency | Resets each run? | Where |
 |---|---|---|---|
+| Player Level | **XP** (from kills) | Yes | 7 stat rows in the Character screen (`I`) |
 | In-run power | **Embers** | Yes | Upgrade choices, shop purchases, chest rewards |
 | Meta progression | **Soul Ash** | No (persists forever) | Main Menu → Upgrades (stat nodes) / Armory (unlocks) |
+
+The full stacking order, base to final: permanent Soul Ash stat nodes → `createBaseStats()` → Player Level's stat-point bonuses (`Player.addBonusModifier`, same ratio-preserving path world events use) → owned in-run upgrades (`Player.upgrades`, each stacked to its own level) → live `StatBlock`.
 
 ### Embers
 
@@ -53,6 +56,14 @@ Earned at the end of every run: `floor(kills × 0.6 + eliteKills × 4 + (victory
 
 - **Upgrades menu** — 10 permanent stat nodes (see §7)
 - **Armory menu** — 6 unlocks: 2 weapons, 2 abilities, 1 enemy, 1 upgrade-rarity gate (see §7)
+
+### Player Level & Stat Points
+
+A run-scoped character sheet, entirely separate from (and layered underneath) the in-run upgrade pool — resets to Level 1 every run, same as upgrades do. Every enemy kill grants XP (`data/playerProgression.ts`'s `getEnemyXpValue`, built on the existing `xpWeight` field already authored per enemy — an Ash Crawler, `xpWeight` 1, gives exactly 5 XP; deeper zones' enemies are worth more at the same `xpWeight`, +25% per zone index, a placeholder curve). Reaching the level's XP threshold (`xpRequiredForLevel`: 25 to reach Level 2, ×1.35 per level after — a real ramp, not a flat repeat) grants 1 stat point and rolls over any leftover XP; a single large grant resolves every level it crosses in one synchronous loop, so nothing desyncs. Open the character sheet with **I** (or Pause → Your Build) to spend points across 7 stats — HP, M1 Damage, Stamina, Ability Damage, Range, Move Speed, Attack Speed — each with its own independent level and a modest per-level bonus (`PLAYER_STATS` in the same file). All of it is placeholder magnitude by design, meant to be retuned from that one file without touching call sites.
+
+### Upgrade Levels
+
+In-run upgrades (§8) can now stack: `Player.addUpgrade` already tracked `stacks`/`maxStacks` per owned upgrade, but reward/shop offer generation used to exclude anything already owned outright, so no upgrade had ever actually re-offered itself. It now re-offers an owned upgrade up to its effective cap — the tighter of its own `maxStacks` (most upgrades don't set one) and the current zone's cap (`ZONE_UPGRADE_LEVEL_CAP`: Ashen Woods caps every upgrade at Level 2, Hollow Ruins at 3, Ember Citadel at 4 — extend the array for future zones). Every chest, reward-choice, and shop card shows the level the upgrade would become if picked.
 
 ## 4. Player Stats
 

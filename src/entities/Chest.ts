@@ -13,6 +13,8 @@ export class Chest {
   stateTimer = 0;
   glowPhase = Math.random() * 10;
   rewardDef: UpgradeDefinition | null = null;
+  /** The level the rewarded upgrade became when granted (1 if it was new). */
+  rewardLevel = 1;
   rewardShown = false;
 
   constructor(x: number, y: number, tier: Rarity) {

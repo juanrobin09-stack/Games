@@ -29,6 +29,10 @@ export interface HudFrameData {
   /** True the frame M1 was held against a swing that's off cooldown but
    * can't afford its stamina cost — drives the stamina bar's denial pulse. */
   staminaDenied: boolean;
+  playerLevel: number;
+  xp: number;
+  xpToNext: number;
+  statPoints: number;
 }
 
 export class HUD {
@@ -56,6 +60,11 @@ export class HUD {
   private bossFill!: HTMLElement;
   private bossName!: HTMLElement;
   private bossDots!: HTMLElement;
+  private levelRow!: HTMLElement;
+  private levelLabel!: HTMLElement;
+  private xpFill!: HTMLElement;
+  private xpLabel!: HTMLElement;
+  private pointsHint!: HTMLElement;
   private toastArea!: HTMLElement;
   private phaseBanner!: HTMLElement;
   private synergyBanner!: HTMLElement;
@@ -100,6 +109,15 @@ export class HUD {
     this.dangerVignette = el('div', { class: 'hud-danger-vignette' });
     this.corruptionVignette = el('div', { class: 'hud-corruption-vignette' });
     this.timerLabel = el('span', {}, ['0:00']);
+    this.levelLabel = el('div', { class: 'hud-level-label' }, ['Lv.1']);
+    this.xpFill = el('div', { class: 'hud-bar-fill xp' });
+    this.xpLabel = el('div', { class: 'hud-bar-label' });
+    this.pointsHint = el('div', { class: 'hud-points-hint' });
+    this.levelRow = el('div', { class: 'hud-level-row' }, [
+      this.levelLabel,
+      el('div', { class: 'hud-bar-track', style: 'height:9px;' }, [this.xpFill, this.xpLabel]),
+      this.pointsHint,
+    ]);
 
     this.bossBar = el('div', { class: 'hud-boss-bar' }, [
       this.bossName,
@@ -108,6 +126,7 @@ export class HUD {
     ]);
 
     const topLeft = el('div', { class: 'hud-top-left' }, [
+      this.levelRow,
       el('div', { class: 'hud-bar-row' }, [
         el('div', { class: 'hud-bar-icon', html: iconSvg('heart', 16) }),
         el('div', { class: 'hud-bar-track' }, [this.hpFill, this.hpLabel]),
@@ -229,6 +248,17 @@ export class HUD {
   }
 
   update(data: HudFrameData): void {
+    this.levelLabel.textContent = `${t('hud.levelAbbrevFormat', 'Lv.{n}').replace('{n}', String(data.playerLevel))}`;
+    const xpRatio = clamp(data.xp / Math.max(1, data.xpToNext), 0, 1);
+    this.xpFill.style.transform = `scaleX(${xpRatio})`;
+    this.xpLabel.textContent = `${Math.floor(data.xp)}/${data.xpToNext}`;
+    if (data.statPoints > 0) {
+      this.pointsHint.innerHTML = `${t('hud.pointsReadyFormat', '+{count}').replace('{count}', String(data.statPoints))} <kbd>I</kbd>`;
+      this.pointsHint.classList.add('visible');
+    } else {
+      this.pointsHint.classList.remove('visible');
+    }
+
     const hpRatio = clamp(data.player.hp / Math.max(1, data.player.stats.maxHp), 0, 1);
     this.hpFill.style.transform = `scaleX(${hpRatio})`;
     this.hpLabel.textContent = `${Math.ceil(data.player.hp)} / ${Math.ceil(data.player.stats.maxHp)}`;

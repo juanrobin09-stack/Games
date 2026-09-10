@@ -3,6 +3,7 @@ import { ZONES } from '@/data/zones';
 import { generateZoneLayout, type ZoneLayout } from '@/world/LevelGenerator';
 import { Room, DIRECTION_DELTA, type Direction } from '@/world/Room';
 import type { Enemy } from '@/entities/Enemy';
+import { createInitialStatLevels, STAT_POINTS_PER_LEVEL, xpRequiredForLevel, type PlayerStatId } from '@/data/playerProgression';
 
 export interface RunStats {
   startedAt: number;
@@ -28,6 +29,13 @@ export class RunState {
   usedEventIds = new Set<string>();
   stats: RunStats;
   ended = false;
+
+  /** Run-scoped character progression (resets every run, like the upgrade
+   * pool does) — see data/playerProgression.ts for the curve/definitions. */
+  playerLevel = 1;
+  xp = 0;
+  statPoints = 0;
+  statLevels: Record<PlayerStatId, number> = createInitialStatLevels();
 
   constructor(seed?: number) {
     this.seed = seed ?? Math.floor(Math.random() * 1_000_000_000);
@@ -130,5 +138,30 @@ export class RunState {
 
   recordUpgrade(id: string): void {
     this.stats.upgradesChosen.push(id);
+  }
+
+  /**
+   * Adds XP and resolves any level-ups synchronously in a loop, so a single
+   * large grant (or several kills landing the same frame) can never leave
+   * the run in an inconsistent state or skip past more than one level —
+   * each iteration subtracts exactly that level's own threshold, carrying
+   * the remainder forward, until what's left is no longer enough to level.
+   */
+  grantXp(amount: number): { levelsGained: number; newLevel: number } {
+    if (amount <= 0) return { levelsGained: 0, newLevel: this.playerLevel };
+    this.xp += amount;
+    let levelsGained = 0;
+    while (this.xp >= xpRequiredForLevel(this.playerLevel)) {
+      this.xp -= xpRequiredForLevel(this.playerLevel);
+      this.playerLevel++;
+      this.statPoints += STAT_POINTS_PER_LEVEL;
+      levelsGained++;
+    }
+    return { levelsGained, newLevel: this.playerLevel };
+  }
+
+  /** XP still needed to reach the next Player Level, for the HUD/inventory bar. */
+  xpToNextLevel(): number {
+    return xpRequiredForLevel(this.playerLevel);
   }
 }

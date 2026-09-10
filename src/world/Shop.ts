@@ -1,11 +1,14 @@
 import { Random } from '@/utils/Random';
-import { rollUpgradeChoices } from '@/progression/UpgradePool';
+import { rollUpgradeChoices, upcomingUpgradeLevel } from '@/progression/UpgradePool';
 import type { UpgradeDefinition, Rarity } from '@/data/types';
+import type { OwnedUpgrade } from '@/entities/Player';
 
 export interface ShopOffer {
   id: string;
   kind: 'upgrade' | 'heal';
   upgrade?: UpgradeDefinition;
+  /** The level the upgrade would become if bought (current stacks + 1). */
+  upgradeLevel?: number;
   cost: number;
   purchased: boolean;
 }
@@ -22,12 +25,13 @@ export const REROLL_COST = 15;
 export const HEAL_COST = 30;
 export const HEAL_AMOUNT_RATIO = 0.35;
 
-export function generateShopOffers(rng: Random, luck: number, unlockedTiers: Set<string>, exclude: Set<string>): ShopOffer[] {
-  const upgrades = rollUpgradeChoices(rng, 3, luck * 0.7, unlockedTiers, exclude);
+export function generateShopOffers(rng: Random, luck: number, unlockedTiers: Set<string>, owned: OwnedUpgrade[], zoneIndex: number): ShopOffer[] {
+  const upgrades = rollUpgradeChoices(rng, 3, luck * 0.7, unlockedTiers, owned, zoneIndex);
   const offers: ShopOffer[] = upgrades.map((u, i) => ({
     id: `upg-${i}`,
     kind: 'upgrade',
     upgrade: u,
+    upgradeLevel: upcomingUpgradeLevel(u.id, owned),
     cost: PRICE_BY_RARITY[u.rarity],
     purchased: false,
   }));

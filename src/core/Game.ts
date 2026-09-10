@@ -55,8 +55,10 @@ import { resolveAgainstWalls, resolveAgainstObstacles, clampToRoom, clampInsideR
 import { generateShopOffers, makeShopRng, REROLL_COST, HEAL_AMOUNT_RATIO, type ShopOffer } from '@/world/Shop';
 import { RunState } from '@/progression/RunState';
 import { meta } from '@/progression/MetaProgression';
-import { rollUpgradeChoices, pickUpgradeAtLeastRarity } from '@/progression/UpgradePool';
+import { rollUpgradeChoices, pickUpgradeAtLeastRarity, upcomingUpgradeLevel } from '@/progression/UpgradePool';
 import { getUpgrade } from '@/data/upgrades';
+import { getEnemyXpValue, getPlayerStatDef, type PlayerStatId } from '@/data/playerProgression';
+import { InventoryUI } from '@/ui/InventoryUI';
 import { setLocale, t, tc } from '@/i18n';
 import { applyModifiers } from '@/data/stats';
 import { createBaseStats, RARITY_ORDER, RARITY_COLORS, type Rarity, type UpgradeDefinition, type UpgradeIconId, type EventOption } from '@/data/types';
@@ -218,12 +220,20 @@ export class Game {
           rewardGranted: room.rewardGranted,
           ritualActive: room.ritualActive,
           ritualWave: room.ritualWave,
+          playerLevel: run.playerLevel,
+          xp: run.xp,
+          xpToNext: run.xpToNextLevel(),
+          statPoints: run.statPoints,
+          statLevels: { ...run.statLevels },
           player: {
             x: player.x, y: player.y, hp: player.hp, maxHp: player.stats.maxHp, shield: player.shieldCharges, alive: player.alive,
             stamina: player.stamina, staminaMax: player.stats.staminaMax, weaponStaminaCost: player.weapon.staminaCost,
             energy: player.energy, energyMax: player.stats.energyMax, abilityCooldown: player.ability.cooldown,
             attackCooldownTimer: player.attackCooldownTimer, canAttack: player.canAttack(), canUseAbility: player.canUseAbility(),
             isDodging: player.isDodging, dodgeCooldownTimer: player.dodgeCooldownTimer, canDodge: player.canDodge(),
+            damageMult: player.stats.damageMult, abilityDamageMult: player.stats.abilityDamageMult,
+            rangeMult: player.stats.rangeMult, moveSpeed: player.stats.moveSpeed, attackSpeedMult: player.stats.attackSpeedMult,
+            upgrades: player.upgrades.map((u) => ({ id: u.def.id, stacks: u.stacks })),
           },
           enemies: room.enemies.map((e) => ({
             id: e.def.id,
@@ -353,6 +363,12 @@ export class Game {
       },
       purchasePermanent: (id: string) => meta.purchasePermanent(id),
       getPermanentLevel: (id: string) => meta.getPermanentLevel(id),
+      grantXp: (amount: number) => (this.run ? this.run.grantXp(amount) : null),
+      spendStatPoint: (statId: PlayerStatId) => this.spendStatPoint(statId),
+      openInventory: () => {
+        this.openInventory();
+        return true;
+      },
     };
     (window as unknown as { __emberfall: typeof api }).__emberfall = api;
   }
@@ -397,6 +413,7 @@ export class Game {
       if (Math.random() < healChance && this.player) {
         room.pickups.push(new Pickup('heart', x, y, Math.round(this.player.stats.maxHp * 0.15)));
       }
+      this.grantKillXp(enemy);
     });
     gameEvents.on('playerDied', () => {
       if (this.run && !this.run.ended) {
@@ -567,13 +584,18 @@ export class Game {
     if (!this.stateMachine.is(GameState.EXPLORATION, GameState.COMBAT, GameState.BOSS)) return;
     this.stateMachine.push(GameState.PAUSED);
     playSfx('uiClick');
-    this.modalScreen = new PauseMenu(this.uiRoot, this.player!, meta.data.settings, {
+    this.modalScreen = new PauseMenu(this.uiRoot, meta.data.settings, {
       onResume: () => this.resumeGame(),
       onAbandon: () => {
         this.closeModal();
         this.endRun(false);
       },
       onSettingsChange: (s) => this.persistSettings(s),
+      onOpenInventory: () => {
+        this.closeModal();
+        if (this.stateMachine.is(GameState.PAUSED)) this.stateMachine.pop();
+        this.openInventory('build');
+      },
     });
   }
 
@@ -727,18 +749,17 @@ export class Game {
     this.run!.stats.chestsOpened++;
     const player = this.player!;
     const rng = Random.fromString(`${this.run!.seed}:chestreward:${room.key}`);
-    const owned = new Set(player.upgrades.map((u) => u.def.id));
-    const def = pickUpgradeAtLeastRarity(rng, chest.tier, meta.getUnlockedGateIds(), owned);
+    const def = pickUpgradeAtLeastRarity(rng, chest.tier, meta.getUnlockedGateIds(), player.upgrades, this.run!.zoneIndex);
     chest.rewardDef = def;
+    chest.rewardLevel = upcomingUpgradeLevel(def.id, player.upgrades);
     this.grantUpgrade(def);
     this.run!.recordUpgrade(def.id);
   }
 
   private openShopRoom(room: Room): void {
     let rerollCount = 0;
-    const ownedIds = () => new Set(this.player!.upgrades.map((u) => u.def.id));
     const makeOffers = (): ShopOffer[] =>
-      generateShopOffers(makeShopRng(this.run!.runSeedString, room.key, rerollCount), this.player!.stats.rarityLuck, meta.getUnlockedGateIds(), ownedIds());
+      generateShopOffers(makeShopRng(this.run!.runSeedString, room.key, rerollCount), this.player!.stats.rarityLuck, meta.getUnlockedGateIds(), this.player!.upgrades, this.run!.zoneIndex);
     const offers = makeOffers();
     this.modalScreen = new ShopUI(this.uiRoot, offers, {
       getEmbers: () => this.run!.embers,
@@ -817,22 +838,22 @@ export class Game {
       case 'gainRandomUpgrade': {
         const minRarity = RARITY_ORDER[option.value ?? 0] ?? 'common';
         const rng = Random.fromString(`${run.seed}:eventupgrade:${room.key}:${option.id}`);
-        const owned = new Set(player.upgrades.map((u) => u.def.id));
-        const def = pickUpgradeAtLeastRarity(rng, minRarity, meta.getUnlockedGateIds(), owned);
+        const def = pickUpgradeAtLeastRarity(rng, minRarity, meta.getUnlockedGateIds(), player.upgrades, run.zoneIndex);
+        const level = upcomingUpgradeLevel(def.id, player.upgrades);
         this.grantUpgrade(def);
         run.recordUpgrade(def.id);
-        this.showReward(def, t('reward.merchant', 'The Merchant'));
+        this.showReward(def, t('reward.merchant', 'The Merchant'), level);
         break;
       }
       case 'loseHpForRareUpgrade': {
         const loss = player.stats.maxHp * (option.value ?? 0.25);
         player.hp = Math.max(1, player.hp - loss);
         const rng = Random.fromString(`${run.seed}:eventupgrade:${room.key}:${option.id}`);
-        const owned = new Set(player.upgrades.map((u) => u.def.id));
-        const def = pickUpgradeAtLeastRarity(rng, 'rare', meta.getUnlockedGateIds(), owned);
+        const def = pickUpgradeAtLeastRarity(rng, 'rare', meta.getUnlockedGateIds(), player.upgrades, run.zoneIndex);
+        const level = upcomingUpgradeLevel(def.id, player.upgrades);
         this.grantUpgrade(def);
         run.recordUpgrade(def.id);
-        this.showReward(def, tc('dyingFlame', 'title', 'The Dying Flame'));
+        this.showReward(def, tc('dyingFlame', 'title', 'The Dying Flame'), level);
         break;
       }
       case 'gambleEmbers': {
@@ -879,8 +900,8 @@ export class Game {
     }
   }
 
-  private showReward(def: UpgradeDefinition, label: string): void {
-    this.rewardPopups.push(new RewardPopup(this.uiRoot, def, label));
+  private showReward(def: UpgradeDefinition, label: string, level = 1): void {
+    this.rewardPopups.push(new RewardPopup(this.uiRoot, def, label, level));
   }
 
   private useRest(room: Room): void {
@@ -1129,15 +1150,15 @@ export class Game {
     const minRarity: Rarity = room.type === 'sanctum' ? 'rare' : 'common';
     const luck = clamp(player.stats.rarityLuck + bonusLuck, 0, 1);
     const rng = Random.fromString(`${run.seed}:reward:${room.key}`);
-    const owned = new Set(player.upgrades.map((u) => u.def.id));
-    const choices = rollUpgradeChoices(rng, 3, luck, meta.getUnlockedGateIds(), owned, minRarity);
+    const choices = rollUpgradeChoices(rng, 3, luck, meta.getUnlockedGateIds(), player.upgrades, run.zoneIndex, minRarity);
     playSfx('roomCleared');
     if (choices.length === 0) {
       if (room.type === 'heart') this.openStairs(room, true);
       return;
     }
     this.onboarding?.show('upgrade');
-    this.modalScreen = new UpgradeSelectUI(this.uiRoot, choices, {
+    const leveledChoices = choices.map((def) => ({ def, level: upcomingUpgradeLevel(def.id, player.upgrades) }));
+    this.modalScreen = new UpgradeSelectUI(this.uiRoot, leveledChoices, {
       onChoose: (def) => {
         this.chooseUpgrade(def);
         this.modalScreen = null;
@@ -1169,6 +1190,66 @@ export class Game {
     gameEvents.emit('upgradeChosen', { upgrade: def });
     spawnLevelUpBurst(this.particles, player.x, player.y);
     playSfx('levelUp');
+  }
+
+  // ------------------------------------------------------------ Player level / XP / stat points
+  /** Enemy defeated -> XP gained -> XP bar updated -> Level Up, all in one
+   * synchronous call so several kills landing the same frame (an AoE, a
+   * bloat chain) can never desync the run — grantXp() itself loops to
+   * resolve more than one level from a single grant. */
+  private grantKillXp(enemy: Enemy): void {
+    const run = this.run;
+    const player = this.player;
+    if (!run || !player) return;
+    const xpGained = getEnemyXpValue(enemy.def, run.zoneIndex);
+    const { levelsGained, newLevel } = run.grantXp(xpGained);
+    if (levelsGained > 0) {
+      playSfx('levelUp');
+      spawnLevelUpBurst(this.particles, player.x, player.y);
+      this.hud?.showPhaseBanner(`${t('banner.levelUp', 'NIVEAU')} ${newLevel}`);
+      this.hud?.showToast(
+        run.statPoints === 1
+          ? t('toast.statPointOne', 'A new stat point is ready to spend — press {key} to open your character.').replace('{key}', 'I')
+          : t('toast.statPointMany', '{count} stat points are ready to spend — press {key} to open your character.')
+              .replace('{count}', String(run.statPoints))
+              .replace('{key}', 'I')
+      );
+    }
+  }
+
+  /** Spends one available stat point on `statId`, applying its next level's
+   * bonus via the same ratio-preserving bonus-modifier path world events
+   * already use (see Player.addBonusModifier) — so a HP/stamina level-up
+   * never leaves the bar looking emptier. Returns false (no-op) rather than
+   * ever going negative or desyncing the UI from the underlying stats. */
+  spendStatPoint(statId: PlayerStatId): boolean {
+    const run = this.run;
+    const player = this.player;
+    if (!run || !player || run.statPoints <= 0) return false;
+    const def = getPlayerStatDef(statId);
+    run.statPoints--;
+    run.statLevels[statId]++;
+    player.addBonusModifier({ stat: def.stat, mode: def.mode, value: def.valuePerLevel });
+    playSfx('uiClick');
+    return true;
+  }
+
+  private openInventory(initialTab: 'character' | 'build' = 'character'): void {
+    if (this.modalScreen) return;
+    const run = this.run!;
+    const player = this.player!;
+    this.modalScreen = new InventoryUI(
+      this.uiRoot,
+      run,
+      player,
+      {
+        onSpend: (statId) => this.spendStatPoint(statId),
+        onClose: () => {
+          this.modalScreen = null;
+        },
+      },
+      initialTab
+    );
   }
 
   // ------------------------------------------------------------ Combat glue
@@ -1280,6 +1361,8 @@ export class Game {
     if (this.stateMachine.is(GameState.EXPLORATION, GameState.COMBAT, GameState.BOSS)) {
       if (this.input.wasPressed('pause')) {
         this.pauseGame();
+      } else if (this.input.wasPressed('inventory')) {
+        this.openInventory();
       } else if (!this.modalScreen) {
         this.updatePlaying(dt);
       }
@@ -1411,7 +1494,7 @@ export class Game {
     if (room.chest?.state === 'opened' && room.chest.rewardDef && !room.chest.rewardShown) {
       room.chest.rewardShown = true;
       spawnChestOpenBurst(this.particles, room.chest.x, room.chest.y, RARITY_COLORS[room.chest.tier]);
-      this.showReward(room.chest.rewardDef, t('reward.chest', 'Chest Reward'));
+      this.showReward(room.chest.rewardDef, t('reward.chest', 'Chest Reward'), room.chest.rewardLevel);
     }
 
     if (room.type === 'sanctum') {
@@ -1527,6 +1610,10 @@ export class Game {
       boss: bossInfo,
       elapsedSeconds: run.elapsedSeconds(),
       staminaDenied: this.staminaDeniedTimer > 0,
+      playerLevel: run.playerLevel,
+      xp: run.xp,
+      xpToNext: run.xpToNextLevel(),
+      statPoints: run.statPoints,
     });
 
     if (getCorruptionRatio(run.elapsedMinutes()) > 0.5) this.onboarding?.show('corruption');

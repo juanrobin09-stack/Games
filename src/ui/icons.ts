@@ -19,6 +19,8 @@ const ICONS: Record<UpgradeIconId, string> = {
   regen: '<path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v4h-4"/>',
   luck: '<path d="M12 2l2.2 6.8H21l-5.6 4.1 2.1 6.9L12 15.8 6.5 19.8l2.1-6.9L3 8.8h6.8z"/><path d="M4 4l1 1M20 4l-1 1"/>',
   stamina: '<path d="M6 16l6-5 6 5"/><path d="M6 10l6-5 6 5"/>',
+  range: '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>',
+  haste: '<path d="M4 6l6 6-6 6"/><path d="M12 6l6 6-6 6"/>',
 };
 
 export function iconSvg(id: UpgradeIconId, size = 22): string {

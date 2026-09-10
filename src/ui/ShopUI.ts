@@ -50,7 +50,8 @@ export class ShopUI {
     const embers = this.callbacks.getEmbers();
     for (const offer of this.offers) {
       const isUpgrade = offer.kind === 'upgrade' && offer.upgrade;
-      const name = isUpgrade ? tc(offer.upgrade!.id, 'name', offer.upgrade!.name) : t('shop.healName', 'Mend Your Wounds');
+      const baseName = isUpgrade ? tc(offer.upgrade!.id, 'name', offer.upgrade!.name) : t('shop.healName', 'Mend Your Wounds');
+      const name = isUpgrade ? `${baseName} — ${t('upgrade.level', 'Level')} ${offer.upgradeLevel}` : baseName;
       const desc = isUpgrade ? tc(offer.upgrade!.id, 'description', offer.upgrade!.description) : t('shop.healDesc', 'Restore a portion of your health.');
       const icon = isUpgrade ? offer.upgrade!.icon : 'heart';
       const affordable = embers >= offer.cost && !offer.purchased;

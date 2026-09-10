@@ -129,7 +129,9 @@ export type UpgradeIconId =
   | 'armor'
   | 'regen'
   | 'luck'
-  | 'stamina';
+  | 'stamina'
+  | 'range'
+  | 'haste';
 
 export interface SynergyDefinition {
   id: string;
