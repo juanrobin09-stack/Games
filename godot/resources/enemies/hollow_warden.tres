@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="EnemyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/enemy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "hollowWarden"
+name = "Hollow Warden"
+description = "The last soldiers of the ruined watch. Its shield is the door it died guarding — nothing gets through the front. Circle it, or punish the bash."
+behavior = 7
+base_hp = 88.0
+base_damage = 19.0
+move_speed = 92.0
+radius = 20.0
+ember_value = 8
+attack_range = 195.0
+attack_cooldown = 2.6
+telegraph_time = 0.62
+contact_damage = 8.0
+xp_weight = 4
+color = "#2f2c3a"
+accent_color = "#b9b3c9"
+shield_arc = 1.15
+bash_speed = 540.0
+bash_duration = 0.27
+exposed_duration = 1.4
+turn_rate = 3.1

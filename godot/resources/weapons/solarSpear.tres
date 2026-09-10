@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="WeaponDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/weapon_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "solarSpear"
+name = "Solar Spear"
+description = "A thrown lance of hardened light. Pierces through the crowd it was thrown at."
+kind = 1
+base_damage = 14.0
+attack_cooldown = 0.55
+stamina_cost = 10.0
+range = 440.0
+knockback = 50.0
+crit_bonus = 0.05
+projectile_speed = 640.0
+pierce = 2
+unlock_cost = 220
+color = "#ffd9a0"

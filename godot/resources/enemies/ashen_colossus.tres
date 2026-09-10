@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="EnemyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/enemy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "ashenColossus"
+name = "The Ashen Colossus"
+description = "What remains of the first Warden, fused with the corruption it swore to hold back."
+behavior = 5
+base_hp = 1500.0
+base_damage = 26.0
+move_speed = 68.0
+radius = 44.0
+ember_value = 0
+attack_range = 320.0
+attack_cooldown = 2.2
+telegraph_time = 0.7
+contact_damage = 20.0
+xp_weight = 0
+color = "#241a14"
+accent_color = "#ff7b3d"
+projectile_speed = 230.0
+is_elite = true

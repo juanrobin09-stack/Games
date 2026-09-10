@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="WeaponDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/weapon_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "emberBlade"
+name = "Ember Blade"
+description = "A balanced shortsword warmed by a sliver of the last light. Reliable in any hand."
+kind = 0
+base_damage = 17.0
+attack_cooldown = 0.45
+stamina_cost = 10.0
+range = 50.0
+arc_degrees = 100.0
+knockback = 95.0
+crit_bonus = 0.0
+color = "#ff7b3d"

@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="EnemyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/enemy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "cinderWraith"
+name = "Cinder Wraith"
+description = "A deep-dwelling horror stirred by the Ember's fading light. Phases through attacks."
+behavior = 2
+base_hp = 36.0
+base_damage = 12.0
+move_speed = 155.0
+radius = 14.0
+ember_value = 8
+attack_range = 250.0
+attack_cooldown = 1.6
+telegraph_time = 0.35
+contact_damage = 7.0
+xp_weight = 4
+color = "#241428"
+accent_color = "#c4b0f0"
+requires_unlock = "awakenDeep"
+projectile_speed = 270.0
+vanish_duration = 0.8

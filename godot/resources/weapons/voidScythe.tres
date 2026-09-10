@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="WeaponDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/weapon_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "voidScythe"
+name = "Void Scythe"
+description = "A ponderous blade that drinks momentum. Slow, but every swing is a verdict."
+kind = 0
+base_damage = 34.0
+attack_cooldown = 0.85
+stamina_cost = 10.0
+range = 62.0
+arc_degrees = 155.0
+knockback = 170.0
+crit_bonus = 0.08
+unlock_cost = 150
+color = "#9b7ed9"

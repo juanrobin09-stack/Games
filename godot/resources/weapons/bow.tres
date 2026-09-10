@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="WeaponDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/weapon_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "bow"
+name = "Warden's Bow"
+description = "Recovered from a fallen Warden of the Hollow Ruins. Fast where the blade is slow — its true reach comes with practice."
+kind = 1
+base_damage = 16.0
+attack_cooldown = 0.5
+stamina_cost = 10.0
+range = 420.0
+knockback = 40.0
+crit_bonus = 0.05
+projectile_speed = 520.0
+pierce = 1
+color = "#b9b3c9"

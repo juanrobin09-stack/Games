@@ -17,6 +17,7 @@ config/features=PackedStringArray("4.3", "Forward Plus")
 
 [autoload]
 
+DataRegistry="*res://autoload/data_registry.gd"
 GameState="*res://autoload/game_state.gd"
 RunState="*res://autoload/run_state.gd"
 MetaProgression="*res://autoload/meta_progression.gd"

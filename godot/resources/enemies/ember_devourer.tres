@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="EnemyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/enemy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "emberDevourer"
+name = "Ember Devourer"
+description = "An elite abomination that gorges on dying light. Hits hard, hits often."
+behavior = 5
+base_hp = 230.0
+base_damage = 22.0
+move_speed = 145.0
+radius = 27.0
+ember_value = 40
+attack_range = 230.0
+attack_cooldown = 1.4
+telegraph_time = 0.4
+contact_damage = 16.0
+xp_weight = 8
+color = "#4a1c10"
+accent_color = "#ff7b3d"
+projectile_speed = 210.0
+is_elite = true

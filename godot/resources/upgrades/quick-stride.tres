@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="UpgradeDefinition" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/upgrade_definition.gd" id="1"]
+[ext_resource type="Script" path="res://resources/definitions/stat_modifier.gd" id="2"]
+
+[sub_resource type="Resource" id="StatModifier_1"]
+script = ExtResource("2")
+stat = "move_speed"
+mode = 1
+value = 0.08
+
+[resource]
+script = ExtResource("1")
+id = "quick-stride"
+name = "Quick Stride"
+description = "+8% movement speed."
+rarity = 0
+modifiers = Array[Resource]([SubResource("StatModifier_1")])
+icon = "boots"

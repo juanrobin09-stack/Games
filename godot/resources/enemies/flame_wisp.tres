@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="EnemyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/enemy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "flameWisp"
+name = "Flame Wisp"
+description = "A drifting ember-spirit that lashes out with bolts of dying light."
+behavior = 2
+base_hp = 200.0
+base_damage = 8.0
+move_speed = 125.0
+radius = 12.0
+ember_value = 4
+attack_range = 260.0
+attack_cooldown = 1.8
+telegraph_time = 0.45
+contact_damage = 5.0
+xp_weight = 2
+color = "#a63a1e"
+accent_color = "#ffab54"
+projectile_speed = 230.0

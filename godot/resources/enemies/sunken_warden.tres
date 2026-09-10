@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="EnemyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/enemy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "sunkenWarden"
+name = "The Sunken Warden"
+description = "Captain of the drowned watch, still holding a line that fell a hundred years ago. Break the shield, then break the man."
+behavior = 7
+base_hp = 290.0
+base_damage = 23.0
+move_speed = 104.0
+radius = 27.0
+ember_value = 45
+attack_range = 235.0
+attack_cooldown = 2.3
+telegraph_time = 0.72
+contact_damage = 12.0
+xp_weight = 10
+color = "#2a2738"
+accent_color = "#9b7ed9"
+is_elite = true
+shield_arc = 1.2
+bash_speed = 600.0
+bash_duration = 0.3
+exposed_duration = 1.25
+turn_rate = 2.7
+champion = true

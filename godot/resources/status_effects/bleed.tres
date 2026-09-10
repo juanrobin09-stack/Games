@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="StatusEffectDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/status_effect_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "bleed"
+name = "Hemorrhage"
+icon = "bleed"
+category = 0
+damage_formula = 1
+damage_value = 0.02
+tick_interval = 1.0
+duration = 4.0
+stack_rule = 2
+max_stacks = 3
+tint_color = "#b31a1a"

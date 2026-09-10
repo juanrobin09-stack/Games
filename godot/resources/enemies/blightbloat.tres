@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="EnemyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/enemy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "blightbloat"
+name = "Blightbloat"
+description = "A Hollow so gorged on the ruins' spores that its body has become a swollen, glowing sac. It wants to be close to you when it bursts."
+behavior = 6
+base_hp = 30.0
+base_damage = 18.0
+move_speed = 82.0
+radius = 17.0
+ember_value = 4
+attack_range = 66.0
+attack_cooldown = 99.0
+telegraph_time = 0.85
+contact_damage = 4.0
+xp_weight = 2
+color = "#4b5a3c"
+accent_color = "#7fe0c0"
+burst_radius = 96.0
+cloud_radius = 84.0
+cloud_duration = 5.0

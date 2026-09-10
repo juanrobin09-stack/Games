@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/ability_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "stormstep"
+name = "Stormstep"
+description = "Blink through the dark in a burst of speed, cutting down anything in your path."
+cooldown = 7.2
+unlock_cost = 140
+color = "#6fc3d9"

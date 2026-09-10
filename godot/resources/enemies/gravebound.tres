@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="EnemyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/enemy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "gravebound"
+name = "Gravebound"
+description = "Risen muscle and rusted iron. Slow to swing, ruinous on contact."
+behavior = 3
+base_hp = 58.0
+base_damage = 20.0
+move_speed = 105.0
+radius = 21.0
+ember_value = 6
+attack_range = 48.0
+attack_cooldown = 2.1
+telegraph_time = 0.55
+contact_damage = 10.0
+xp_weight = 3
+color = "#39352f"
+accent_color = "#8a2e10"

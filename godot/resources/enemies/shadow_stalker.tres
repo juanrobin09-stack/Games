@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="EnemyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/enemy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "shadowStalker"
+name = "Shadow Stalker"
+description = "A sliver of hungry dark. Vanishes, repositions, strikes from behind."
+behavior = 4
+base_hp = 30.0
+base_damage = 14.0
+move_speed = 235.0
+radius = 13.0
+ember_value = 6
+attack_range = 28.0
+attack_cooldown = 1.3
+telegraph_time = 0.18
+contact_damage = 8.0
+xp_weight = 3
+color = "#221e2c"
+accent_color = "#9b7ed9"
+vanish_duration = 1.1

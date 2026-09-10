@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/ability_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "wardingSigil"
+name = "Warding Sigil"
+description = "Plant a sigil of the last light that mends your wounds and sears the corrupted."
+cooldown = 15.7
+unlock_cost = 190
+color = "#f2d38f"
