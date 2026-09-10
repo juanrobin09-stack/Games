@@ -17,10 +17,45 @@ const BOSS_SCENE := preload("res://entities/boss.tscn")
 const SHOWCASE_ENEMIES := ["ashCrawler", "hollow", "gravebound", "shadowStalker", "hollowWarden", "emberDevourer"]
 
 @onready var debug_label: Label = $DebugLabel
+@onready var live_label: Label = $LiveLabel
+
+var player: PlayerCharacter
 
 func _ready() -> void:
 	_print_diagnostics()
 	_spawn_playground()
+
+## Live readout of input + gating state, refreshed every frame — added
+## while diagnosing a step-3 report of "movement works, attack/ability
+## don't": this panel shows within one glance whether the mouse buttons
+## are even being detected (LMB/RMB down: true/false) versus whether
+## can_attack()/can_use_ability() are the ones refusing, and why (stamina/
+## energy/cooldown values, and whether weapon()/ability() resolved at all).
+func _process(_delta: float) -> void:
+	if player == null:
+		return
+	var w := player.weapon()
+	var a := player.ability()
+	live_label.text = "\n".join([
+		"LIVE INPUT/GATING (updates every frame):",
+		"LMB down: %s   RMB down: %s   Space down: %s" % [
+			Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT),
+			Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT),
+			Input.is_physical_key_pressed(KEY_SPACE),
+		],
+		"weapon() found: %s   ability() found: %s" % [w != null, a != null],
+		"stamina: %.1f / %.1f   energy: %.1f / %.1f   hp: %.1f / %.1f" % [
+			player.stamina, player.stats.stamina_max,
+			player.energy, player.stats.energy_max,
+			player.hp, player.stats.max_hp,
+		],
+		"can_attack(): %s   can_dodge(): %s   can_use_ability(): %s" % [
+			player.can_attack(), player.can_dodge(), player.can_use_ability()
+		],
+		"attack_cooldown_timer: %.2f   is_dodging: %s   alive: %s" % [
+			player.attack_cooldown_timer, player.is_dodging, player.alive
+		],
+	])
 
 func _print_diagnostics() -> void:
 	var state_name: String = GameState.State.keys()[GameState.current]
@@ -61,7 +96,7 @@ func _print_diagnostics() -> void:
 	print(text)
 
 func _spawn_playground() -> void:
-	var player: PlayerCharacter = PLAYER_SCENE.instantiate()
+	player = PLAYER_SCENE.instantiate()
 	add_child(player)
 	player.global_position = Vector2.ZERO
 

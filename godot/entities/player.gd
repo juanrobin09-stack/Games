@@ -75,14 +75,31 @@ var perfect_dodge_timer: float = 0.0
 
 @export var body_color: Color = Color("#e0c9a6")
 
+## Null-guarded and loud on failure (push_error, once per distinct missing
+## id) rather than letting a bad/missing DataRegistry entry silently break
+## every gating check that reads weapon()/ability() — diagnosed during
+## step-3 testing where a broken lookup here made attack/ability appear
+## to do nothing with no visible cause.
+var _warned_missing_weapon: String = ""
+var _warned_missing_ability: String = ""
+
 func weapon() -> WeaponDefinition:
-	return DataRegistry.get_weapon(weapon_id)
+	var w: WeaponDefinition = DataRegistry.get_weapon(weapon_id)
+	if w == null and _warned_missing_weapon != weapon_id:
+		_warned_missing_weapon = weapon_id
+		push_error("PlayerCharacter: weapon '%s' not found in DataRegistry (loaded: %d) — check resources/weapons/%s.tres exists and its `id` field matches" % [weapon_id, DataRegistry.counts().get("weapons", 0), weapon_id])
+	return w
 
 func ability() -> AbilityDefinition:
-	return DataRegistry.get_ability(ability_id)
+	var a: AbilityDefinition = DataRegistry.get_ability(ability_id)
+	if a == null and _warned_missing_ability != ability_id:
+		_warned_missing_ability = ability_id
+		push_error("PlayerCharacter: ability '%s' not found in DataRegistry (loaded: %d) — check resources/abilities/%s.tres exists and its `id` field matches" % [ability_id, DataRegistry.counts().get("abilities", 0), ability_id])
+	return a
 
 func attack_cooldown_duration() -> float:
-	return weapon().attack_cooldown / stats.attack_speed_mult
+	var w := weapon()
+	return w.attack_cooldown / stats.attack_speed_mult if w != null else 999.0
 
 func dodge_cooldown_duration() -> float:
 	return 0.95 * stats.dodge_cooldown_mult
@@ -96,7 +113,8 @@ func can_attack() -> bool:
 ## Split out from can_attack() so callers (HUD/input feedback) can tell a
 ## stamina-blocked swing apart from one that's merely still on cooldown.
 func has_enough_stamina() -> bool:
-	return stamina >= weapon().stamina_cost
+	var w := weapon()
+	return w != null and stamina >= w.stamina_cost
 
 func can_dodge() -> bool:
 	return alive and not is_dodging and dodge_cooldown_timer <= 0.0 and has_enough_stamina_for_dodge()
@@ -108,6 +126,9 @@ func can_use_ability() -> bool:
 	return alive and not is_dodging and energy >= stats.energy_max
 
 func start_attack() -> void:
+	var w := weapon()
+	if w == null:
+		return
 	is_attacking = true
 	attack_anim_timer = 0.0
 	attack_facing_lock = facing
@@ -115,7 +136,7 @@ func start_attack() -> void:
 	attack_swing_id += 1
 	anim_state = AnimState.ATTACK
 	anim_time = 0.0
-	stamina = maxf(0.0, stamina - weapon().stamina_cost)
+	stamina = maxf(0.0, stamina - w.stamina_cost)
 	stamina_regen_delay_timer = STAMINA_REGEN_DELAY
 
 func start_dodge(dir: Vector2) -> void:
@@ -226,8 +247,10 @@ func _update_state(dt: float) -> void:
 	# energyRegen (Second Wind) scales this proportionally to its base value,
 	# so the ability always finishes a full 0->100% recharge in exactly its
 	# own cooldown duration at the default regen rate, faster with upgrades.
-	var ability_regen_rate: float = (stats.energy_max / ability().cooldown) * (stats.energy_regen / BASE_ENERGY_REGEN)
-	energy = clampf(energy + ability_regen_rate * dt, 0.0, stats.energy_max)
+	var current_ability := ability()
+	if current_ability != null:
+		var ability_regen_rate: float = (stats.energy_max / current_ability.cooldown) * (stats.energy_regen / BASE_ENERGY_REGEN)
+		energy = clampf(energy + ability_regen_rate * dt, 0.0, stats.energy_max)
 
 	if is_attacking:
 		attack_anim_timer += dt
