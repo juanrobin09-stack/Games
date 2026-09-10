@@ -6,6 +6,14 @@ extends EnemyCharacter
 ## somewhere to land without a second refactor of this file. Boss reuses
 ## Enemy's physics/collision/placeholder-draw plumbing exactly as the Web
 ## build's Boss class extends Enemy for the same reason.
+##
+## Boss.ts's own field list re-declares `comboStep = 0` even though its
+## parent `Enemy` already has one (used there for the warden's champion
+## combo) — harmless in TypeScript (redeclaring a same-typed field in a
+## subclass is a no-op), but GDScript rejects it outright as a duplicate
+## member. Not ported here for that reason: `combo_step` below is the one
+## inherited from EnemyCharacter, reused as-is for the boss's own phase-3
+## Combo attack (2 chained Melee Slams) rather than shadowed.
 
 enum Phase { ONE = 1, TWO = 2, THREE = 3 }
 enum BossState {
@@ -21,7 +29,6 @@ var boss_state: BossState = BossState.INTRO
 var boss_state_timer: float = 0.0
 var attack_choice_cooldown: float = 1.4
 var invulnerable: bool = true
-var combo_step: int = 0
 var meteor_spawn_timer: float = 4.0
 var death_animation_done: bool = false
 var intro_done: bool = false
