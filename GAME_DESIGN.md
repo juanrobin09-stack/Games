@@ -61,10 +61,11 @@ The player's live `StatBlock` (see `data/types.ts`) is built as `base → + perm
 - `flat` modifiers add their raw value.
 - `mult` modifiers multiply the stat's *current* value by `(1 + value)` — this lets `*Mult` fields (base `1.0`) compound predictably, and lets reduction fields (like dodge cooldown) shrink safely toward zero via negative values.
 
-Base stats: 100 HP, 0.4 HP/s regen, 190 move speed, 5% crit chance, 1.5× crit damage, 100 energy (6/s regen), 70 pickup range. All other multipliers start at `1.0`; all other flat bonuses (armor, lifesteal, burn chance, shield charges, projectile count, rarity luck) start at `0`.
+Base stats: 100 HP, 0.4 HP/s regen, 190 move speed, 5% crit chance, 1.5× crit damage, 100 stamina, 100 energy (6/s regen), 70 pickup range. All other multipliers start at `1.0`; all other flat bonuses (armor, lifesteal, burn chance, shield charges, projectile count, rarity luck) start at `0`. Stamina's own regen (30/s after a 0.55s pause) is a fixed constant rather than a stat — only its max is upgradeable, see §5 and §7.
 
 ## 5. Combat
 
+- **Stamina** gates M1: every swing costs its weapon's `staminaCost` (Ember Blade 16, Void Scythe 24, Solar Spear 14) out of a 100 base pool, regenerating at 30/s once 0.55s has passed since the last swing. Sized so a full-tempo combo runs 6–7 swings deep before forcing a breather (≈2.7–3.9s of sustained attacking depending on weapon), without ever blocking a normal fight's rhythm — regen easily outpaces the pauses combat already has. Upgradeable via `staminaMax` (in-run chest/reward upgrades and the Endless Vigor permanent node); a swing blocked purely by low stamina (not by its own attack cooldown) pulses the HUD stamina bar red so the denial always reads as "no stamina," never as an unresponsive attack.
 - **Melee weapons** hit *every* enemy inside an arc out to `range × rangeMult` the instant the swing starts — an intentional design choice for crowd-clearing game feel over single-target precision. The hit-detection arc itself is checked at 75% of the weapon's full `arcDegrees` (`HIT_ARC_COVERAGE` in `CombatSystem.ts`): since the hit lands the instant the swing starts but the blade sprite only reaches its full arc by sweeping across it over the swing's duration, checking the full nominal arc would land hits on its far edge before the blade is anywhere near it. The visual blade length itself is derived directly from the weapon's actual range (`rendering/draw/drawPlayer.ts`) rather than a fixed constant, so a longer-reaching weapon (e.g. Void Scythe) always looks like it reaches further, too.
 - **Ranged weapons** fire `1 + projectileCount` projectiles that pierce `pierce` targets before expiring.
 - **Crits** roll at `critChance` (stat + weapon bonus) and multiply damage by `critDamage`. A crit landed on an enemy mid-windup **interrupts** its attack (except elites/boss) — a skill reward for aggressive, well-timed play.
@@ -96,23 +97,25 @@ The two Level 2 archetypes were designed around *new situations* rather than big
 
 ### Weapons (3)
 
-| Weapon | Type | Damage | Cooldown | Notes | Unlock |
-|---|---|---|---|---|---|
-| Ember Blade | Melee | 16 | 0.45s | Balanced, wide-ish arc | Default |
-| Void Scythe | Melee | 34 | 0.85s | Slow, huge arc, +8% crit | 150 Soul Ash |
-| Solar Spear | Ranged | 14 | 0.55s | Pierces 2 targets | 220 Soul Ash |
+| Weapon | Type | Damage | Cooldown | Stamina | Notes | Unlock |
+|---|---|---|---|---|---|---|
+| Ember Blade | Melee | 16 | 0.45s | 16 | Balanced, wide-ish arc | Default |
+| Void Scythe | Melee | 34 | 0.85s | 24 | Slow, huge arc, +8% crit | 150 Soul Ash |
+| Solar Spear | Ranged | 14 | 0.55s | 14 | Pierces 2 targets | 220 Soul Ash |
 
 ### Abilities (3)
 
-| Ability | Cooldown | Cost | Effect | Unlock |
-|---|---|---|---|---|
-| Ember Burst | 8s | 45 energy | AoE nova, knockback | Default |
-| Stormstep | 6.5s | 35 energy | Dash-blink that damages everything in its path + brief invuln | 140 Soul Ash |
-| Warding Sigil | 15s | 60 energy | Planted totem: damages nearby enemies and heals the player over 5s | 190 Soul Ash |
+Right-click abilities spend a single dedicated **energy** resource rather than a partial cost: usable only once it's at a full 100%, a cast drains it entirely to 0%, and it then recharges progressively back to full over the ability's own recharge time below (scaled by `energyRegen`, e.g. the Second Wind permanent node — at the default regen rate an ability always takes exactly its listed recharge time to go from empty to full). The HUD's top-left bar and the bottom-left icon's cooldown sweep both track this same underlying value and light up together once it's actually usable, so what's on screen always matches what you can actually do.
 
-### Permanent upgrades (10 stat nodes, Soul Ash)
+| Ability | Recharge | Effect | Unlock |
+|---|---|---|---|
+| Ember Burst | 8.7s | AoE nova, knockback | Default |
+| Stormstep | 7.2s | Dash-blink that damages everything in its path + brief invuln | 140 Soul Ash |
+| Warding Sigil | 15.7s | Planted totem: damages nearby enemies and heals the player over 5s | 190 Soul Ash |
 
-Warden's Resolve (+10 HP), Ember Edge (+5% dmg), Swift Boots (+12 move speed), Fortune's Favor (+5% rarity luck), Ember Hoard (+8% Ember gain), Second Wind (+1.2 energy regen), Iron Skin (+3% armor), Keen Eye (+3% crit chance), Vital Embers (+0.3 HP regen), Deep Pockets (+20 pickup range & +1 shield) — each has 3–5 levels with `cost = baseCost × growth^level`.
+### Permanent upgrades (11 stat nodes, Soul Ash)
+
+Warden's Resolve (+10 HP), Ember Edge (+5% dmg), Swift Boots (+12 move speed), Fortune's Favor (+5% rarity luck), Ember Hoard (+8% Ember gain), Second Wind (+1.2 energy regen), Iron Skin (+3% armor), Keen Eye (+3% crit chance), Vital Embers (+0.3 HP regen), Endless Vigor (+8 max stamina), Deep Pockets (+20 pickup range & +1 shield) — each has 3–5 levels with `cost = baseCost × growth^level`.
 
 ### Unlocks (6, Soul Ash) — the Armory
 
@@ -120,7 +123,7 @@ Void Scythe (weapon), Solar Spear (weapon), Stormstep (ability), Warding Sigil (
 
 ## 8. Upgrades, Rarities & Synergies
 
-22 in-run upgrades across 5 rarities (weights: Common 40, Uncommon 30, Rare 18, Epic 9, Legendary 3 — biased upward by `rarityLuck` via an exponential roll transform). Legendary upgrades are gated behind the **Ember Sight** unlock so they never appear for a save that hasn't earned them.
+24 in-run upgrades across 5 rarities (weights: Common 40, Uncommon 30, Rare 18, Epic 9, Legendary 3 — biased upward by `rarityLuck` via an exponential roll transform). Legendary upgrades are gated behind the **Ember Sight** unlock so they never appear for a save that hasn't earned them.
 
 ### Synergies (5)
 

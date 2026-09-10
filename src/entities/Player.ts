@@ -6,6 +6,26 @@ import { getWeaponDefinition } from '@/data/weapons';
 import { getAbilityDefinition } from '@/data/abilities';
 import { SYNERGIES } from '@/data/synergies';
 
+/** M1 stamina: how long (seconds) attacking must stop before stamina starts
+ * refilling again, and how fast it refills once it does. Tuned so a player
+ * spamming M1 continuously always eventually hits the wall (drain outpaces
+ * regen while attacking, since the delay never elapses mid-spam) but a short,
+ * deliberate pause — the kind combat naturally has between engagements —
+ * is enough to start recovering. See weapon staminaCost values in weapons.ts
+ * for the per-swing balance (analysis in the phase report). */
+const STAMINA_REGEN_DELAY = 0.55;
+const STAMINA_REGEN_RATE = 30;
+
+/** The ability's energy resource keeps the original energyMax/energyRegen
+ * stats (so the `second-wind` permanent upgrade stays meaningful) but is now
+ * gated as a single full-to-empty charge: usable only at 100%, fully drained
+ * on use, then recharging over the ability's own `cooldown` duration (which
+ * now directly encodes that full-recharge time). BASE_ENERGY_REGEN is the
+ * createBaseStats() default energyRegen — energyRegen above/below it scales
+ * the derived recharge rate proportionally, so Second Wind still speeds up
+ * recharge exactly as it did before, just applied to the new formula. */
+const BASE_ENERGY_REGEN = 6;
+
 export type PlayerAnim = 'idle' | 'run' | 'attack' | 'hit' | 'dead' | 'dodge' | 'ability';
 
 export interface OwnedUpgrade {
@@ -31,6 +51,8 @@ export class Player {
   hp = 100;
   shieldCharges = 0;
   energy = 100;
+  stamina = 100;
+  staminaRegenDelayTimer = 0;
   alive = true;
   deathTimer = 0;
 
@@ -56,7 +78,6 @@ export class Player {
   dodgeDirY = 0;
   lastDodgeEndTime = -10;
 
-  abilityCooldownTimer = 0;
   isChannelingAbility = false;
   abilityAnimTimer = 0;
 
@@ -75,6 +96,7 @@ export class Player {
     this.recomputeStats();
     this.hp = this.stats.maxHp;
     this.energy = this.stats.energyMax;
+    this.stamina = this.stats.staminaMax;
   }
 
   private recomputeStats(): void {
@@ -89,9 +111,11 @@ export class Player {
    * proportional (so a max-HP bonus never leaves the bar looking emptier). */
   addBonusModifier(mod: StatModifier): void {
     const hpRatio = this.hp / Math.max(1, this.stats.maxHp);
+    const staminaRatio = this.stamina / Math.max(1, this.stats.staminaMax);
     this.bonusModifiers.push(mod);
     this.recomputeStats();
     this.hp = Math.min(this.stats.maxHp, Math.max(this.hp, this.stats.maxHp * hpRatio));
+    this.stamina = Math.min(this.stats.staminaMax, Math.max(this.stamina, this.stats.staminaMax * staminaRatio));
   }
 
   private recomputeSynergies(): void {
@@ -125,9 +149,11 @@ export class Player {
       this.upgrades.push({ def, stacks: 1 });
     }
     const hpRatio = this.hp / Math.max(1, this.stats.maxHp);
+    const staminaRatio = this.stamina / Math.max(1, this.stats.staminaMax);
     const before = new Set(this.activeSynergies);
     this.recomputeStats();
     this.hp = Math.min(this.stats.maxHp, Math.max(this.hp, this.stats.maxHp * hpRatio));
+    this.stamina = Math.min(this.stats.staminaMax, Math.max(this.stamina, this.stats.staminaMax * staminaRatio));
     return Array.from(this.activeSynergies).filter((id) => !before.has(id));
   }
 
@@ -170,7 +196,13 @@ export class Player {
   }
 
   canAttack(): boolean {
-    return this.alive && !this.isDodging && this.attackCooldownTimer <= 0;
+    return this.alive && !this.isDodging && this.attackCooldownTimer <= 0 && this.hasEnoughStamina();
+  }
+
+  /** Split out from canAttack() so callers (HUD/input feedback) can tell a
+   * stamina-blocked swing apart from one that's merely still on cooldown. */
+  hasEnoughStamina(): boolean {
+    return this.stamina >= this.weapon.staminaCost;
   }
 
   canDodge(): boolean {
@@ -178,12 +210,7 @@ export class Player {
   }
 
   canUseAbility(): boolean {
-    return (
-      this.alive &&
-      !this.isDodging &&
-      this.abilityCooldownTimer <= 0 &&
-      this.energy >= this.ability.energyCost
-    );
+    return this.alive && !this.isDodging && this.energy >= this.stats.energyMax;
   }
 
   startAttack(): void {
@@ -194,6 +221,8 @@ export class Player {
     this.attackSwingId++;
     this.animState = 'attack';
     this.animTime = 0;
+    this.stamina = Math.max(0, this.stamina - this.weapon.staminaCost);
+    this.staminaRegenDelayTimer = STAMINA_REGEN_DELAY;
   }
 
   startDodge(dirX: number, dirY: number): void {
@@ -207,8 +236,7 @@ export class Player {
   }
 
   startAbility(): void {
-    this.energy -= this.ability.energyCost;
-    this.abilityCooldownTimer = this.ability.cooldown;
+    this.energy = 0;
     this.isChannelingAbility = true;
     this.abilityAnimTimer = 0;
     this.animState = 'ability';
@@ -255,11 +283,18 @@ export class Player {
     if (this.hitFlashTimer > 0) this.hitFlashTimer -= dt;
     if (this.attackCooldownTimer > 0) this.attackCooldownTimer -= dt;
     if (this.dodgeCooldownTimer > 0) this.dodgeCooldownTimer -= dt;
-    if (this.abilityCooldownTimer > 0) this.abilityCooldownTimer -= dt;
+    if (this.staminaRegenDelayTimer > 0) this.staminaRegenDelayTimer -= dt;
     if (this.perfectDodgeTimer > 0) this.perfectDodgeTimer -= dt;
 
     this.hp = clamp(this.hp + this.stats.hpRegen * dt, 0, this.stats.maxHp);
-    this.energy = clamp(this.energy + this.stats.energyRegen * dt, 0, this.stats.energyMax);
+    if (this.staminaRegenDelayTimer <= 0) {
+      this.stamina = clamp(this.stamina + STAMINA_REGEN_RATE * dt, 0, this.stats.staminaMax);
+    }
+    // energyRegen (Second Wind) scales this proportionally to its base value,
+    // so the ability always finishes a full 0→100% recharge in exactly its
+    // own `cooldown` duration at the default regen rate, faster with upgrades.
+    const abilityRegenRate = (this.stats.energyMax / this.ability.cooldown) * (this.stats.energyRegen / BASE_ENERGY_REGEN);
+    this.energy = clamp(this.energy + abilityRegenRate * dt, 0, this.stats.energyMax);
 
     if (this.isAttacking) {
       this.attackAnimTimer += dt;
@@ -321,6 +356,8 @@ export class Player {
     this.vy = 0;
     this.hp = this.stats.maxHp;
     this.energy = this.stats.energyMax;
+    this.stamina = this.stats.staminaMax;
+    this.staminaRegenDelayTimer = 0;
     this.shieldCharges = this.stats.shieldMax;
     this.alive = true;
     this.deathTimer = 0;

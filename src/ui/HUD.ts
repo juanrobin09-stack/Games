@@ -25,6 +25,9 @@ export interface HudFrameData {
   interactPrompt: string | null;
   boss: BossHudInfo | null;
   elapsedSeconds: number;
+  /** True the frame M1 was held against a swing that's off cooldown but
+   * can't afford its stamina cost — drives the stamina bar's denial pulse. */
+  staminaDenied: boolean;
 }
 
 export class HUD {
@@ -35,10 +38,14 @@ export class HUD {
   private buffRow!: HTMLElement;
   private energyFill!: HTMLElement;
   private energyLabel!: HTMLElement;
+  private staminaRow!: HTMLElement;
+  private staminaFill!: HTMLElement;
+  private staminaLabel!: HTMLElement;
   private embersText!: HTMLElement;
   private zoneLabel!: HTMLElement;
   private corruptionFill!: HTMLElement;
   private minimapEl!: HTMLElement;
+  private abilitySlot!: HTMLElement;
   private abilitySweep!: HTMLElement;
   private abilityIconEl!: HTMLElement;
   private weaponNameEl!: HTMLElement;
@@ -68,6 +75,12 @@ export class HUD {
     this.buffRow = el('div', { class: 'hud-buffs' });
     this.energyFill = el('div', { class: 'hud-bar-fill energy' });
     this.energyLabel = el('div', { class: 'hud-bar-label' });
+    this.staminaFill = el('div', { class: 'hud-bar-fill stamina' });
+    this.staminaLabel = el('div', { class: 'hud-bar-label' });
+    this.staminaRow = el('div', { class: 'hud-bar-row' }, [
+      el('div', { class: 'hud-bar-icon', html: iconSvg('stamina', 16) }),
+      el('div', { class: 'hud-bar-track' }, [this.staminaFill, this.staminaLabel]),
+    ]);
     this.embersText = el('span', {}, ['0']);
     this.zoneLabel = el('div', { class: 'hud-zone-label' }, ['—']);
     this.corruptionFill = el('div', { class: 'hud-corruption-fill' });
@@ -99,6 +112,7 @@ export class HUD {
         el('div', { class: 'hud-bar-track' }, [this.hpFill, this.hpLabel]),
         this.shieldRow,
       ]),
+      this.staminaRow,
       el('div', { class: 'hud-bar-row' }, [
         el('div', { class: 'hud-bar-icon', html: iconSvg('ability', 16) }),
         el('div', { class: 'hud-bar-track' }, [this.energyFill, this.energyLabel]),
@@ -114,8 +128,9 @@ export class HUD {
       this.minimapEl,
     ]);
 
+    this.abilitySlot = el('div', { class: 'hud-ability-slot' }, [this.abilityIconEl, this.abilitySweep, el('span', { class: 'key-hint' }, ['RMB'])]);
     const bottomLeft = el('div', { class: 'hud-bottom-left' }, [
-      el('div', { class: 'hud-ability-slot' }, [this.abilityIconEl, this.abilitySweep, el('span', { class: 'key-hint' }, ['RMB'])]),
+      this.abilitySlot,
       el('div', { class: 'button-column', style: 'gap:4px;' }, [
         el('div', { class: 'hud-weapon-slot' }, [el('span', { html: iconSvg('blade', 14) }), this.weaponNameEl]),
         el('div', { class: 'hud-weapon-slot' }, [el('span', { html: iconSvg('ember', 14) }), this.abilityNameEl]),
@@ -232,6 +247,11 @@ export class HUD {
     this.energyFill.style.transform = `scaleX(${energyRatio})`;
     this.energyLabel.textContent = `${Math.floor(data.player.energy)}`;
 
+    const staminaRatio = clamp(data.player.stamina / Math.max(1, data.player.stats.staminaMax), 0, 1);
+    this.staminaFill.style.transform = `scaleX(${staminaRatio})`;
+    this.staminaLabel.textContent = `${Math.floor(data.player.stamina)}`;
+    this.staminaRow.classList.toggle('insufficient', data.staminaDenied);
+
     this.buffRow.innerHTML = '';
     if (data.player.perfectDodgeTimer > 0) this.buffRow.appendChild(this.buffIcon('dodge'));
     if (data.player.hasSynergy('wrath') && data.player.hp / data.player.stats.maxHp < 0.4) this.buffRow.appendChild(this.buffIcon('critDamage'));
@@ -243,9 +263,11 @@ export class HUD {
     this.corruptionFill.style.width = `${Math.round(data.corruption * 100)}%`;
     this.corruptionVignette.style.opacity = (clamp(data.corruption, 0, 1) * 0.4).toFixed(2);
 
-    const abilityCooldownRatio =
-      data.player.ability.cooldown > 0 ? clamp(data.player.abilityCooldownTimer / data.player.ability.cooldown, 0, 1) : 0;
-    this.abilitySweep.style.transform = `scaleY(${abilityCooldownRatio})`;
+    // Sweep covers the icon while charging and clears as `energy` (the
+    // ability's single-charge resource, see Player.ts) fills back to max.
+    const abilityReadyRatio = clamp(data.player.energy / Math.max(1, data.player.stats.energyMax), 0, 1);
+    this.abilitySweep.style.transform = `scaleY(${1 - abilityReadyRatio})`;
+    this.abilitySlot.classList.toggle('ready', abilityReadyRatio >= 1);
     if (this.abilityIconEl.dataset.icon !== data.abilityIcon) {
       this.abilityIconEl.innerHTML = iconSvg(data.abilityIcon, 22);
       this.abilityIconEl.dataset.icon = data.abilityIcon;

@@ -35,6 +35,7 @@ export interface StatBlock {
   critChance: number;
   critDamage: number;
   armor: number;
+  staminaMax: number;
   energyMax: number;
   energyRegen: number;
   dodgeCooldownMult: number;
@@ -61,6 +62,7 @@ export function createBaseStats(): StatBlock {
     critChance: 0.05,
     critDamage: 1.5,
     armor: 0,
+    staminaMax: 100,
     energyMax: 100,
     energyRegen: 6,
     dodgeCooldownMult: 1,
@@ -126,7 +128,8 @@ export type UpgradeIconId =
   | 'burn'
   | 'armor'
   | 'regen'
-  | 'luck';
+  | 'luck'
+  | 'stamina';
 
 export interface SynergyDefinition {
   id: string;
@@ -190,6 +193,7 @@ export interface WeaponDefinition {
   kind: 'melee' | 'ranged';
   baseDamage: number;
   attackCooldown: number;
+  staminaCost: number;
   range: number;
   arcDegrees?: number;
   knockback: number;
@@ -207,7 +211,6 @@ export interface AbilityDefinition {
   name: string;
   description: string;
   cooldown: number;
-  energyCost: number;
   unlockCost?: number;
   color: string;
 }

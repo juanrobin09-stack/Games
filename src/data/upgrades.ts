@@ -56,6 +56,15 @@ export const UPGRADES: UpgradeDefinition[] = [
     icon: 'magnet',
     modifiers: [{ stat: 'pickupRange', mode: 'flat', value: 30 }],
   },
+  {
+    id: 'steady-breath',
+    name: 'Steady Breath',
+    description: '+20 maximum stamina.',
+    rarity: 'common',
+    tags: [],
+    icon: 'stamina',
+    modifiers: [{ stat: 'staminaMax', mode: 'flat', value: 20 }],
+  },
   // ---------- UNCOMMON ----------
   {
     id: 'brisk-hands',
@@ -110,6 +119,15 @@ export const UPGRADES: UpgradeDefinition[] = [
     tags: ['fire'],
     icon: 'burn',
     modifiers: [{ stat: 'burnChance', mode: 'flat', value: 0.1 }],
+  },
+  {
+    id: 'iron-lungs',
+    name: 'Iron Lungs',
+    description: '+35 maximum stamina.',
+    rarity: 'uncommon',
+    tags: [],
+    icon: 'stamina',
+    modifiers: [{ stat: 'staminaMax', mode: 'flat', value: 35 }],
   },
   // ---------- RARE ----------
   {

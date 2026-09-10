@@ -68,6 +68,17 @@ export const PERMANENT_UPGRADES: PermanentUpgradeDefinition[] = [
     modifiers: [{ stat: 'energyRegen', mode: 'flat', value: 1.2 }],
   },
   {
+    id: 'endless-vigor',
+    name: 'Endless Vigor',
+    description: '+8 starting max stamina per level.',
+    tier: 1,
+    maxLevel: 5,
+    baseCost: 40,
+    costGrowth: 1.35,
+    icon: 'stamina',
+    modifiers: [{ stat: 'staminaMax', mode: 'flat', value: 8 }],
+  },
+  {
     id: 'iron-skin',
     name: 'Iron Skin',
     description: '+3% damage reduction per level.',

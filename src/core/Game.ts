@@ -56,6 +56,7 @@ import { generateShopOffers, makeShopRng, REROLL_COST, HEAL_AMOUNT_RATIO, type S
 import { RunState } from '@/progression/RunState';
 import { meta } from '@/progression/MetaProgression';
 import { rollUpgradeChoices, pickUpgradeAtLeastRarity } from '@/progression/UpgradePool';
+import { getUpgrade } from '@/data/upgrades';
 import { applyModifiers } from '@/data/stats';
 import { createBaseStats, RARITY_ORDER, RARITY_COLORS, type Rarity, type UpgradeDefinition, type UpgradeIconId, type EventOption } from '@/data/types';
 import { ZONES } from '@/data/zones';
@@ -160,6 +161,9 @@ export class Game {
   private lastTime = performance.now();
   private ambientTimer = 0.3;
   private fps = 60;
+  /** True this frame if M1 is held against a swing that's off cooldown but
+   * can't afford its stamina cost — read once by updateHud() for feedback. */
+  private staminaDenied = false;
   private debugEnabled = false;
   private debugEl: HTMLElement | null = null;
   private audioUnlocked = false;
@@ -207,7 +211,12 @@ export class Game {
           rewardGranted: room.rewardGranted,
           ritualActive: room.ritualActive,
           ritualWave: room.ritualWave,
-          player: { x: player.x, y: player.y, hp: player.hp, maxHp: player.stats.maxHp, shield: player.shieldCharges, alive: player.alive },
+          player: {
+            x: player.x, y: player.y, hp: player.hp, maxHp: player.stats.maxHp, shield: player.shieldCharges, alive: player.alive,
+            stamina: player.stamina, staminaMax: player.stats.staminaMax, weaponStaminaCost: player.weapon.staminaCost,
+            energy: player.energy, energyMax: player.stats.energyMax, abilityCooldown: player.ability.cooldown,
+            attackCooldownTimer: player.attackCooldownTimer, canAttack: player.canAttack(), canUseAbility: player.canUseAbility(),
+          },
           enemies: room.enemies.map((e) => ({
             id: e.def.id,
             x: e.x,
@@ -321,6 +330,17 @@ export class Game {
         interaction.action();
         return interaction.label;
       },
+      grantUpgrade: (id: string) => {
+        if (!this.player) return false;
+        this.grantUpgrade(getUpgrade(id));
+        return true;
+      },
+      addSoulAsh: (amount: number) => {
+        meta.addSoulAsh(amount);
+        return meta.soulAsh;
+      },
+      purchasePermanent: (id: string) => meta.purchasePermanent(id),
+      getPermanentLevel: (id: string) => meta.getPermanentLevel(id),
     };
     (window as unknown as { __emberfall: typeof api }).__emberfall = api;
   }
@@ -1254,6 +1274,7 @@ export class Game {
 
     if (this.transition) {
       // Scripted stairwell walk: no input, no enemies — the world just breathes.
+      this.staminaDenied = false;
       this.updateTransition(dt);
       this.camera.setViewport(this.renderer.width, this.renderer.height);
       this.updateCameraZoom();
@@ -1417,7 +1438,14 @@ export class Game {
     const playerScreen = this.camera.worldToScreen(player.x, player.y);
     player.facing = this.input.getAimAngle(playerScreen.x, playerScreen.y);
 
-    if (this.input.isAttackHeld() && player.canAttack()) this.performAttack();
+    this.staminaDenied = false;
+    if (this.input.isAttackHeld()) {
+      if (player.canAttack()) {
+        this.performAttack();
+      } else if (player.alive && !player.isDodging && player.attackCooldownTimer <= 0 && !player.hasEnoughStamina()) {
+        this.staminaDenied = true;
+      }
+    }
     if (this.input.wasPressed('dodge') && player.canDodge()) this.performDodge();
     if (this.input.wasPressed('ability') && player.canUseAbility()) this.performAbility();
     if (this.input.wasPressed('interact')) {
@@ -1474,6 +1502,7 @@ export class Game {
       interactPrompt: interaction?.label ?? null,
       boss: bossInfo,
       elapsedSeconds: run.elapsedSeconds(),
+      staminaDenied: this.staminaDenied,
     });
 
     if (getCorruptionRatio(run.elapsedMinutes()) > 0.5) this.onboarding?.show('corruption');
