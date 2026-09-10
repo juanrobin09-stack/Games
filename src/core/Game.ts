@@ -120,6 +120,11 @@ interface ZoneTransition {
 }
 const DESCENT_OUT_SECONDS = 1.15;
 const DESCENT_IN_SECONDS = 1.35;
+/** How long the HUD stamina bar's denial pulse stays visible after a single
+ * denied action (dodge). A held M1 re-triggers this every frame it's denied,
+ * so it stays lit continuously for as long as the button is held regardless
+ * of this value — this constant only matters for one-shot inputs. */
+const STAMINA_DENIED_FLASH_SECONDS = 0.35;
 
 function iconForAbility(id: string): UpgradeIconId {
   if (id === 'stormstep') return 'dodge';
@@ -161,9 +166,10 @@ export class Game {
   private lastTime = performance.now();
   private ambientTimer = 0.3;
   private fps = 60;
-  /** True this frame if M1 is held against a swing that's off cooldown but
-   * can't afford its stamina cost — read once by updateHud() for feedback. */
-  private staminaDenied = false;
+  /** Counts down from STAMINA_DENIED_FLASH_SECONDS whenever M1 or dodge is
+   * blocked purely by insufficient stamina (not by their own cooldown) —
+   * read by updateHud() to drive the stamina bar's denial pulse. */
+  private staminaDeniedTimer = 0;
   private debugEnabled = false;
   private debugEl: HTMLElement | null = null;
   private audioUnlocked = false;
@@ -216,6 +222,7 @@ export class Game {
             stamina: player.stamina, staminaMax: player.stats.staminaMax, weaponStaminaCost: player.weapon.staminaCost,
             energy: player.energy, energyMax: player.stats.energyMax, abilityCooldown: player.ability.cooldown,
             attackCooldownTimer: player.attackCooldownTimer, canAttack: player.canAttack(), canUseAbility: player.canUseAbility(),
+            isDodging: player.isDodging, dodgeCooldownTimer: player.dodgeCooldownTimer, canDodge: player.canDodge(),
           },
           enemies: room.enemies.map((e) => ({
             id: e.def.id,
@@ -1274,7 +1281,7 @@ export class Game {
 
     if (this.transition) {
       // Scripted stairwell walk: no input, no enemies — the world just breathes.
-      this.staminaDenied = false;
+      this.staminaDeniedTimer = 0;
       this.updateTransition(dt);
       this.camera.setViewport(this.renderer.width, this.renderer.height);
       this.updateCameraZoom();
@@ -1293,6 +1300,7 @@ export class Game {
 
     const room = run.currentRoom;
 
+    if (this.staminaDeniedTimer > 0) this.staminaDeniedTimer -= dt;
     this.handlePlayerInput();
     player.update(dt);
 
@@ -1438,15 +1446,20 @@ export class Game {
     const playerScreen = this.camera.worldToScreen(player.x, player.y);
     player.facing = this.input.getAimAngle(playerScreen.x, playerScreen.y);
 
-    this.staminaDenied = false;
     if (this.input.isAttackHeld()) {
       if (player.canAttack()) {
         this.performAttack();
       } else if (player.alive && !player.isDodging && player.attackCooldownTimer <= 0 && !player.hasEnoughStamina()) {
-        this.staminaDenied = true;
+        this.staminaDeniedTimer = STAMINA_DENIED_FLASH_SECONDS;
       }
     }
-    if (this.input.wasPressed('dodge') && player.canDodge()) this.performDodge();
+    if (this.input.wasPressed('dodge')) {
+      if (player.canDodge()) {
+        this.performDodge();
+      } else if (player.alive && !player.isDodging && player.dodgeCooldownTimer <= 0 && !player.hasEnoughStaminaForDodge()) {
+        this.staminaDeniedTimer = STAMINA_DENIED_FLASH_SECONDS;
+      }
+    }
     if (this.input.wasPressed('ability') && player.canUseAbility()) this.performAbility();
     if (this.input.wasPressed('interact')) {
       const interaction = this.getRoomInteraction();
@@ -1502,7 +1515,7 @@ export class Game {
       interactPrompt: interaction?.label ?? null,
       boss: bossInfo,
       elapsedSeconds: run.elapsedSeconds(),
-      staminaDenied: this.staminaDenied,
+      staminaDenied: this.staminaDeniedTimer > 0,
     });
 
     if (getCorruptionRatio(run.elapsedMinutes()) > 0.5) this.onboarding?.show('corruption');

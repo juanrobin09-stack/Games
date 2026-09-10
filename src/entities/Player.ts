@@ -6,15 +6,19 @@ import { getWeaponDefinition } from '@/data/weapons';
 import { getAbilityDefinition } from '@/data/abilities';
 import { SYNERGIES } from '@/data/synergies';
 
-/** M1 stamina: how long (seconds) attacking must stop before stamina starts
- * refilling again, and how fast it refills once it does. Tuned so a player
- * spamming M1 continuously always eventually hits the wall (drain outpaces
- * regen while attacking, since the delay never elapses mid-spam) but a short,
- * deliberate pause — the kind combat naturally has between engagements —
- * is enough to start recovering. See weapon staminaCost values in weapons.ts
- * for the per-swing balance (analysis in the phase report). */
+/** M1/dodge stamina: how long (seconds) spending stamina must stop before it
+ * starts refilling again, and how fast it refills once it does — tuned for a
+ * full 0→100 climb in ~2.2s, so a full pool comes back in well under the
+ * requested 2-2.5s window even before accounting for the initial delay.
+ * Tuned so a player spending stamina continuously always eventually hits the
+ * wall (drain outpaces regen while spending, since the delay never elapses
+ * mid-spam) but a short, deliberate pause — the kind combat naturally has
+ * between engagements — is enough to start recovering. See weapon
+ * staminaCost in weapons.ts and DODGE_STAMINA_COST below for the per-action
+ * costs (analysis in the phase report). */
 const STAMINA_REGEN_DELAY = 0.55;
-const STAMINA_REGEN_RATE = 30;
+const STAMINA_REGEN_RATE = 45;
+const DODGE_STAMINA_COST = 15;
 
 /** The ability's energy resource keeps the original energyMax/energyRegen
  * stats (so the `second-wind` permanent upgrade stays meaningful) but is now
@@ -206,7 +210,12 @@ export class Player {
   }
 
   canDodge(): boolean {
-    return this.alive && !this.isDodging && this.dodgeCooldownTimer <= 0;
+    return this.alive && !this.isDodging && this.dodgeCooldownTimer <= 0 && this.hasEnoughStaminaForDodge();
+  }
+
+  /** Split out from canDodge() for the same reason as hasEnoughStamina(). */
+  hasEnoughStaminaForDodge(): boolean {
+    return this.stamina >= DODGE_STAMINA_COST;
   }
 
   canUseAbility(): boolean {
@@ -233,6 +242,8 @@ export class Player {
     this.dodgeCooldownTimer = this.dodgeCooldownDuration;
     this.animState = 'dodge';
     this.animTime = 0;
+    this.stamina = Math.max(0, this.stamina - DODGE_STAMINA_COST);
+    this.staminaRegenDelayTimer = STAMINA_REGEN_DELAY;
   }
 
   startAbility(): void {
