@@ -15,6 +15,7 @@ import { drawChest } from '@/rendering/draw/drawChest';
 import { drawObstacle } from '@/rendering/draw/drawObstacle';
 import { drawBoss, drawMeteorTelegraph } from '@/rendering/draw/drawBoss';
 import { drawDamageNumbers } from '@/rendering/draw/drawDamageNumbers';
+import { drawXpPopups } from '@/rendering/draw/drawXpPopups';
 import { drawRoomBackground, drawRoomVignette, spawnZoneAmbientParticle } from '@/rendering/draw/drawRoom';
 import { drawHazards } from '@/rendering/draw/drawHazard';
 import { drawSanctumCircle, sanctumCandlePosition, sanctumLitCandles, SANCTUM_CANDLE_COUNT } from '@/rendering/draw/drawSanctum';
@@ -413,7 +414,7 @@ export class Game {
       if (Math.random() < healChance && this.player) {
         room.pickups.push(new Pickup('heart', x, y, Math.round(this.player.stats.maxHp * 0.15)));
       }
-      this.grantKillXp(enemy);
+      this.grantKillXp(enemy, x, y);
     });
     gameEvents.on('playerDied', () => {
       if (this.run && !this.run.ended) {
@@ -1197,11 +1198,12 @@ export class Game {
    * synchronous call so several kills landing the same frame (an AoE, a
    * bloat chain) can never desync the run — grantXp() itself loops to
    * resolve more than one level from a single grant. */
-  private grantKillXp(enemy: Enemy): void {
+  private grantKillXp(enemy: Enemy, x: number, y: number): void {
     const run = this.run;
     const player = this.player;
     if (!run || !player) return;
     const xpGained = getEnemyXpValue(enemy.def, run.zoneIndex);
+    this.combat.spawnXpPopup(x, y, xpGained);
     const { levelsGained, newLevel } = run.grantXp(xpGained);
     if (levelsGained > 0) {
       playSfx('levelUp');
@@ -1798,6 +1800,7 @@ export class Game {
 
     this.particles.render(ctx, this.camera);
     drawDamageNumbers(ctx, this.combat.damageNumbers, this.camera);
+    drawXpPopups(ctx, this.combat.xpPopups, this.camera);
 
     this.registerLights();
     this.lighting.render(ctx, this.camera, this.renderer.width, this.renderer.height);

@@ -6,6 +6,7 @@ import type { Camera } from '@/core/Camera';
 import type { HitStopController } from '@/core/HitStop';
 import type { ParticleSystem } from '@/rendering/ParticleSystem';
 import { createDamageNumber, updateDamageNumbers, type DamageNumber } from '@/combat/DamageNumber';
+import { createXpPopup, updateXpPopups, type XpPopup } from '@/combat/XpPopup';
 import {
   spawnHitImpact,
   spawnDeathBurst,
@@ -67,6 +68,7 @@ const MAX_HAZARDS = 10;
 export class CombatSystem {
   projectiles: Projectile[] = [];
   damageNumbers: DamageNumber[] = [];
+  xpPopups: XpPopup[] = [];
   hazards: Hazard[] = [];
   onDamageDealtToEnemy: ((amount: number) => void) | null = null;
   onDamageDealtToPlayer: ((amount: number) => void) | null = null;
@@ -76,7 +78,15 @@ export class CombatSystem {
   reset(): void {
     this.projectiles.length = 0;
     this.damageNumbers.length = 0;
+    this.xpPopups.length = 0;
     this.hazards.length = 0;
+  }
+
+  /** The one place XP feedback is spawned — always tied to the exact kill
+   * position, never to a pickup being collected (those are Embers/healing,
+   * an entirely separate system). */
+  spawnXpPopup(x: number, y: number, amount: number): void {
+    this.xpPopups.push(createXpPopup(x, y, amount));
   }
 
   // ---------------------------------------------------------------- Hazards
@@ -525,5 +535,6 @@ export class CombatSystem {
 
   update(dt: number): void {
     updateDamageNumbers(this.damageNumbers, dt);
+    updateXpPopups(this.xpPopups, dt);
   }
 }

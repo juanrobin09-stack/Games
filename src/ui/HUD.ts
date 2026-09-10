@@ -113,10 +113,9 @@ export class HUD {
     this.xpFill = el('div', { class: 'hud-bar-fill xp' });
     this.xpLabel = el('div', { class: 'hud-bar-label' });
     this.pointsHint = el('div', { class: 'hud-points-hint' });
-    this.levelRow = el('div', { class: 'hud-level-row' }, [
+    this.levelRow = el('div', { class: 'hud-xp-row' }, [
       this.levelLabel,
-      el('div', { class: 'hud-bar-track', style: 'height:9px;' }, [this.xpFill, this.xpLabel]),
-      this.pointsHint,
+      el('div', { class: 'hud-bar-track xp-track' }, [this.xpFill, this.xpLabel]),
     ]);
 
     this.bossBar = el('div', { class: 'hud-boss-bar' }, [
@@ -126,7 +125,6 @@ export class HUD {
     ]);
 
     const topLeft = el('div', { class: 'hud-top-left' }, [
-      this.levelRow,
       el('div', { class: 'hud-bar-row' }, [
         el('div', { class: 'hud-bar-icon', html: iconSvg('heart', 16) }),
         el('div', { class: 'hud-bar-track' }, [this.hpFill, this.hpLabel]),
@@ -157,10 +155,13 @@ export class HUD {
       ]),
     ]);
 
+    const bottomRight = el('div', { class: 'hud-bottom-right' }, [this.levelRow, this.pointsHint]);
+
     return el('div', { class: 'hud' }, [
       topLeft,
       topRight,
       bottomLeft,
+      bottomRight,
       this.interactPromptEl,
       this.bossBar,
       this.toastArea,
