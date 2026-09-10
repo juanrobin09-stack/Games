@@ -2,6 +2,7 @@ import type { Enemy } from '@/entities/Enemy';
 import { Palette, rgba, mixColor } from '@/rendering/Palette';
 import { drawSoftShadow, drawGlowCircle, blobPath, hashJitter, roundedRectPath } from '@/rendering/DrawUtils';
 import { TAU } from '@/utils/MathUtils';
+import { tc } from '@/i18n';
 
 const WOBBLE_SEEDS = [0.1, -0.08, 0.14, -0.05, 0.09, -0.12, 0.06, -0.1];
 
@@ -581,7 +582,7 @@ export function drawEnemy(ctx: CanvasRenderingContext2D, enemy: Enemy, screenX: 
     ctx.fillStyle = Palette.ember5;
     ctx.shadowColor = 'rgba(0,0,0,0.8)';
     ctx.shadowBlur = 3;
-    ctx.fillText((enemy.displayName ?? enemy.def.name).toUpperCase(), 0, -r - 18);
+    ctx.fillText((enemy.displayName ?? tc(enemy.def.id, 'name', enemy.def.name)).toUpperCase(), 0, -r - 18);
     ctx.shadowBlur = 0;
   }
   ctx.restore();

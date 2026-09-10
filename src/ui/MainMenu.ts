@@ -1,5 +1,6 @@
 import { el } from '@/ui/dom';
 import { Palette } from '@/rendering/Palette';
+import { t } from '@/i18n';
 
 export interface MainMenuCallbacks {
   onPlay: (seed?: number) => void;
@@ -45,21 +46,21 @@ export class MainMenu {
     const seedInput = el('input', {
       type: 'text',
       class: 'seed-input',
-      placeholder: 'Seed (optional)',
+      placeholder: t('menu.seedPlaceholder', 'Seed (optional)'),
       value: urlSeed,
       maxlength: '12',
-      'aria-label': 'Run seed',
+      'aria-label': t('menu.seedAriaLabel', 'Run seed'),
     }) as HTMLInputElement;
 
     const content = el('div', { class: 'main-menu-content' }, [
       el('h1', { class: 'game-title' }, ['EMBERFALL']),
       el('div', { class: 'game-subtitle' }, ['Last Light']),
       el('div', { class: 'main-menu-buttons' }, [
-        el('button', { class: 'btn primary', onClick: () => callbacks.onPlay(parseSeedInput(seedInput.value)) }, ['Play']),
-        el('button', { class: 'btn', onClick: callbacks.onUpgrades }, ['Upgrades']),
-        el('button', { class: 'btn', onClick: callbacks.onArmory }, ['Armory']),
-        el('button', { class: 'btn', onClick: callbacks.onSettings }, ['Settings']),
-        el('button', { class: 'btn ghost', onClick: callbacks.onCredits }, ['Credits']),
+        el('button', { class: 'btn primary', onClick: () => callbacks.onPlay(parseSeedInput(seedInput.value)) }, [t('menu.play', 'Play')]),
+        el('button', { class: 'btn', onClick: callbacks.onUpgrades }, [t('menu.upgrades', 'Upgrades')]),
+        el('button', { class: 'btn', onClick: callbacks.onArmory }, [t('menu.armory', 'Armory')]),
+        el('button', { class: 'btn', onClick: callbacks.onSettings }, [t('menu.settings', 'Settings')]),
+        el('button', { class: 'btn ghost', onClick: callbacks.onCredits }, [t('menu.credits', 'Credits')]),
         seedInput,
       ]),
     ]);
@@ -67,7 +68,7 @@ export class MainMenu {
     this.root = el('div', { class: 'screen-overlay fade-screen' }, [
       this.canvas,
       content,
-      el('div', { class: 'main-menu-footer' }, ['The Ember is dying. Someone must carry the last light.']),
+      el('div', { class: 'main-menu-footer' }, [t('menu.tagline', 'The Ember is dying. Someone must carry the last light.')]),
     ]);
     container.appendChild(this.root);
 

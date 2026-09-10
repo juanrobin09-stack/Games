@@ -57,6 +57,7 @@ import { RunState } from '@/progression/RunState';
 import { meta } from '@/progression/MetaProgression';
 import { rollUpgradeChoices, pickUpgradeAtLeastRarity } from '@/progression/UpgradePool';
 import { getUpgrade } from '@/data/upgrades';
+import { setLocale, t, tc } from '@/i18n';
 import { applyModifiers } from '@/data/stats';
 import { createBaseStats, RARITY_ORDER, RARITY_COLORS, type Rarity, type UpgradeDefinition, type UpgradeIconId, type EventOption } from '@/data/types';
 import { ZONES } from '@/data/zones';
@@ -88,16 +89,16 @@ interface Destroyable {
 
 function roomTypeLabel(type: Room['type']): string {
   switch (type) {
-    case 'start': return 'Entrance';
-    case 'combat': return 'Combat';
-    case 'elite': return 'Elite Den';
-    case 'chest': return 'Vault';
-    case 'shop': return 'Merchant';
-    case 'event': return 'Unknown';
-    case 'rest': return 'Respite';
-    case 'heart': return 'Zone Heart';
-    case 'boss': return 'The Colossus';
-    case 'sanctum': return 'Drowned Sanctum';
+    case 'start': return t('room.start', 'Entrance');
+    case 'combat': return t('room.combat', 'Combat');
+    case 'elite': return t('room.elite', 'Elite Den');
+    case 'chest': return t('room.chest', 'Vault');
+    case 'shop': return t('room.shop', 'Merchant');
+    case 'event': return t('room.event', 'Unknown');
+    case 'rest': return t('room.rest', 'Respite');
+    case 'heart': return t('room.heart', 'Zone Heart');
+    case 'boss': return t('room.boss', 'The Colossus');
+    case 'sanctum': return t('room.sanctum', 'Drowned Sanctum');
   }
 }
 
@@ -400,11 +401,15 @@ export class Game {
       }
     });
     gameEvents.on('bossPhaseChanged', ({ phase }) => {
-      this.hud?.showPhaseBanner(`PHASE ${phase}`);
+      this.hud?.showPhaseBanner(`${t('banner.phase', 'PHASE')} ${phase}`);
     });
   }
 
   private applySettings(s: SaveSettings): void {
+    setLocale(s.language);
+    document.documentElement.lang = s.language;
+    const orientationText = document.querySelector('#orientation-lock p');
+    if (orientationText) orientationText.textContent = t('orientation.rotate', 'Rotate your device to landscape for the best experience');
     audio.setMaster(s.masterVolume);
     audio.setMusic(s.musicVolume);
     audio.setSfx(s.sfxVolume);
@@ -679,30 +684,32 @@ export class Game {
 
     if (room.type === 'chest' && room.chest && room.chest.canInteract) {
       const d = Math.hypot(player.x - room.chest.x, player.y - room.chest.y);
-      if (d < 75) return { label: 'Open Chest', action: () => this.openChest(room) };
+      if (d < 75) return { label: t('interact.openChest', 'Open Chest'), action: () => this.openChest(room) };
     }
     if (room.type === 'shop' && landmarkDist('merchantStall') < 110) {
-      return { label: 'Browse Wares', action: () => this.openShopRoom(room) };
+      return { label: t('interact.browseWares', 'Browse Wares'), action: () => this.openShopRoom(room) };
     }
     if (room.type === 'event' && !room.eventResolved && landmarkDist('shrine') < 110) {
-      return { label: 'Investigate', action: () => this.openEvent(room) };
+      return { label: t('interact.investigate', 'Investigate'), action: () => this.openEvent(room) };
     }
     if (room.type === 'rest' && !room.restUsed && landmarkDist('brazier') < 110) {
-      return { label: 'Rest at the Brazier', action: () => this.useRest(room) };
+      return { label: t('interact.restAtBrazier', 'Rest at the Brazier'), action: () => this.useRest(room) };
     }
     if (room.type === 'sanctum' && !room.ritualActive && !room.cleared && centerDist < SANCTUM_RING_RADIUS * 0.65) {
-      return { label: 'Kneel at the Circle', action: () => this.beginRite(room) };
+      return { label: t('interact.kneelAtCircle', 'Kneel at the Circle'), action: () => this.beginRite(room) };
     }
     if (room.type === 'heart' && room.cleared && !run.isFinalZone()) {
-      const nextName = ZONES[run.zoneIndex + 1]?.name ?? 'the next zone';
+      const nextZone = ZONES[run.zoneIndex + 1];
+      const nextName = nextZone ? tc(nextZone.id, 'name', nextZone.name) : t('interact.theNextZone', 'the next zone');
+      const descendLabel = t('interact.descendToFormat', 'Descend to {name}').replace('{name}', nextName);
       const stairs = room.obstacles.find((o) => o.visual === 'stairsDown');
       if (stairs) {
         if (stairs.activated && Math.hypot(player.x - stairs.x, player.y - stairs.y) < stairs.radius + 72) {
-          return { label: `Descend to ${nextName}`, action: () => this.beginDescent(stairs) };
+          return { label: descendLabel, action: () => this.beginDescent(stairs) };
         }
       } else if (centerDist < 110) {
         // No stairwell in this room (should never happen) — never strand the run.
-        return { label: `Descend to ${nextName}`, action: () => this.advanceZone() };
+        return { label: descendLabel, action: () => this.advanceZone() };
       }
     }
     return null;
@@ -810,7 +817,7 @@ export class Game {
         const def = pickUpgradeAtLeastRarity(rng, minRarity, meta.getUnlockedGateIds(), owned);
         this.grantUpgrade(def);
         run.recordUpgrade(def.id);
-        this.showReward(def, 'The Merchant');
+        this.showReward(def, t('reward.merchant', 'The Merchant'));
         break;
       }
       case 'loseHpForRareUpgrade': {
@@ -821,7 +828,7 @@ export class Game {
         const def = pickUpgradeAtLeastRarity(rng, 'rare', meta.getUnlockedGateIds(), owned);
         this.grantUpgrade(def);
         run.recordUpgrade(def.id);
-        this.showReward(def, 'The Dying Flame');
+        this.showReward(def, tc('dyingFlame', 'title', 'The Dying Flame'));
         break;
       }
       case 'gambleEmbers': {
@@ -846,7 +853,7 @@ export class Game {
       case 'gainShieldCharge': {
         player.shieldCharges += option.value ?? 1;
         playSfx('shieldUp');
-        this.hud?.showToast('A Warden’s ward settles over you.');
+        this.hud?.showToast(t('toast.wardenWard', 'A Warden’s ward settles over you.'));
         break;
       }
       case 'gainMaxHp': {
@@ -881,7 +888,7 @@ export class Game {
     player.heal(healAmount);
     spawnHealSparkle(this.particles, player.x, player.y);
     playSfx('pickupHeart');
-    this.hud?.showToast('The brazier\'s warmth mends your wounds.');
+    this.hud?.showToast(t('toast.brazier', 'The brazier\'s warmth mends your wounds.'));
   }
 
   /** Legacy instant zone change — only reachable if a heart room somehow has no
@@ -897,7 +904,7 @@ export class Game {
     nextRoom.spawnedContent = true;
     this.syncCombatState();
     this.hud?.refreshMinimap(run);
-    this.hud?.showPhaseBanner(run.currentZoneDef.name.toUpperCase());
+    this.hud?.showPhaseBanner(tc(run.currentZoneDef.id, 'name', run.currentZoneDef.name).toUpperCase());
     music.setMood(run.zoneIndex);
     playSfx('doorOpen');
   }
@@ -915,7 +922,7 @@ export class Game {
     this.camera.addShake(5, 0.5);
     spawnStoneChips(this.particles, stairs.x, stairs.y, 14);
     for (let i = 0; i < 10; i++) spawnSporeMote(this.particles, stairs.x + (Math.random() - 0.5) * 60, stairs.y + (Math.random() - 0.5) * 40);
-    this.hud?.showToast('The seal grinds open. The stairs lead down.');
+    this.hud?.showToast(t('toast.sealOpen', 'The seal grinds open. The stairs lead down.'));
     this.onboarding?.show('stairs');
   }
 
@@ -1016,8 +1023,8 @@ export class Game {
     };
     this.syncCombatState();
     this.hud?.refreshMinimap(run);
-    this.hud?.showPhaseBanner(zone.name.toUpperCase());
-    const subtitleTimer = window.setTimeout(() => this.hud?.showToast(`<em>${zone.subtitle}</em>`), 1100);
+    this.hud?.showPhaseBanner(tc(zone.id, 'name', zone.name).toUpperCase());
+    const subtitleTimer = window.setTimeout(() => this.hud?.showToast(`<em>${tc(zone.id, 'subtitle', zone.subtitle)}</em>`), 1100);
     this.synergyBannerTimers.push(subtitleTimer);
     playSfx('zoneArrive');
     music.setMood(run.zoneIndex);
@@ -1040,7 +1047,7 @@ export class Game {
     room.ritualActive = true;
     room.ritualWave = 0;
     room.ritualWaveTimer = 1.1;
-    this.hud?.showPhaseBanner('THE RITE BEGINS');
+    this.hud?.showPhaseBanner(t('banner.riteBegins', 'THE RITE BEGINS'));
     playSfx('ritualCandle');
     playSfx('doorOpen');
     this.camera.addShake(4, 0.4);
@@ -1067,7 +1074,7 @@ export class Game {
     }
     playSfx('ritualCandle');
     this.camera.addShake(3, 0.3);
-    this.hud?.showPhaseBanner(`WAVE ${room.ritualWave}`);
+    this.hud?.showPhaseBanner(`${t('banner.wave', 'WAVE')} ${room.ritualWave}`);
     this.syncCombatState();
   }
 
@@ -1076,7 +1083,7 @@ export class Game {
     const run = this.run!;
     room.cleared = true;
     playSfx('ritualComplete');
-    this.hud?.showPhaseBanner('THE RITE IS DONE');
+    this.hud?.showPhaseBanner(t('banner.riteDone', 'THE RITE IS DONE'));
     for (let i = 0; i < SANCTUM_CANDLE_COUNT; i++) {
       const p = sanctumCandlePosition(i);
       spawnRitualIgnite(this.particles, p.x, p.y);
@@ -1084,7 +1091,7 @@ export class Game {
     player.heal(player.stats.maxHp * 0.3);
     spawnHealSparkle(this.particles, player.x, player.y);
     run.addEmbers(35);
-    this.hud?.showToast('The sanctum yields what it kept: a rare blessing, and 35 Embers.');
+    this.hud?.showToast(t('toast.sanctumReward', 'The sanctum yields what it kept: a rare blessing, and 35 Embers.'));
     this.syncCombatState();
     this.grantRoomClearReward(room);
   }
@@ -1097,7 +1104,7 @@ export class Game {
     this.camera.addShake(14, 0.5);
     this.hitStop.trigger(0.08, 0.05);
     spawnStoneChips(this.particles, enemy.x + Math.cos(enemy.facing) * enemy.radius, enemy.y + Math.sin(enemy.facing) * enemy.radius, 26);
-    this.hud?.showPhaseBanner('THE SHIELD SHATTERS');
+    this.hud?.showPhaseBanner(t('banner.shieldShatters', 'THE SHIELD SHATTERS'));
     const { hpMult, damageMult } = getDifficultyFactors(run.zoneIndex, run.elapsedMinutes());
     const def = getEnemyDefinition('blightbloat');
     for (const side of [-1, 1]) {
@@ -1144,7 +1151,7 @@ export class Game {
     for (let i = 0; i < newSynergies.length; i++) {
       const syn = getSynergy(newSynergies[i]);
       const timer = window.setTimeout(() => {
-        this.hud?.showSynergyBanner(syn.name, syn.description);
+        this.hud?.showSynergyBanner(tc(syn.id, 'name', syn.name), tc(syn.id, 'description', syn.description));
         playSfx('synergyFormed');
       }, i * 900);
       this.synergyBannerTimers.push(timer);
@@ -1400,7 +1407,7 @@ export class Game {
     if (room.chest?.state === 'opened' && room.chest.rewardDef && !room.chest.rewardShown) {
       room.chest.rewardShown = true;
       spawnChestOpenBurst(this.particles, room.chest.x, room.chest.y, RARITY_COLORS[room.chest.tier]);
-      this.showReward(room.chest.rewardDef, 'Chest Reward');
+      this.showReward(room.chest.rewardDef, t('reward.chest', 'Chest Reward'));
     }
 
     if (room.type === 'sanctum') {
@@ -1483,7 +1490,7 @@ export class Game {
     let bossInfo: BossHudInfo | null = null;
     if (room.type === 'boss' && this.boss) {
       bossInfo = {
-        name: this.boss.def.name,
+        name: tc(this.boss.def.id, 'name', this.boss.def.name),
         hpRatio: this.boss.hp / this.boss.maxHp,
         phase: this.boss.phase,
         maxPhase: 3,
@@ -1494,7 +1501,7 @@ export class Game {
       const champion = room.enemies.find((e) => e.def.champion && e.isEliteInstance);
       if (champion && (champion.alive || champion.deathTimer < 0.5)) {
         bossInfo = {
-          name: champion.displayName ?? champion.def.name,
+          name: champion.displayName ?? tc(champion.def.id, 'name', champion.def.name),
           hpRatio: champion.hp / champion.maxHp,
           phase: champion.shieldBroken ? 2 : 1,
           maxPhase: 2,
@@ -1506,11 +1513,11 @@ export class Game {
     this.hud.update({
       player,
       embers: run.embers,
-      zoneName: run.currentZoneDef.name,
+      zoneName: tc(run.currentZoneDef.id, 'name', run.currentZoneDef.name),
       roomLabel: roomTypeLabel(room.type),
       corruption: getCorruptionRatio(run.elapsedMinutes()),
-      weaponName: player.weapon.name,
-      abilityName: player.ability.name,
+      weaponName: tc(player.weapon.id, 'name', player.weapon.name),
+      abilityName: tc(player.ability.id, 'name', player.ability.name),
       abilityIcon: iconForAbility(player.abilityId),
       interactPrompt: interaction?.label ?? null,
       boss: bossInfo,

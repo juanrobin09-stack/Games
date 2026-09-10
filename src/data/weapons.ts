@@ -6,7 +6,7 @@ export const WEAPONS: Record<string, WeaponDefinition> = {
     name: 'Ember Blade',
     description: 'A balanced shortsword warmed by a sliver of the last light. Reliable in any hand.',
     kind: 'melee',
-    baseDamage: 16,
+    baseDamage: 22,
     attackCooldown: 0.45,
     staminaCost: 10,
     range: 50,

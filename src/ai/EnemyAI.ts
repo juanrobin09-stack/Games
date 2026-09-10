@@ -288,6 +288,16 @@ function runWarden(enemy: Enemy, ctx: EnemyAIContext): void {
   const speed = def.moveSpeed * (phase2 ? 1.3 : 1);
   const turnRate = (def.turnRate ?? 2.3) * (phase2 ? 1.35 : 1);
   const target = Math.atan2(dy, dx);
+  // While still hunting for an angle to commit from, lead a little on the
+  // player's current velocity — just enough that circling it at a steady
+  // speed no longer keeps it permanently just outside the facing cone.
+  // Only 'chase' uses this: 'windup' below tracks the real, un-predicted
+  // target at a reduced rate, so an actual change of direction during the
+  // telegraph is still a genuine escape, not just a wasted juke.
+  const leadSeconds = 0.18;
+  const leadX = ctx.player.x + ctx.player.vx * leadSeconds;
+  const leadY = ctx.player.y + ctx.player.vy * leadSeconds;
+  const chaseTarget = Math.atan2(leadY - enemy.y, leadX - enemy.x);
 
   if (def.champion && !enemy.shieldBroken && enemy.state !== 'spawning' && enemy.hp <= enemy.maxHp * 0.5) {
     enemy.shieldBroken = true;
@@ -307,7 +317,7 @@ function runWarden(enemy: Enemy, ctx: EnemyAIContext): void {
       if (enemy.stateTimer > 0.35) enemy.setState('chase');
       break;
     case 'chase': {
-      const remaining = turnToward(enemy, target, turnRate * ctx.dt);
+      const remaining = turnToward(enemy, chaseTarget, turnRate * ctx.dt);
       const squaredUp = Math.abs(remaining) < 0.9;
       const holding = dist < 78;
       if (squaredUp && !holding) {
@@ -319,7 +329,7 @@ function runWarden(enemy: Enemy, ctx: EnemyAIContext): void {
         enemy.vx *= 0.6;
         enemy.vy *= 0.6;
       }
-      if (enemy.attackCooldownTimer <= 0 && dist <= def.attackRange && Math.abs(remaining) < 0.3) {
+      if (enemy.attackCooldownTimer <= 0 && dist <= def.attackRange && Math.abs(remaining) < 0.35) {
         enemy.comboStep = 0;
         enemy.setState('windup');
         enemy.vx = 0;
@@ -328,8 +338,14 @@ function runWarden(enemy: Enemy, ctx: EnemyAIContext): void {
       break;
     }
     case 'windup': {
-      // Committed bash line: keeps tracking, but slowly enough that a sidestep works.
-      turnToward(enemy, target, turnRate * 0.45 * ctx.dt);
+      // Committed bash line: keeps tracking, but slowly enough that a sidestep
+      // works — held at roughly the ORIGINAL absolute windup turn speed
+      // (turnRate above was raised so 'chase' can actually catch up to a
+      // circling player; that increase must not also leak into the windup's
+      // tracking, or a full-speed sidestep held for the whole telegraph stops
+      // being enough to beat it even though nothing about the telegraph
+      // itself changed).
+      turnToward(enemy, target, turnRate * 0.33 * ctx.dt);
       enemy.vx = 0;
       enemy.vy = 0;
       const telegraph = enemy.comboStep > 0 ? def.telegraphTime * 0.45 : def.telegraphTime;

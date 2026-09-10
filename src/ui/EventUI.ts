@@ -1,6 +1,7 @@
 import { el } from '@/ui/dom';
 import type { WorldEventDefinition, EventOption } from '@/data/types';
 import { playSfx } from '@/audio/SoundFactory';
+import { t, tc } from '@/i18n';
 
 export interface EventCallbacks {
   getEmbers: () => number;
@@ -28,17 +29,17 @@ export class EventUI {
           },
         },
         [
-          el('div', { class: 'opt-label' }, [opt.label]),
-          el('div', { class: 'opt-detail' }, [opt.detail]),
-          opt.cost ? el('div', { class: 'opt-cost' }, [`Costs ${opt.cost} Embers`]) : null,
+          el('div', { class: 'opt-label' }, [tc(opt.id, 'label', opt.label)]),
+          el('div', { class: 'opt-detail' }, [tc(opt.id, 'detail', opt.detail)]),
+          opt.cost ? el('div', { class: 'opt-cost' }, [`${t('event.costsPrefix', 'Costs')} ${opt.cost} ${t('currency.embers', 'Embers')}`]) : null,
         ]
       );
       return button;
     });
 
     const panel = el('div', { class: 'screen-panel panel pop-in' }, [
-      el('div', { class: 'screen-title' }, [def.title]),
-      el('div', { class: 'screen-body-text' }, [def.description]),
+      el('div', { class: 'screen-title' }, [tc(def.id, 'title', def.title)]),
+      el('div', { class: 'screen-body-text' }, [tc(def.id, 'description', def.description)]),
       el('div', { class: 'button-column' }, buttons),
     ]);
 

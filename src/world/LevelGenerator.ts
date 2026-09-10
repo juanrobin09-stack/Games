@@ -8,6 +8,7 @@ import { getEnemyDefinition } from '@/data/enemies';
 import { getCombatRoomEnemyCount, getDifficultyFactors } from '@/world/Difficulty';
 import { RARITY_ORDER } from '@/data/types';
 import { clamp } from '@/utils/MathUtils';
+import { t, tc } from '@/i18n';
 
 const ALL_DIRECTIONS: Direction[] = ['N', 'S', 'E', 'W'];
 
@@ -524,7 +525,7 @@ export function populateRoomContent(room: Room, zone: ZoneDefinition, opts: Spaw
       const leaderPos = randomSpawnPosition(rng, 0, room);
       const leader = new Enemy(leaderDef, leaderPos.x, leaderPos.y, hpMult * 2.1, damageMult * 1.35);
       leader.isEliteInstance = true;
-      leader.displayName = `Empowered ${leaderDef.name}`;
+      leader.displayName = t('enemy.empoweredFormat', 'Empowered {name}').replace('{name}', tc(leaderDef.id, 'name', leaderDef.name));
       leader.radius *= 1.25;
       room.enemies.push(leader);
       for (let i = 0; i < 2; i++) {
@@ -548,7 +549,10 @@ export function populateRoomContent(room: Room, zone: ZoneDefinition, opts: Spaw
       // enemy promoted to Heart Warden gets scaled up into one.
       const guardian = new Enemy(guardDef, pos.x, pos.y, champion ? hpMult : hpMult * 3.2, champion ? damageMult * 1.1 : damageMult * 1.5);
       guardian.isEliteInstance = true;
-      guardian.displayName = champion ? guardDef.name : `${guardDef.name}, Heart Warden`;
+      const translatedGuardName = tc(guardDef.id, 'name', guardDef.name);
+      guardian.displayName = champion
+        ? translatedGuardName
+        : t('enemy.heartWardenFormat', '{name}, Heart Warden').replace('{name}', translatedGuardName);
       if (!champion) guardian.radius *= 1.4;
       room.enemies.push(guardian);
       const escortPool = champion ? safePool.filter((id) => id !== 'hollowWarden' && id !== 'blightbloat') : safePool;

@@ -76,6 +76,15 @@ export const UPGRADES: UpgradeDefinition[] = [
     modifiers: [{ stat: 'attackSpeedMult', mode: 'mult', value: 0.12 }],
   },
   {
+    id: 'honed-edge',
+    name: 'Honed Edge',
+    description: '+15% damage.',
+    rarity: 'uncommon',
+    tags: [],
+    icon: 'blade',
+    modifiers: [{ stat: 'damageMult', mode: 'mult', value: 0.15 }],
+  },
+  {
     id: 'hardened-hide',
     name: 'Hardened Hide',
     description: '+8% damage reduction.',

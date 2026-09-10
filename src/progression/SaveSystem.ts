@@ -12,6 +12,7 @@ export interface SaveSettings {
   textScale: number;
   highContrast: boolean;
   reducedMotion: boolean;
+  language: 'en' | 'fr';
 }
 
 export interface SaveStats {
@@ -52,6 +53,7 @@ function defaultSettings(): SaveSettings {
     textScale: 1,
     highContrast: false,
     reducedMotion: false,
+    language: 'fr',
   };
 }
 
@@ -104,6 +106,7 @@ function sanitizeSettings(raw: unknown): SaveSettings {
     textScale: clampRange(num(r.textScale, base.textScale), 0.85, 1.3),
     highContrast: bool(r.highContrast, base.highContrast),
     reducedMotion: bool(r.reducedMotion, base.reducedMotion),
+    language: r.language === 'en' || r.language === 'fr' ? r.language : base.language,
   };
 }
 

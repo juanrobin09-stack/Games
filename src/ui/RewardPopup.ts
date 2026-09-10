@@ -1,6 +1,7 @@
 import { el } from '@/ui/dom';
 import { iconSvg } from '@/ui/icons';
 import type { UpgradeDefinition } from '@/data/types';
+import { tc } from '@/i18n';
 
 /** Brief auto-dismissing reveal for a granted upgrade (chest rewards, event boons). */
 export class RewardPopup {
@@ -11,8 +12,8 @@ export class RewardPopup {
     const card = el('div', { class: `upgrade-card rarity-${def.rarity} pop-in`, style: 'pointer-events:none;' }, [
       el('div', { class: 'tag' }, [sourceLabel]),
       el('div', { class: 'icon-badge', html: iconSvg(def.icon, 22) }),
-      el('div', { class: `card-name rarity-${def.rarity}` }, [def.name]),
-      el('div', { class: 'card-desc' }, [def.description]),
+      el('div', { class: `card-name rarity-${def.rarity}` }, [tc(def.id, 'name', def.name)]),
+      el('div', { class: 'card-desc' }, [tc(def.id, 'description', def.description)]),
     ]);
     this.root = el('div', { class: 'screen-overlay', style: 'background:transparent;pointer-events:none;align-items:flex-start;padding-top:16vh;' }, [card]);
     container.appendChild(this.root);

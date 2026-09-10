@@ -3,6 +3,7 @@ import { iconSvg } from '@/ui/icons';
 import type { ShopOffer } from '@/world/Shop';
 import { REROLL_COST } from '@/world/Shop';
 import { playSfx } from '@/audio/SoundFactory';
+import { t, tc } from '@/i18n';
 
 export interface ShopCallbacks {
   getEmbers: () => number;
@@ -31,14 +32,14 @@ export class ShopUI {
       `${this.callbacks.getEmbers()}`,
     ]);
     this.listEl = el('div', { class: 'button-column' });
-    this.rerollBtn = el('button', { class: 'btn small', onClick: () => this.reroll() }, [`Reroll (${REROLL_COST})`]) as HTMLButtonElement;
+    this.rerollBtn = el('button', { class: 'btn small', onClick: () => this.reroll() }, [`${t('shop.reroll', 'Reroll')} (${REROLL_COST})`]) as HTMLButtonElement;
 
     const panel = el('div', { class: 'screen-panel wide panel pop-in' }, [
-      el('div', { class: 'screen-title' }, ['The Forgotten Merchant']),
-      el('div', { class: 'screen-subtitle' }, ['"Everything has a price, Warden. Choose wisely."']),
+      el('div', { class: 'screen-title' }, [t('shop.title', 'The Forgotten Merchant')]),
+      el('div', { class: 'screen-subtitle' }, [t('shop.subtitle', '"Everything has a price, Warden. Choose wisely."')]),
       this.embersEl,
       this.listEl,
-      el('div', { class: 'button-row' }, [this.rerollBtn, el('button', { class: 'btn primary', onClick: () => this.leave() }, ['Leave'])]),
+      el('div', { class: 'button-row' }, [this.rerollBtn, el('button', { class: 'btn primary', onClick: () => this.leave() }, [t('shop.leave', 'Leave')])]),
     ]);
     this.root.appendChild(panel);
     this.renderList();
@@ -49,8 +50,8 @@ export class ShopUI {
     const embers = this.callbacks.getEmbers();
     for (const offer of this.offers) {
       const isUpgrade = offer.kind === 'upgrade' && offer.upgrade;
-      const name = isUpgrade ? offer.upgrade!.name : 'Mend Your Wounds';
-      const desc = isUpgrade ? offer.upgrade!.description : 'Restore a portion of your health.';
+      const name = isUpgrade ? tc(offer.upgrade!.id, 'name', offer.upgrade!.name) : t('shop.healName', 'Mend Your Wounds');
+      const desc = isUpgrade ? tc(offer.upgrade!.id, 'description', offer.upgrade!.description) : t('shop.healDesc', 'Restore a portion of your health.');
       const icon = isUpgrade ? offer.upgrade!.icon : 'heart';
       const affordable = embers >= offer.cost && !offer.purchased;
       this.listEl.appendChild(
@@ -65,7 +66,7 @@ export class ShopUI {
             class: 'btn small',
             disabled: !affordable,
             onClick: () => this.buy(offer),
-          }, [offer.purchased ? 'Sold' : 'Buy']),
+          }, [offer.purchased ? t('shop.sold', 'Sold') : t('shop.buy', 'Buy')]),
         ])
       );
     }

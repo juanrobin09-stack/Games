@@ -4,6 +4,7 @@ import type { Player } from '@/entities/Player';
 import type { RunState } from '@/progression/RunState';
 import { formatNumber, formatTime, clamp } from '@/utils/MathUtils';
 import type { UpgradeIconId } from '@/data/types';
+import { t, tc } from '@/i18n';
 
 export interface BossHudInfo {
   name: string;
@@ -87,8 +88,8 @@ export class HUD {
     this.minimapEl = el('div', { class: 'hud-minimap' });
     this.abilitySweep = el('div', { class: 'cooldown-sweep' });
     this.abilityIconEl = el('div', { html: iconSvg('ability', 22) });
-    this.weaponNameEl = el('span', { class: 'name' }, ['Ember Blade']);
-    this.abilityNameEl = el('span', { class: 'name' }, ['Ember Burst']);
+    this.weaponNameEl = el('span', { class: 'name' }, [tc('emberBlade', 'name', 'Ember Blade')]);
+    this.abilityNameEl = el('span', { class: 'name' }, [tc('emberBurst', 'name', 'Ember Burst')]);
     this.interactPromptEl = el('div', { class: 'hud-interact-prompt' });
     this.bossFill = el('div', { class: 'hud-bar-fill boss' });
     this.bossName = el('div', { class: 'hud-boss-name' }, ['???']);
@@ -128,7 +129,7 @@ export class HUD {
       this.minimapEl,
     ]);
 
-    this.abilitySlot = el('div', { class: 'hud-ability-slot' }, [this.abilityIconEl, this.abilitySweep, el('span', { class: 'key-hint' }, ['RMB'])]);
+    this.abilitySlot = el('div', { class: 'hud-ability-slot' }, [this.abilityIconEl, this.abilitySweep, el('span', { class: 'key-hint' }, [t('hud.rmbHint', 'RMB')])]);
     const bottomLeft = el('div', { class: 'hud-bottom-left' }, [
       this.abilitySlot,
       el('div', { class: 'button-column', style: 'gap:4px;' }, [
@@ -219,7 +220,7 @@ export class HUD {
 
   showSynergyBanner(name: string, description: string): void {
     this.synergyBanner.innerHTML = '';
-    this.synergyBanner.appendChild(el('div', { class: 'synergy-label' }, ['Synergy Formed']));
+    this.synergyBanner.appendChild(el('div', { class: 'synergy-label' }, [t('hud.synergyFormed', 'Synergy Formed')]));
     this.synergyBanner.appendChild(el('div', { class: 'synergy-name' }, [name]));
     this.synergyBanner.appendChild(el('div', { class: 'synergy-desc' }, [description]));
     this.synergyBanner.classList.remove('showing');

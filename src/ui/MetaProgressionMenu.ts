@@ -7,6 +7,7 @@ import { getWeaponDefinition } from '@/data/weapons';
 import { getAbilityDefinition } from '@/data/abilities';
 import { playSfx } from '@/audio/SoundFactory';
 import type { UnlockDefinition, UpgradeIconId } from '@/data/types';
+import { t, tc } from '@/i18n';
 
 export type MetaMenuMode = 'upgrades' | 'armory';
 
@@ -36,25 +37,25 @@ export class MetaProgressionMenu {
 
   private render(): void {
     clear(this.root);
-    this.balanceEl = el('div', { class: 'soul-ash-balance' }, [el('span', { html: iconSvg('luck', 18) }), `${meta.soulAsh} Soul Ash`]);
+    this.balanceEl = el('div', { class: 'soul-ash-balance' }, [el('span', { html: iconSvg('luck', 18) }), `${meta.soulAsh} ${t('currency.soulAsh', 'Soul Ash')}`]);
     this.listEl = el('div', { class: 'button-column' });
 
     const tabRow = el('div', { class: 'tab-row' }, [
-      el('button', { class: this.mode === 'upgrades' ? 'active' : '', onClick: () => this.switchMode('upgrades') }, ['Upgrades']),
-      el('button', { class: this.mode === 'armory' ? 'active' : '', onClick: () => this.switchMode('armory') }, ['Armory']),
+      el('button', { class: this.mode === 'upgrades' ? 'active' : '', onClick: () => this.switchMode('upgrades') }, [t('menu.upgrades', 'Upgrades')]),
+      el('button', { class: this.mode === 'armory' ? 'active' : '', onClick: () => this.switchMode('armory') }, [t('menu.armory', 'Armory')]),
     ]);
 
     const panel = el('div', { class: 'screen-panel wide panel pop-in' }, [
-      el('div', { class: 'screen-title' }, [this.mode === 'upgrades' ? 'Permanent Upgrades' : 'Armory']),
+      el('div', { class: 'screen-title' }, [this.mode === 'upgrades' ? t('meta.permanentUpgrades', 'Permanent Upgrades') : t('menu.armory', 'Armory')]),
       el('div', { class: 'screen-subtitle' }, [
         this.mode === 'upgrades'
-          ? 'Spend Soul Ash gathered across fallen runs to strengthen every Warden to come.'
-          : 'Unlock new weapons, abilities, and threats that persist across every run.',
+          ? t('meta.upgradesSubtitle', 'Spend Soul Ash gathered across fallen runs to strengthen every Warden to come.')
+          : t('meta.armorySubtitle', 'Unlock new weapons, abilities, and threats that persist across every run.'),
       ]),
       this.balanceEl,
       tabRow,
       this.listEl,
-      el('div', { class: 'button-row' }, [el('button', { class: 'btn primary', onClick: this.callbacks.onClose }, ['Back'])]),
+      el('div', { class: 'button-row' }, [el('button', { class: 'btn primary', onClick: this.callbacks.onClose }, [t('pause.back', 'Back')])]),
     ]);
     this.root.appendChild(panel);
     this.renderList();
@@ -77,14 +78,19 @@ export class MetaProgressionMenu {
         const pips = Array.from({ length: def.maxLevel }, (_, i) =>
           el('div', { class: 'pip' + (i < level ? ' filled' : '') })
         );
-        const buyLabel = locked ? 'Locked' : cost === null ? 'Max' : `${cost}`;
+        const buyLabel = locked ? t('meta.locked', 'Locked') : cost === null ? t('meta.max', 'Max') : `${cost}`;
         const canBuy = !locked && meta.canPurchasePermanent(def.id);
+        const requiredDef = PERMANENT_UPGRADES.find((p) => p.id === def.requires);
         this.listEl.appendChild(
           el('div', { class: 'meta-node' }, [
             el('div', { class: 'icon-badge', html: iconSvg(def.icon, 20) }),
             el('div', { class: 'meta-info' }, [
-              el('div', { class: 'meta-name' }, [def.name]),
-              el('div', { class: 'meta-desc' }, [locked ? `Requires ${PERMANENT_UPGRADES.find((p) => p.id === def.requires)?.name}` : def.description]),
+              el('div', { class: 'meta-name' }, [tc(def.id, 'name', def.name)]),
+              el('div', { class: 'meta-desc' }, [
+                locked && requiredDef
+                  ? t('meta.requiresFormat', 'Requires {name}').replace('{name}', tc(requiredDef.id, 'name', requiredDef.name))
+                  : tc(def.id, 'description', def.description),
+              ]),
               el('div', { class: 'meta-levels' }, pips),
             ]),
             el('button', {
@@ -106,14 +112,20 @@ export class MetaProgressionMenu {
       for (const def of UNLOCKS) {
         const unlocked = meta.isUnlocked(def.id);
         const canBuy = meta.canPurchaseUnlock(def.id);
-        let detail = def.description;
-        if (def.kind === 'weapon') detail = getWeaponDefinition(def.refId).description;
-        if (def.kind === 'ability') detail = getAbilityDefinition(def.refId).description;
+        let detail = tc(def.id, 'description', def.description);
+        if (def.kind === 'weapon') {
+          const weaponDef = getWeaponDefinition(def.refId);
+          detail = tc(weaponDef.id, 'description', weaponDef.description);
+        }
+        if (def.kind === 'ability') {
+          const abilityDef = getAbilityDefinition(def.refId);
+          detail = tc(abilityDef.id, 'description', abilityDef.description);
+        }
         this.listEl.appendChild(
           el('div', { class: 'meta-node' }, [
             el('div', { class: 'icon-badge', html: iconSvg(UNLOCK_ICON[def.kind], 20) }),
             el('div', { class: 'meta-info' }, [
-              el('div', { class: 'meta-name' }, [def.name]),
+              el('div', { class: 'meta-name' }, [tc(def.id, 'name', def.name)]),
               el('div', { class: 'meta-desc' }, [detail]),
             ]),
             el('button', {
@@ -127,7 +139,7 @@ export class MetaProgressionMenu {
                   playSfx('shopError');
                 }
               },
-            }, [unlocked ? 'Unlocked' : `${def.cost}`]),
+            }, [unlocked ? t('meta.unlocked', 'Unlocked') : `${def.cost}`]),
           ])
         );
       }

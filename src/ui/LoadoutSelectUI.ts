@@ -2,6 +2,7 @@ import { el, clear } from '@/ui/dom';
 import { iconSvg } from '@/ui/icons';
 import { WEAPONS } from '@/data/weapons';
 import { ABILITIES } from '@/data/abilities';
+import { t, tc } from '@/i18n';
 
 export interface LoadoutCallbacks {
   onConfirm: (weaponId: string, abilityId: string) => void;
@@ -21,13 +22,13 @@ export class LoadoutSelectUI {
 
     this.weaponRow = el('div', { class: 'card-grid' });
     this.abilityRow = el('div', { class: 'card-grid' });
-    this.confirmBtn = el('button', { class: 'btn primary', onClick: () => callbacks.onConfirm(this.weaponId, this.abilityId) }, ['Begin']) as HTMLButtonElement;
+    this.confirmBtn = el('button', { class: 'btn primary', onClick: () => callbacks.onConfirm(this.weaponId, this.abilityId) }, [t('loadout.begin', 'Begin')]) as HTMLButtonElement;
 
     const panel = el('div', { class: 'screen-panel wide panel pop-in' }, [
-      el('div', { class: 'screen-title' }, ['Choose Your Loadout']),
-      el('div', { class: 'screen-subtitle' }, ['Weapon']),
+      el('div', { class: 'screen-title' }, [t('loadout.title', 'Choose Your Loadout')]),
+      el('div', { class: 'screen-subtitle' }, [t('loadout.weapon', 'Weapon')]),
       this.weaponRow,
-      el('div', { class: 'screen-subtitle' }, ['Ability']),
+      el('div', { class: 'screen-subtitle' }, [t('loadout.ability', 'Ability')]),
       this.abilityRow,
       el('div', { class: 'button-row' }, [this.confirmBtn]),
     ]);
@@ -54,8 +55,8 @@ export class LoadoutSelectUI {
         },
         [
           el('div', { class: 'icon-badge', html: iconSvg('blade', 22) }),
-          el('div', { class: 'card-name' }, [def.name]),
-          el('div', { class: 'card-desc' }, [def.description]),
+          el('div', { class: 'card-name' }, [tc(def.id, 'name', def.name)]),
+          el('div', { class: 'card-desc' }, [tc(def.id, 'description', def.description)]),
         ]
       );
       this.weaponRow.appendChild(card);
@@ -77,8 +78,8 @@ export class LoadoutSelectUI {
         },
         [
           el('div', { class: 'icon-badge', html: iconSvg('ability', 22) }),
-          el('div', { class: 'card-name' }, [def.name]),
-          el('div', { class: 'card-desc' }, [def.description]),
+          el('div', { class: 'card-name' }, [tc(def.id, 'name', def.name)]),
+          el('div', { class: 'card-desc' }, [tc(def.id, 'description', def.description)]),
         ]
       );
       this.abilityRow.appendChild(card);

@@ -86,8 +86,8 @@ Base stats: 100 HP, 0.4 HP/s regen, 190 move speed, 5% crit chance, 1.5× crit d
 | Ember Devourer | Elite | 230 | 22 | 145 | Hybrid melee/ranged, appears in elite/heart rooms |
 | Cinder Wraith *(unlockable)* | Ranged/phasing | 36 | 12 | 155 | Vanish-and-reposition ranged attacker |
 | Blightbloat *(Hollow Ruins)* | Bloat | 30 | 18 | 82 | Plants itself in reach, swells for 0.85s, then bursts (96 radius) and leaves a lingering **spore cloud** (84 radius, 5s DoT). Killed early it still ruptures into a smaller cloud — *where* it dies matters. A crit during the swell staggers it. |
-| Hollow Warden *(Hollow Ruins)* | Warden | 88 | 19 | 92 | Door-sized stone shield turns aside 85% of damage inside its frontal ±66° arc (no knockback/stagger/burn); turns at only 2.3 rad/s so circling works; bashes along its facing (540 px/s lunge, telegraphed as a lane), then its guard drops for 1.4s — the punish window. |
-| **The Sunken Warden** *(champion)* | Warden | 290 | 23 | 104 | Level 2's conclusion. Phase 1: the shield line above, wider arc. At 50% HP the shield **shatters** (hard stagger, two Blightbloats crawl out of the flanks), and phase 2 is a faster double bash that leaves a spore cloud where it lands. Gets the boss HP bar. |
+| Hollow Warden *(Hollow Ruins)* | Warden | 88 | 19 | 92 | Door-sized stone shield turns aside 85% of damage inside its frontal ±66° arc (no knockback/stagger/burn); turns at 3.1 rad/s while hunting an angle (fast enough to actually catch up to a circling player, with a light lead on their velocity so holding a steady orbit no longer stalls it indefinitely), engages its bash from 195px; bashes along its facing (540 px/s lunge, telegraphed as a lane — the *committed* turn during windup/bash is throttled back to its original, pre-rework rate so a sidestep still beats it), then its guard drops for 1.4s — the punish window. |
+| **The Sunken Warden** *(champion)* | Warden | 290 | 23 | 104 | Level 2's conclusion. Phase 1: the shield line above (turns at 2.7 rad/s, engages from 235px), wider arc. At 50% HP the shield **shatters** (hard stagger, two Blightbloats crawl out of the flanks), and phase 2 is a faster double bash that leaves a spore cloud where it lands. Gets the boss HP bar. |
 
 All values are base; see §9 for zone/time scaling. Every enemy can be spawned as an **elite instance** (empowered ×2.1 HP / ×1.35 damage, named `Empowered <Name>`) in elite rooms, or as a **zone heart guardian** (×3.2 HP / ×1.5 damage) at the end of zone 1. Zone 2's heart guardian is instead a purpose-built **champion** (The Sunken Warden) whose numbers are authored for the role — it only takes the zone/time scaling, not the ×3.2 promotion.
 
@@ -99,9 +99,11 @@ The two Level 2 archetypes were designed around *new situations* rather than big
 
 | Weapon | Type | Damage | Cooldown | Stamina | Notes | Unlock |
 |---|---|---|---|---|---|---|
-| Ember Blade | Melee | 16 | 0.45s | 10 | Balanced, wide-ish arc | Default |
+| Ember Blade | Melee | 22 | 0.45s | 10 | Balanced, wide-ish arc | Default |
 | Void Scythe | Melee | 34 | 0.85s | 10 | Slow, huge arc, +8% crit | 150 Soul Ash |
 | Solar Spear | Ranged | 14 | 0.55s | 10 | Pierces 2 targets | 220 Soul Ash |
+
+Ember Blade's base damage was raised from 16 to 22 (the low end of the requested 22–23 range) after checking hits-to-kill across the roster: at 22, Hollow (68 HP) still takes 4 clean hits rather than collapsing to 3 the way 23 would, keeping Level 1's first real "tank" fight from feeling trivial, while Flame Wisp (22 HP) becomes a clean one-hit-kill and the bigger HP pools (Ember Devourer, the two Wardens, the Colossus) land on sensible double-digit hit counts rather than the sponge counts 16 produced.
 
 ### Abilities (3)
 
@@ -123,7 +125,7 @@ Void Scythe (weapon), Solar Spear (weapon), Stormstep (ability), Warding Sigil (
 
 ## 8. Upgrades, Rarities & Synergies
 
-24 in-run upgrades across 5 rarities (weights: Common 40, Uncommon 30, Rare 18, Epic 9, Legendary 3 — biased upward by `rarityLuck` via an exponential roll transform). Legendary upgrades are gated behind the **Ember Sight** unlock so they never appear for a save that hasn't earned them.
+25 in-run upgrades across 5 rarities (weights: Common 40, Uncommon 30, Rare 18, Epic 9, Legendary 3 — biased upward by `rarityLuck` via an exponential roll transform). Legendary upgrades are gated behind the **Ember Sight** unlock so they never appear for a save that hasn't earned them.
 
 ### Synergies (5)
 
@@ -199,3 +201,15 @@ Zones 1 and 2 end in a **heart room** rather than a boss: a guardian fight, then
 ## 13. Replayability
 
 Every run varies via: seeded-but-different room graphs, randomized room-type placement, randomized enemy composition per room, a shuffled upgrade pool (with luck bias), randomized shop offers, one of five events per encounter, and — once far enough into meta-progression — a different weapon/ability loadout choice at the start of the run. The seed is displayed at the end of every run for reproducibility (bug reports, sharing an unusually good/bad layout).
+
+## 14. Localization
+
+The game ships fully in French (the default language) with English also selectable from Settings — a change there persists to the save and reloads the page so every already-built screen picks up the new locale (text is baked into DOM nodes at construction time throughout the UI layer, not reactive, so a fresh load is the simplest way to guarantee nothing is left stale).
+
+`src/i18n/index.ts` exposes two lookup functions, both falling back to the English text passed at the call site if a key is missing (so a partially-translated future language degrades gracefully instead of showing blanks):
+- `t(key, fallbackEn)` — flat semantic keys for UI chrome (menus, HUD labels, buttons, toasts, onboarding hints, settings).
+- `tc(id, field, fallbackEn)` — data-driven content (enemies, weapons, abilities, upgrades, permanent upgrades, zones, unlocks, synergies, world events and their options), looked up by the object's own existing stable `id` plus a field name (`'name'`, `'description'`, `'title'`, `'subtitle'`, `'label'`, `'detail'`) — no changes needed to any `src/data/*.ts` file's structure, the English strings already there simply double as the fallback.
+
+`src/i18n/fr.ts` holds the French dictionary (`FR_UI` and `FR_CONTENT`). Adding a further language later means adding one more sibling file with the same two shapes and a branch in `t`/`tc` — the data files and every call site stay untouched.
+
+"Ember" is kept untranslated everywhere — it's the game's central lore proper noun (Ember Blade, Ember Burst, Ember Sight, Ember Citadel, the Embers currency...), not an ordinary word, the same way an invented in-fiction term usually survives a localization intact rather than being translated per-occurrence. "Soul Ash" becomes "Cendre d'Âme" throughout. "Run" and "Build" (as in a character's collected upgrades) are kept as the common French roguelite-community loanwords they already are ("cette run", "ton build") rather than forced into an awkward literal translation.
