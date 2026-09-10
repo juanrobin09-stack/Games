@@ -7,71 +7,81 @@ kept/improved/rebuilt, the recommended architecture, and the complete
 [`GODOT_MIGRATION.md`](../GODOT_MIGRATION.md) at the repo root. Read that
 first; this file only tracks what's actually been built here so far.
 
-## Status: build-order step 3 of 12 — core entities
+## Status: build-order step 4 of 12 — combat, AI, status effects
 
 **Important caveat:** this project was authored without access to the
 Godot editor or engine binary — this environment doesn't have Godot
 installed, so most of it has not been opened, run, or validated by the
-actual engine. **Steps 1-2 have been confirmed working** by the user
-running them in their own Godot 4.3 editor — the smoke-test scene's exact
-expected output (all 5 Autoloads, every `.tres` count matching) was
-reproduced live. **Step 3 below has NOT yet had that same live
-confirmation** — written carefully against known-stable Godot 4.3 syntax,
-but treat it as unverified until you run it. If anything fails to parse
-or run, report the exact error.
+actual engine. **Steps 1-3 have been confirmed working** by the user
+running them in their own Godot 4.3 editor, including live debugging of
+two real issues this session surfaced and fixed (a null-guard gap in
+`weapon()`/`ability()`, and a debug-label layout overlap). **Step 4 below
+has NOT yet had that same live confirmation** — treat it as unverified
+until you run it and report back. If anything fails to parse or run,
+report the exact error; this is by far the largest single step so far, so
+expect a real chance of something needing a fix.
 
-### Steps 1-2 — scaffold, Autoloads, data as Resources (confirmed working)
+### Steps 1-3 — scaffold, data as Resources, core entities (confirmed working)
 
-5 Autoloads (`DataRegistry`, `GameState`, `RunState`, `MetaProgression`,
-`CombatManager`) and 80 `.tres` Resource files across 10 content
-categories (11 enemies, 4 weapons, 3 abilities, 28 upgrades, 3 zones, 7
-world events, 11 permanent upgrades, 6 unlocks, 5 synergies, 2 status
-effects), all verified against a direct read of `src/data/*.ts` — not
-memory. Full detail on what's real vs. stubbed in each Autoload, and the
-two new-for-Godot architectures (`StatusEffectDefinition`/
-`TriggeredEffect` from `GODOT_MIGRATION.md` §7), is in the git history for
-this file — see the step-1 and step-2 commits, or `GODOT_MIGRATION.md`
-itself for the architecture.
+5 Autoloads, 80 `.tres` Resource files across 10 content categories, and
+Player/Enemy/Boss as `CharacterBody2D` entities with real movement/
+stamina/dodge/cooldown gating. Full detail in git history — see the
+step-1/2/3 commits, or `GODOT_MIGRATION.md` for the architecture.
 
-### Step 3 — core entities (just added, unverified)
+### Step 4 — combat pipeline, enemy AI, status-effect runtime (just added, unverified)
 
-`entities/` holds three `CharacterBody2D` scenes:
+The biggest step yet. Every number below was read directly from
+`CombatSystem.ts`/`EnemyAI.ts`/`Enemy.ts`/`Projectile.ts` this session —
+not approximated.
 
 | File | Ports | State |
 |---|---|---|
-| `player.gd` + `player.tscn` | `entities/Player.ts` | Movement, stamina/energy/HP resources and their regen formulas, M1/dodge/ability cooldown gating, invulnerability, `take_damage`/`heal` — all ported field-for-field and formula-for-formula from a direct read of the source. Raw mouse+WASD input read directly in-script (see the file's own header comment for why this skips project.godot's InputMap for now — a deliberate, easily-reversed step-3 simplification, not a shortcut that boxes in later steps). **Not** ported yet, on purpose: `recomputeStats()`/`addUpgrade()`/synergies — there are no owned upgrades to recompute from until progression lands (step 6), so `stats` sits at `StatBlock.fresh()`. |
-| `enemy.gd` + `enemy.tscn` | `entities/Enemy.ts` | The data shell — HP, knockback, difficulty multipliers, the `setup(def, pos, hp_mult, damage_mult)` constructor-equivalent — reused for all 11 `EnemyDefinition`s exactly like the Web build's one `Enemy` class. `state` exists as a field but nothing transitions it: real AI (the 6 behavior-dispatch functions) is step 4. Burn/status-effect fields are deliberately absent here too — they arrive with the real status-effect runtime in step 4, not half-wired now. |
-| `boss.gd` + `boss.tscn` | `entities/Boss.ts` | Extends `enemy.gd` (mirrors the Web class hierarchy). Phase/boss-state fields exist as placeholders; the real phase FSM (5 attack types, meteor rain, phase transitions) is step 4. |
+| `autoload/combat_manager.gd` | `combat/CombatSystem.ts` | The real damage pipeline: `damage_player_to_enemy`/`damage_enemy_to_player` (crit rolls, the warden frontal-shield block, knockback, lifesteal, crit-interrupt-to-stagger), `perform_melee_attack` (the player's own M1, instant-arc hit check), contact damage, warden bash hits, Bloat detonation, the champion shield-break beat (spawns its 2 Blightbloat reinforcements) |
+| `combat/enemy_ai.gd` | `ai/EnemyAI.ts` | All 6 behavior state machines verbatim — melee-like (chaser/tank/heavy), ranged, stalker, elite (hybrid melee/ranged by distance), bloat, and the full warden (shield/bash/exposed-window, plus the champion's flat-50%-HP phase break and faster double-bash) |
+| `combat/status_effect_instance.gd` + `status_effect_runtime.gd` | New for Godot, §7 | The real runtime this session's architecture work was building toward: `apply()`/`process()` shared by both Player and Enemy, ticking damage through `CombatManager`. Burn now genuinely procs off player hits (`burn_chance` roll → applies the real `StatusEffectDefinition`) |
+| `entities/projectile.gd` + `.tscn` | `entities/Projectile.ts` | Self-contained `Area2D` — checks its own overlap against the `enemies`/`player` groups every physics tick, pierce-dedups via `register_hit`, expires on lifetime or first non-piercing hit |
+| `entities/player.gd`, `enemy.gd` | — | Wired to the above: `start_attack()` now calls `perform_melee_attack`; `EnemyCharacter` gained `ai_velocity` (kept deliberately separate from `knockback_velocity` — see the file's own header comment for why merging them would be a real bug), the warden/bloat/champion state fields, and a debug HP/state-name label drawn above each enemy |
 
-All three currently draw a flat placeholder circle via `_draw()`
-(`draw_circle`/`draw_line` — no art, no `AnimatedSprite2D` yet, that's
-step 7) sized and colored from real data (`def.radius`/`def.color` for
-enemies; a fixed placeholder tone for the player, whose actual radius —
-15, from `Player.ts` — is real).
+**Deferred this pass, on purpose** (see `combat_manager.gd`'s and
+`enemy_ai.gd`'s own header comments for the full list): synergies
+(depend on the upgrade-ownership system, step 6), abilities' actual
+effects and ranged/projectile weapon firing (weapon-behavior execution,
+step 5), damage numbers/particles/camera shake/SFX (step 8/9), hazards —
+lingering spore clouds (Bloat and the champion still deal their direct-hit
+damage, just not the cloud that's supposed to follow), and enemy-crowd
+separation (`applyEnemySeparation` — cosmetic, wants a spatial grid this
+project doesn't have yet). One function, `resolve_melee_land`, is *not* a
+byte-exact port — the Web build's own callback body wasn't in the portion
+of `Game.ts` read this session, so it's implemented from the same
+"did-you-stay-in-the-blast" principle every other telegraphed-hit check
+here already uses verbatim; flagged in its own comment.
 
-`scenes/main/main.tscn`/`main.gd` now does two things on run: prints the
-step-1/2 diagnostic readout (Autoloads + `.tres` counts), and spawns a
-playground — one Player at the origin plus 6 representative enemies
-(one per behavior family) and the Ashen Colossus placeholder arranged
-around it, all built from real `DataRegistry` lookups, not hardcoded
-stand-ins. **This is not a real level** — no walls, no Room system (that's
-step 6) — just open space to confirm movement/stamina/dodge/cooldown
-actually feel right before anything else gets built on top.
+`scenes/main/`'s playground now spawns one enemy per behavior family
+(Ash Crawler/Flame Wisp/Shadow Stalker/Hollow Warden/Blightbloat/Ember
+Devourer) instead of a less-representative sample, so every dispatch path
+in `enemy_ai.gd` actually gets exercised. The live debug panel now also
+shows the nearest enemy's name/distance/state/HP.
 
-**How to test it:** run the project. WASD/arrows move, the mouse aims
-(watch the white line on the player circle track it), left click attacks
-(cooldown- and stamina-gated — you'll feel it deny a swing under 10
-stamina — but deals no real damage yet, that's step 4), space dodges (a
-brief fast burst with a short i-frame-equivalent window, though nothing
-can hit you yet to prove that), right click channels the ability once
-energy is full. Confirm movement has the eased, not-instant accel/decel
-feel described in `GODOT_MIGRATION.md`'s Player section, and that stamina
-genuinely stops attacks/dodges when it runs out rather than just visually
-draining.
+**How to test it:** run the project. Approach the Ash Crawler and left-click
+— its HP text (drawn above its head) should drop, and its state should
+cycle chase → windup → attack → cooldown → chase. Watch the Hollow Warden:
+it should circle to face you before bashing, then sit exposed (guard
+down, a visible arc no longer drawn) for a beat afterward — hit it during
+that window versus while the arc is showing and compare the damage
+(should be ~15% while shielded). The Flame Wisp should hold distance and
+fire bolts rather than closing in. The Blightbloat should walk up, plant,
+swell, and detonate — check its HP hits 0 and it disappears. Take a few
+hits and confirm your own HP in the live panel actually drops (contact
+damage, bolts, bashes). None of this has been confirmed working yet —
+report exactly what you see, including anything that looks wrong or any
+error text in the Output panel.
 
 ### Next steps (not started)
 
-Per `GODOT_MIGRATION.md` §5: the real combat/AI/status-effect runtime
-(step 4) — the damage pipeline in `CombatManager`, the 6 enemy behavior
-state machines, and the `StatusEffectInstance` runtime component from §7 —
-then the weapon-behavior Strategy split from §8 (step 5).
+Per `GODOT_MIGRATION.md` §5: the weapon-behavior Strategy split from §8
+(step 5) — `WeaponBehavior` per attack archetype (`MeleeArc`,
+`ProjectileShot`), so the Bow/Solar Spear can actually fire, replacing
+`player.gd`'s current "melee only" shortcut — then progression (step 6):
+XP/Level, the in-run upgrade pool, and the permanent Soul Ash tree, which
+is also when synergies and the deferred ability effects become meaningful
+to wire up.

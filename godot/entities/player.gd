@@ -73,6 +73,11 @@ var facing: float = 0.0
 var run_time: float = 0.0
 var perfect_dodge_timer: float = 0.0
 
+## No status effect currently ever targets the player (only enemies can be
+## burned/bled today) — present for symmetry so StatusEffectRuntime can
+## treat Player and Enemy identically, not because anything applies one yet.
+var status_effects: Array = []
+
 @export var body_color: Color = Color("#e0c9a6")
 
 ## Null-guarded and loud on failure (push_error, once per distinct missing
@@ -138,6 +143,12 @@ func start_attack() -> void:
 	anim_time = 0.0
 	stamina = maxf(0.0, stamina - w.stamina_cost)
 	stamina_regen_delay_timer = STAMINA_REGEN_DELAY
+	# The hit check runs once, instantly, right as the swing starts — not
+	# delayed to when the swing animation completes. Melee only for now;
+	# a ranged weapon's own fire behavior is build-order step 5 (the
+	# WeaponBehavior Strategy split), not something to half-wire here.
+	if w.kind == WeaponDefinition.Kind.MELEE:
+		CombatManager.perform_melee_attack(self)
 
 func start_dodge(dir: Vector2) -> void:
 	is_dodging = true
@@ -187,6 +198,7 @@ func heal(amount: float) -> void:
 	hp_changed.emit(hp, stats.max_hp)
 
 func _ready() -> void:
+	add_to_group("player")
 	hp = stats.max_hp
 	energy = stats.energy_max
 	stamina = stats.stamina_max
@@ -198,6 +210,7 @@ func _physics_process(delta: float) -> void:
 	_read_input()
 	_update_state(delta)
 	move_and_slide()
+	StatusEffectRuntime.process(self, delta)
 	queue_redraw()
 
 func _read_input() -> void:
