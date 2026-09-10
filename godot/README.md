@@ -3,94 +3,75 @@
 This is the Godot-side counterpart to the Web prototype in `src/` at the
 repo root. Full context — what exists in the Web build, what should be
 kept/improved/rebuilt, the recommended architecture, and the complete
-12-step build order this scaffold is following — lives in
+12-step build order this project is following — lives in
 [`GODOT_MIGRATION.md`](../GODOT_MIGRATION.md) at the repo root. Read that
 first; this file only tracks what's actually been built here so far.
 
-## Status: build-order step 2 of 12 — data as Resources
+## Status: build-order step 3 of 12 — core entities
 
 **Important caveat:** this project was authored without access to the
 Godot editor or engine binary — this environment doesn't have Godot
 installed, so most of it has not been opened, run, or validated by the
-actual engine. **Step 1 (the scaffold + 4 core Autoloads) has been
-confirmed working** by the user running it in their own Godot 4.3 editor —
-the smoke-test scene's exact expected output was reproduced live. **Step
-2's new content below has NOT yet had that same live confirmation** — it
-was written carefully against known-stable Godot 4.3 syntax and
-cross-checked internally (see below), but treat it as unverified until you
-run it. If anything fails to parse or run, report the exact error.
+actual engine. **Steps 1-2 have been confirmed working** by the user
+running them in their own Godot 4.3 editor — the smoke-test scene's exact
+expected output (all 5 Autoloads, every `.tres` count matching) was
+reproduced live. **Step 3 below has NOT yet had that same live
+confirmation** — written carefully against known-stable Godot 4.3 syntax,
+but treat it as unverified until you run it. If anything fails to parse
+or run, report the exact error.
 
-### Step 1 — project scaffold + Autoloads (confirmed working)
+### Steps 1-2 — scaffold, Autoloads, data as Resources (confirmed working)
+
+5 Autoloads (`DataRegistry`, `GameState`, `RunState`, `MetaProgression`,
+`CombatManager`) and 80 `.tres` Resource files across 10 content
+categories (11 enemies, 4 weapons, 3 abilities, 28 upgrades, 3 zones, 7
+world events, 11 permanent upgrades, 6 unlocks, 5 synergies, 2 status
+effects), all verified against a direct read of `src/data/*.ts` — not
+memory. Full detail on what's real vs. stubbed in each Autoload, and the
+two new-for-Godot architectures (`StatusEffectDefinition`/
+`TriggeredEffect` from `GODOT_MIGRATION.md` §7), is in the git history for
+this file — see the step-1 and step-2 commits, or `GODOT_MIGRATION.md`
+itself for the architecture.
+
+### Step 3 — core entities (just added, unverified)
+
+`entities/` holds three `CharacterBody2D` scenes:
 
 | File | Ports | State |
 |---|---|---|
-| `project.godot` | — | Godot 4.3 project file, 5 Autoloads registered, `scenes/main/main.tscn` as the run scene |
-| `autoload/game_state.gd` | `core/GameState.ts` | Complete — stack-based state machine (11 states), `is_simulating()` gives EVENT/SHOP real exclusive states instead of the Web build's implicit modal-flag gap |
-| `autoload/run_state.gd` | `progression/RunState.ts` | Partial — seed/zone/room fields, and the Player-Level/XP math (`grant_xp`, the rolling XP-to-next-level curve, `corruption_ratio`) are real and working. `advance_zone`/`retreat_zone`/`spend_stat_point`'s lock-checking are stubs — they need Room/LevelGenerator (step 6) and weapon/zone-unlock state (step 3+) respectively |
-| `autoload/meta_progression.gd` | `progression/MetaProgression.ts` + `SaveSystem.ts` | **Complete and functional** — real `user://save.json` read/write with the same per-field validate-and-fall-back-to-default pattern as the Web build |
-| `autoload/combat_manager.gd` | `combat/CombatSystem.ts` | Stub — signal surface is wired, plus one working formula (`difficulty_factors`). The actual damage pipeline needs Player/Enemy nodes (step 4) |
+| `player.gd` + `player.tscn` | `entities/Player.ts` | Movement, stamina/energy/HP resources and their regen formulas, M1/dodge/ability cooldown gating, invulnerability, `take_damage`/`heal` — all ported field-for-field and formula-for-formula from a direct read of the source. Raw mouse+WASD input read directly in-script (see the file's own header comment for why this skips project.godot's InputMap for now — a deliberate, easily-reversed step-3 simplification, not a shortcut that boxes in later steps). **Not** ported yet, on purpose: `recomputeStats()`/`addUpgrade()`/synergies — there are no owned upgrades to recompute from until progression lands (step 6), so `stats` sits at `StatBlock.fresh()`. |
+| `enemy.gd` + `enemy.tscn` | `entities/Enemy.ts` | The data shell — HP, knockback, difficulty multipliers, the `setup(def, pos, hp_mult, damage_mult)` constructor-equivalent — reused for all 11 `EnemyDefinition`s exactly like the Web build's one `Enemy` class. `state` exists as a field but nothing transitions it: real AI (the 6 behavior-dispatch functions) is step 4. Burn/status-effect fields are deliberately absent here too — they arrive with the real status-effect runtime in step 4, not half-wired now. |
+| `boss.gd` + `boss.tscn` | `entities/Boss.ts` | Extends `enemy.gd` (mirrors the Web class hierarchy). Phase/boss-state fields exist as placeholders; the real phase FSM (5 attack types, meteor rain, phase transitions) is step 4. |
 
-### Step 2 — data as Resources (just added, unverified)
+All three currently draw a flat placeholder circle via `_draw()`
+(`draw_circle`/`draw_line` — no art, no `AnimatedSprite2D` yet, that's
+step 7) sized and colored from real data (`def.radius`/`def.color` for
+enemies; a fixed placeholder tone for the player, whose actual radius —
+15, from `Player.ts` — is real).
 
-`resources/definitions/` holds 15 Resource class scripts: the 9 content
-types from `data/types.ts` (`EnemyDefinition`, `WeaponDefinition`,
-`AbilityDefinition`, `UpgradeDefinition`, `ZoneDefinition` + `ZoneMaterial`,
-`WorldEventDefinition` + `EventOption`, `PermanentUpgradeDefinition`,
-`UnlockDefinition`, `SynergyDefinition`), `StatBlock`/`StatModifier` (with
-`apply_modifiers`/`clamp_stats` ported from `data/stats.ts`), and the two
-new-for-Godot architectures from `GODOT_MIGRATION.md` §7 —
-`StatusEffectDefinition` and `TriggeredEffect`. **One design note:**
-`TriggeredEffect` is implemented as a `Resource` here, not the "plain
-struct" GODOT_MIGRATION.md's prose first sketched — it needs to be a
-`Resource` to nest inside another Resource's exported array. Treat the doc
-as superseded by the code on this point.
+`scenes/main/main.tscn`/`main.gd` now does two things on run: prints the
+step-1/2 diagnostic readout (Autoloads + `.tres` counts), and spawns a
+playground — one Player at the origin plus 6 representative enemies
+(one per behavior family) and the Ashen Colossus placeholder arranged
+around it, all built from real `DataRegistry` lookups, not hardcoded
+stand-ins. **This is not a real level** — no walls, no Room system (that's
+step 6) — just open space to confirm movement/stamina/dodge/cooldown
+actually feel right before anything else gets built on top.
 
-`autoload/data_registry.gd` (5th Autoload) scans `resources/<category>/`
-at boot and exposes id-keyed lookups — the Godot equivalent of
-`data/enemies.ts`'s `getEnemyDefinition(id)` and its siblings. The
-smoke-test scene now prints how many `.tres` files it actually loaded per
-category, so a bad file shows up immediately as a count mismatch rather
-than a silent gap.
-
-Every piece of real game content has been converted, verified against a
-direct read of the current `src/data/*.ts` source (not memory, not the
-earlier session documentation — which undercounted world events at 6; it's
-actually 7, corrected here):
-
-| Category | Count | Directory |
-|---|--:|---|
-| Enemies | 11 | `resources/enemies/` |
-| Weapons | 4 | `resources/weapons/` |
-| Abilities | 3 | `resources/abilities/` |
-| In-run upgrades | 28 | `resources/upgrades/` |
-| Zones | 3 | `resources/zones/` |
-| World events | 7 | `resources/events/` |
-| Permanent (Soul Ash) upgrades | 11 | `resources/permanent_upgrades/` |
-| Armory unlocks | 6 | `resources/unlocks/` |
-| Synergies | 5 | `resources/synergies/` |
-| Status effects | 2 | `resources/status_effects/` |
-
-The last row is the one category with no Web equivalent to convert:
-**Burn** is the real, faithfully-ported effect (including a documented
-approximation — see `status_effect_definition.gd`'s `stack_rule` comment —
-of its "a new application only wins if at least as strong" nuance, which a
-plain REFRESH rule doesn't fully capture); **Bleed** is the worked example
-from `GODOT_MIGRATION.md` §7/§12, proving the architecture handles a
-brand-new non-Burn effect. Bleed is inert data — nothing triggers it, by
-design, since the brief was to prepare the architecture, not ship the
-mechanic.
-
-One data nuance worth knowing before it trips anyone up later: the
-`wrath` synergy's `requires` array is `["wrath", "wrath"]` — the same tag
-twice, on purpose. This isn't a typo; `Player.ts`'s `recomputeStats()`
-special-cases a repeated tag to mean "own 2 upgrades carrying it" rather
-than the normal "own 1 upgrade of each of 2 different tags." Documented
-directly on `synergy_definition.gd` so it isn't mistaken for a data bug
-when the real synergy-activation logic ports later.
+**How to test it:** run the project. WASD/arrows move, the mouse aims
+(watch the white line on the player circle track it), left click attacks
+(cooldown- and stamina-gated — you'll feel it deny a swing under 10
+stamina — but deals no real damage yet, that's step 4), space dodges (a
+brief fast burst with a short i-frame-equivalent window, though nothing
+can hit you yet to prove that), right click channels the ability once
+energy is full. Confirm movement has the eased, not-instant accel/decel
+feel described in `GODOT_MIGRATION.md`'s Player section, and that stamina
+genuinely stops attacks/dodges when it runs out rather than just visually
+draining.
 
 ### Next steps (not started)
 
-Per `GODOT_MIGRATION.md` §5: placeholder-visual core entities — Player,
-Enemy (one scene reused for all 11 definitions), Boss (step 3) — then the
-real combat/AI/status-effect runtime (step 4), then the weapon-behavior
-Strategy split from §8 (step 5).
+Per `GODOT_MIGRATION.md` §5: the real combat/AI/status-effect runtime
+(step 4) — the damage pipeline in `CombatManager`, the 6 enemy behavior
+state machines, and the `StatusEffectInstance` runtime component from §7 —
+then the weapon-behavior Strategy split from §8 (step 5).
