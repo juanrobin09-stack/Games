@@ -23,6 +23,11 @@ var state: State = State.CLOSED
 var state_timer: float = 0.0
 var glow_phase: float = 0.0
 
+func _ready() -> void:
+	# Counters RoomContainer's own z_index = -10 (see its own comment) so
+	# the chest doesn't inherit that and vanish behind the room's floor.
+	z_as_relative = false
+
 func setup(pos: Vector2, p_tier: UpgradeDefinition.Rarity) -> void:
 	position = pos
 	tier = p_tier

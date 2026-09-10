@@ -37,6 +37,14 @@ var age: float = 0.0
 var max_lifetime: float = 2.4
 var _hit_ids: Dictionary = {}
 
+func _ready() -> void:
+	# An enemy-fired bolt is parented under that enemy's RoomContainer
+	# (z_index = -10, so its floor rect draws behind the player — see that
+	# class's own comment); counter it back to 0 or the bolt is invisible.
+	# A player-fired bolt is parented under Main (z_index 0) and is
+	# unaffected either way.
+	z_as_relative = false
+
 func setup(spawn_pos: Vector2, p_angle: float, p_speed: float, p_damage: float, p_radius: float) -> void:
 	global_position = spawn_pos
 	angle = p_angle

@@ -87,6 +87,14 @@ func init_grid(gx: int, gy: int, p_type: Type) -> void:
 	grid_y = gy
 	type = p_type
 	key = "%d,%d" % [gx, gy]
+	# Every RoomContainer is a sibling of Player/DebugLabel/LiveLabel under
+	# Main, added AFTER them (LevelFlow.start_new_run runs post-spawn) — 2D
+	# canvas siblings draw in add-order, so without this, _draw()'s own
+	# opaque floor rect (below) would paint over the player and every debug
+	# label the instant a room activates. Obstacle/Chest/Pickup counter
+	# this back to z_index 0 in their own _ready() so they don't inherit
+	# it and vanish behind the floor themselves.
+	z_index = -10
 	set_active(false)
 
 ## Warden shield-bearer, elite, heart guardian and boss rooms lock their

@@ -48,6 +48,9 @@ func setup(pos: Vector2, p_radius: float, p_visual: Visual, opts: Dictionary = {
 	_apply_shape()
 
 func _ready() -> void:
+	# Counters RoomContainer's own z_index = -10 (its floor rect needs to sit
+	# behind the player; obstacles shouldn't inherit that and vanish behind it).
+	z_as_relative = false
 	_apply_shape()
 
 func _apply_shape() -> void:

@@ -26,6 +26,11 @@ var velocity := Vector2.ZERO
 var settle_timer: float = 0.25
 var magnet_speed: float = 0.0
 
+func _ready() -> void:
+	# Counters RoomContainer's own z_index = -10 (see its own comment) so
+	# the pickup doesn't inherit that and vanish behind the room's floor.
+	z_as_relative = false
+
 func setup(p_kind: Kind, pos: Vector2, p_value: float, pop_angle: float = randf() * TAU) -> void:
 	kind = p_kind
 	position = pos

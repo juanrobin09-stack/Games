@@ -124,6 +124,11 @@ func apply_knockback(dir: Vector2, force: float) -> void:
 
 func _ready() -> void:
 	add_to_group("enemies")
+	# Enemies are children of their RoomContainer (build-order step 6),
+	# which sits at z_index = -10 so its own floor rect draws behind the
+	# player — counter that back to 0 or every enemy would be invisible
+	# behind that same floor.
+	z_as_relative = false
 	_apply_shape()
 
 func _apply_shape() -> void:
