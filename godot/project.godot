@@ -1,0 +1,27 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="Emberfall: Last Light"
+config/description="Dark-fantasy top-down action roguelite — Godot rebuild. See GODOT_MIGRATION.md (repo root) for the full transition plan this scaffold implements step 1 of."
+run/main_scene="res://scenes/main/main.tscn"
+config/features=PackedStringArray("4.3", "Forward Plus")
+
+[autoload]
+
+GameState="*res://autoload/game_state.gd"
+RunState="*res://autoload/run_state.gd"
+MetaProgression="*res://autoload/meta_progression.gd"
+CombatManager="*res://autoload/combat_manager.gd"
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
