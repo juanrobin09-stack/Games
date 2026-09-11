@@ -148,6 +148,20 @@ func _make_small_icon(icon_id: String, color: Color) -> HudIcon:
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return icon
 
+## TEMPORARY diagnostic (remove once the "regions besides top-left don't
+## render" bug is confirmed fixed): a loud, impossible-to-miss flat-color
+## background as the first child of a region container, so a screenshot
+## alone shows whether that container is actually positioned/visible on
+## screen at all — regardless of whether ITS OWN children (icons/labels/
+## fills) separately fail to render. Isolates "container never appears"
+## from "container appears but is empty."
+func _debug_marker(parent: Control, color: Color) -> void:
+	var marker := ColorRect.new()
+	marker.color = color
+	marker.set_anchors_preset(Control.PRESET_FULL_RECT)
+	marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(marker)
+
 # ---------------------------------------------------------------- Regions
 
 func _build_top_left() -> void:
@@ -193,6 +207,7 @@ func _build_top_right() -> void:
 	col.offset_right = -14.0
 	col.offset_bottom = 14.0 + 90.0
 	add_child(col)
+	_debug_marker(col, Color.MAGENTA)
 
 	var embers_row := HBoxContainer.new()
 	embers_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -246,6 +261,7 @@ func _build_bottom_left() -> void:
 	row.offset_right = 14.0 + 260.0
 	row.offset_bottom = -16.0
 	add_child(row)
+	_debug_marker(row, Color.CYAN)
 
 	_ability_slot = Control.new()
 	_ability_slot.custom_minimum_size = Vector2(ABILITY_SLOT_SIZE, ABILITY_SLOT_SIZE)
@@ -328,6 +344,7 @@ func _build_bottom_right() -> void:
 	col.offset_right = -14.0
 	col.offset_bottom = -14.0
 	add_child(col)
+	_debug_marker(col, Color.YELLOW)
 
 	var xp := _make_bar_row(col, "", Color.WHITE, Color(Palette.GOLD_BRIGHT))
 	_xp_fill = xp["fill"]
@@ -360,8 +377,10 @@ func _build_interact_prompt() -> void:
 	_interact_label.add_theme_font_size_override("font_size", 15)
 	_interact_label.add_theme_color_override("font_color", Color(Palette.TEXT_WARM))
 	_interact_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_interact_label.visible = false
+	_interact_label.text = "[E] (diagnostic — always shown for now)"
+	_interact_label.visible = true # TEMPORARY: forced on so this region is visible in a screenshot regardless of interaction state; update() still overwrites visible/text every frame once a real interaction exists.
 	add_child(_interact_label)
+	_debug_marker(_interact_label, Color.ORANGE)
 
 # ---------------------------------------------------------------- Update
 
@@ -445,8 +464,10 @@ func update(data: Dictionary) -> void:
 	if prompt != "":
 		_interact_label.text = "[E] %s" % prompt
 		_interact_label.visible = true
-	else:
-		_interact_label.visible = false
+	# TEMPORARY: the "else: _interact_label.visible = false" branch is
+	# disabled while diagnosing the missing-regions bug, so the forced-on
+	# marker from _build_interact_prompt() stays visible through every
+	# update() call for the next screenshot. Restore it once that's fixed.
 
 ## Mirrors Game.ts's private roomTypeLabel.
 static func room_type_label(type: RoomContainer.Type) -> String:
