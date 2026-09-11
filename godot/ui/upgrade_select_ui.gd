@@ -11,8 +11,12 @@ extends Control
 signal chosen(def: UpgradeDefinition)
 
 const CARD_SPACING := 16.0
-const PANEL_HALF_WIDTH := 370.0
-const PANEL_HALF_HEIGHT := 190.0
+## Sized to fit 3 UpgradeCard.CARD_SIZE-wide cards plus 2 gaps plus the
+## panel's own content margin below (3*220 + 2*16 + 2*20 = 732, so 400
+## half-width leaves headroom rather than an exact fit).
+const PANEL_HALF_WIDTH := 400.0
+const PANEL_HALF_HEIGHT := 200.0
+const PANEL_CONTENT_MARGIN := 20.0
 
 ## Spawns the picker as a child of `parent`, pauses the tree, and calls
 ## `on_choose(def)` once the player picks a card — after which the picker
@@ -44,15 +48,34 @@ func _build(choices: Array[UpgradeDefinition], levels: Array[int]) -> void:
 	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(backdrop)
 
+	# Ports the source's own ".screen-panel.wide.panel" — a real background/
+	# border/shadow behind the title+cards, not just the dimmed backdrop
+	# above (originally missed when this screen was first built; UpgradeCard's
+	# own opaque background made the gap easy to miss without a real panel
+	# for comparison, until ShopUI needed the same ".panel" treatment and
+	# the source comparison made the gap obvious).
+	var panel_bg := PanelContainer.new()
+	panel_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel_bg.set_anchors_preset(Control.PRESET_CENTER)
+	panel_bg.offset_left = -PANEL_HALF_WIDTH
+	panel_bg.offset_right = PANEL_HALF_WIDTH
+	panel_bg.offset_top = -PANEL_HALF_HEIGHT
+	panel_bg.offset_bottom = PANEL_HALF_HEIGHT
+	var panel_style := StyleBoxFlat.new()
+	panel_style.bg_color = Color(Palette.PANEL_SOLID)
+	panel_style.border_color = Color(Palette.BORDER)
+	panel_style.set_border_width_all(1)
+	panel_style.set_corner_radius_all(16)
+	panel_style.set_content_margin_all(PANEL_CONTENT_MARGIN)
+	panel_style.shadow_color = Color(0.0, 0.0, 0.0, 0.5)
+	panel_style.shadow_size = 16
+	panel_bg.add_theme_stylebox_override("panel", panel_style)
+	add_child(panel_bg)
+
 	var panel := VBoxContainer.new()
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_theme_constant_override("separation", 16)
-	panel.set_anchors_preset(Control.PRESET_CENTER)
-	panel.offset_left = -PANEL_HALF_WIDTH
-	panel.offset_right = PANEL_HALF_WIDTH
-	panel.offset_top = -PANEL_HALF_HEIGHT
-	panel.offset_bottom = PANEL_HALF_HEIGHT
-	add_child(panel)
+	panel_bg.add_child(panel)
 
 	var title := Label.new()
 	title.text = "A Blessing Awaits"

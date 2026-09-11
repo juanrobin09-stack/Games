@@ -122,6 +122,15 @@ func spend_stat_point(stat_id: String) -> bool:
 	stat_levels[stat_id] = stat_levels.get(stat_id, 0) + 1
 	return true
 
+## Ports RunState.ts's spendEmbers: fails (no mutation) if embers can't
+## cover the cost. The shop's Buy/Heal/Reroll actions are the only callers
+## so far, each already checking this return value before acting further.
+func spend_embers(amount: int) -> bool:
+	if embers < amount:
+		return false
+	embers -= amount
+	return true
+
 func current_layout() -> Dictionary:
 	return layouts.get(zone_index, {})
 

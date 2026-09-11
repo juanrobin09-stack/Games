@@ -234,7 +234,7 @@ about a burst that never appears at all (likely a parent/positioning
 issue) versus one that appears but looks visually wrong (likely a
 color/shape/timing tuning issue in `vfx_presets.gd`).
 
-### Step 9 — UI (in progress: upgrade-ownership system, core HUD, and the room-clear/chest reward flow all landed and confirmed against a real running build)
+### Step 9 — UI (in progress: upgrade-ownership system, core HUD, the room-clear/chest reward flow, and the shop all landed and confirmed against a real running build)
 
 Per `GODOT_MIGRATION.md` §5.
 
@@ -297,25 +297,69 @@ Bow over directly, on top of the room's normal reward — `grantRoomClearReward`
 own logic in the source, never previously ported (masked by
 `main.gd`'s own debug seeding already unlocking every weapon up front).
 
+**4. The shop** — the merchant's wares screen, opened from a shop room's
+landmark:
+
+| File | Ports | State |
+|---|---|---|
+| `ui/shop_ui.gd` | `ui/ShopUI.ts` | Modal like `UpgradeSelectUI`, but stays open across multiple purchases/rerolls instead of tearing down after one pick — mirrors the source's own `render()`/`renderList()` split: every Buy/Sold/Reroll click just rebuilds the offer list rather than closing. Real `Button` nodes for Buy/Reroll/Leave (this screen's first, everything before it used `UpgradeCard`'s own hand-rolled `_gui_input` clicking) with per-instance `StyleBoxFlat` overrides for normal/hover/pressed/disabled — still no shared Theme resource, same convention as every other screen |
+| `autoload/run_state.gd` | `RunState.ts`'s `spendEmbers` | New `spend_embers(amount)` — fails without mutating if embers can't cover it, same shape as the existing `spend_stat_point` |
+| `autoload/level_flow.gd` | `Game.ts`'s `openShopRoom` | New `open_shop_room(room)` builds the 3-upgrade-plus-heal offer list via the already-existing `Shop`/`ShopOffer` and shows it; the shop interact prompt (previously a "deferred to step 9" stub) now calls it for real |
+
+Two real GDScript gotchas hit and fixed while building this, worth keeping
+in mind for `EventUI`/`InventoryUI` next:
+- **`Control`/`CanvasItem` already defines `show()`.** `ShopUI`'s first
+  draft named its static factory `show(parent, offers, ...)`, matching the
+  shape of `UpgradeSelectUI.show_choices`/`RewardPopup.show_reward` — but
+  unlike those two, `show` collides with the built-in 0-argument
+  `CanvasItem.show()`, which Godot treats as an override attempt and
+  refuses to compile (signature mismatch). Renamed to `show_shop`, and
+  every new screen's static factory should keep avoiding bare verbs
+  (`show`/`hide`/`update`/etc.) that `Control`'s own ancestry already owns.
+- **GDScript lambdas capture locals by value, once, at creation** — never
+  by reference, and a captured local can't be reassigned from inside the
+  lambda either (that only rebinds the lambda's own copy). `open_shop_room`
+  needs a `reroll_count` shared and mutated across three sibling lambdas
+  (`make_offers`/`on_reroll`, built once, called many times as the player
+  rerolls); a plain `var reroll_count := 0` would have each lambda capture
+  its own frozen snapshot, so `on_reroll`'s `+= 1` would never be visible
+  to `make_offers`, and every reroll would silently reseed with count 0
+  and return identical offers. Fixed by boxing it in a 1-element Array
+  (`[0]`) instead — arrays are captured by value too, but that value is a
+  reference to the same underlying data, so mutating *contents*
+  (`reroll_count[0] += 1`, never reassigning the variable itself) stays
+  visible across every lambda that captured it. See `open_shop_room`'s own
+  comment for the full write-up.
+
+Building this screen also surfaced (and fixed) a smaller, pre-existing gap
+in `upgrade_select_ui.gd`: the TS source's own `UpgradeSelectUI` uses the
+same `.screen-panel.wide.panel` class `ShopUI.ts` does, which draws a real
+background/border/shadow behind the title and cards — the first Godot pass
+never added that (easy to miss without a real panel elsewhere to compare
+against; `UpgradeCard`'s own opaque background made its absence far less
+obvious). Now wrapped in a `PanelContainer` with the same style as
+`ShopUI`'s own panel.
+
 **Deliberately deferred, not forgotten:** the minimap, the toast/phase-
 banner/synergy-banner system, the boss bar (needs the boss attack-FSM gap
-closed first), both vignettes, `ShopUI`, `EventUI`, and `InventoryUI`. The
-debug/diagnostic panel (`DebugLabel`/`LiveLabel`) still exists, hidden by
+closed first), both vignettes, `EventUI`, and `InventoryUI`. The debug/
+diagnostic panel (`DebugLabel`/`LiveLabel`) still exists, hidden by
 default — toggle with **F1**.
 
 **How to test it:** same as before (HUD live-updating, F1 toggle, opening
-a chest) — that part is now confirmed working via a real screenshot, not
-just believed to. New this pass: clear a non-boss, non-sanctum room (kill
-everything in it) and confirm a 3-card picker appears, pauses the action,
-and picking a card actually changes your stats; clear the Ember Citadel's
-elite den and confirm the Bow unlocks.
+a chest, clearing a room for the 3-card picker) — all confirmed working
+via real screenshots, not just believed to. New this pass: walk up to a
+shop room's merchant stall and press E, confirm the panel opens and pauses
+the action, buy an upgrade or the heal offer and confirm embers deduct and
+the row flips to "Sold", reroll and confirm the offers actually change
+(not just cost embers), and confirm Leave closes it and unpauses.
 
 ### Next steps (not started)
 
-`ShopUI`, `EventUI`, and `InventoryUI` (Character tab for spending stat
-points via the now-real `LevelFlow.spend_stat_point`, Build tab for owned
-upgrades/synergies) — the upgrade-ownership system above was built to
-unblock these too. Then the minimap/toasts/banners/vignettes deferred
-above. `GODOT_MIGRATION.md`'s own Phase-A/Phase-B split (gameplay-
-critical screens first, the MainMenu/PauseMenu/Settings/Victory/Credits
-meta-shell after) is the intended order.
+`EventUI` and `InventoryUI` (Character tab for spending stat points via
+the now-real `LevelFlow.spend_stat_point`, Build tab for owned upgrades/
+synergies) — the upgrade-ownership system above was built to unblock
+these too. Then the minimap/toasts/banners/vignettes deferred above.
+`GODOT_MIGRATION.md`'s own Phase-A/Phase-B split (gameplay-critical
+screens first, the MainMenu/PauseMenu/Settings/Victory/Credits meta-shell
+after) is the intended order.

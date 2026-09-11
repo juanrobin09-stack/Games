@@ -254,10 +254,10 @@ func _find_obstacle(room: RoomContainer, visual: ObstacleNode.Visual) -> Obstacl
 # ---------------------------------------------------------------- Interaction
 
 ## Returns {"label": String, "action": Callable} for whatever's in range to
-## interact with, or null. Mirrors Game.ts's getRoomInteraction — shop and
-## event both resolve to a real landmark you can walk up to, but their
-## actual interaction is deferred (step 9, real UI); pressing E on either
-## just prints why nothing happened instead of silently doing nothing.
+## interact with, or null. Mirrors Game.ts's getRoomInteraction — event
+## still resolves to a real landmark you can walk up to, but its actual
+## interaction is deferred (EventUI, still ahead in step 9); pressing E on
+## it just prints why nothing happened instead of silently doing nothing.
 func get_interaction() -> Variant:
 	if not _transition.is_empty() or player == null:
 		return null
@@ -274,7 +274,7 @@ func get_interaction() -> Variant:
 	if room.type == RoomContainer.Type.SHOP:
 		var stall := _find_obstacle(room, ObstacleNode.Visual.MERCHANT_STALL)
 		if stall != null and p.distance_to(stall.position) < 110.0:
-			return {"label": "Browse Wares (deferred to step 9)", "action": func(): print("LevelFlow: shop interaction needs real UI — step 9")}
+			return {"label": "Browse Wares", "action": func(): open_shop_room(room)}
 	if room.type == RoomContainer.Type.EVENT and not room.event_resolved:
 		var shrine := _find_obstacle(room, ObstacleNode.Visual.SHRINE)
 		if shrine != null and p.distance_to(shrine.position) < 110.0:
@@ -596,6 +596,39 @@ func open_chest(room: RoomContainer) -> void:
 	var level: int = UpgradePool.upcoming_upgrade_level(def.id, player.upgrades)
 	_grant_upgrade(def)
 	RewardPopup.show_reward(ui_root, def, "Chest Reward", level)
+
+## Ports Game.ts's private openShopRoom. reroll_count is boxed in a 1-
+## element Array, not a plain int — GDScript lambdas capture locals BY
+## VALUE at creation time (a plain int captured by make_offers/on_reroll
+## would desync: on_reroll's `+= 1` would only ever mutate ITS OWN
+## snapshot, so every reroll would reseed with the same count and hand
+## back identical offers). An Array is captured by value too, but that
+## value is a reference to the same underlying data — mutating its
+## CONTENTS (reroll_count[0] += 1), never reassigning the variable itself,
+## stays visible to every closure below that captured it.
+func open_shop_room(room: RoomContainer) -> void:
+	var reroll_count := [0]
+	var make_offers := func() -> Array[ShopOffer]:
+		return Shop.generate_shop_offers(
+			Shop.make_shop_rng(RunState.seed_value, room.key, reroll_count[0]),
+			player.stats.rarity_luck, current_gate_ids(), player.upgrades, RunState.zone_index)
+	var on_buy_upgrade := func(offer: ShopOffer) -> bool:
+		if offer.upgrade == null or offer.purchased or not RunState.spend_embers(offer.cost):
+			return false
+		_grant_upgrade(offer.upgrade)
+		return true
+	var on_buy_heal := func(offer: ShopOffer) -> bool:
+		if offer.purchased or not RunState.spend_embers(offer.cost):
+			return false
+		player.heal(player.stats.max_hp * Shop.HEAL_AMOUNT_RATIO)
+		VfxPresets.heal_sparkle(room, player.global_position)
+		return true
+	var on_reroll := func() -> Array[ShopOffer]:
+		if not RunState.spend_embers(Shop.REROLL_COST):
+			return []
+		reroll_count[0] += 1
+		return make_offers.call()
+	ShopUI.show_shop(ui_root, make_offers.call(), on_buy_upgrade, on_buy_heal, on_reroll)
 
 # ---------------------------------------------------------------- Kill rewards
 
