@@ -54,6 +54,7 @@ func _start_run() -> void:
 	# all 4 here is what makes the Q weapon-cycle (player.gd) able to reach
 	# the ranged weapons at all before that screen exists.
 	player.unlocked_weapons = ["emberBlade", "voidScythe", "solarSpear", "bow"]
+	LevelFlow.ui_root = $UI
 	LevelFlow.start_new_run(run_seed, player, self)
 
 ## Live readout of input/gating/combat/room state, refreshed every frame.

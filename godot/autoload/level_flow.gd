@@ -47,6 +47,14 @@ var _ambient: CanvasModulate = null
 var _transition_light: PointLight2D = null
 
 var player: PlayerCharacter = null
+## Set by main.gd before start_new_run() — the screen-space CanvasLayer
+## every modal/popup (UpgradeSelectUI, RewardPopup, and step 9's still-
+## coming ShopUI/EventUI) parents itself under, mirrors Game.ts's own
+## uiRoot field. Deliberately NOT the same `parent` start_new_run() takes
+## (that one's the world-space Node2D rooms/entities live under) — a
+## Control parented under a Node2D like a room would render in WORLD
+## space, following the camera, instead of as a screen overlay.
+var ui_root: Node = null
 var _active_room: RoomContainer = null
 var _transition: Dictionary = {}
 var _interact_key_down: bool = false
@@ -312,13 +320,48 @@ func _update_room_clear(delta: float) -> void:
 		if room.cleared:
 			_grant_room_clear_reward(room)
 
+## Ports Game.ts's private grantRoomClearReward. An elite den cleared in
+## Zone 2 (zone_index 2, the Ember Citadel) hands the Bow over directly, on
+## top of (not instead of) the room's normal upgrade-choice reward below —
+## the dungeon's one guaranteed ranged-weapon unlock. A heart room's stairs
+## only unseal once a reward exists AND is resolved: immediately if no
+## upgrade could be rolled at all, otherwise only after the player actually
+## picks one — matches the source's own two separate openStairs call sites
+## exactly (not a single unconditional one).
 func _grant_room_clear_reward(room: RoomContainer) -> void:
 	if room.reward_granted:
 		return
 	room.reward_granted = true
-	if room.type == RoomContainer.Type.HEART:
-		open_stairs(room, true)
-	print("LevelFlow: room %s (%s) cleared — upgrade-choice reward deferred to step 9 (real UI)" % [room.key, RoomContainer.Type.keys()[room.type]])
+
+	if room.type == RoomContainer.Type.ELITE and RunState.zone_index == 2 and not player.unlocked_weapons.has("bow"):
+		player.unlocked_weapons.append("bow")
+		player.weapon_id = "bow"
+		VfxPresets.level_up_burst(room, player.global_position)
+		print("LevelFlow: elite den cleared in the Ember Citadel — the Warden's Bow is yours")
+
+	var bonus_luck: float = 0.0
+	if room.type == RoomContainer.Type.ELITE or room.type == RoomContainer.Type.HEART:
+		bonus_luck = 0.15
+	elif room.type == RoomContainer.Type.SANCTUM:
+		bonus_luck = 0.3
+	var min_rarity: UpgradeDefinition.Rarity = UpgradeDefinition.Rarity.RARE if room.type == RoomContainer.Type.SANCTUM else UpgradeDefinition.Rarity.COMMON
+	var luck: float = clampf(player.stats.rarity_luck + bonus_luck, 0.0, 1.0)
+	var rng := LevelGenerator.rng_from("%s:reward:%s" % [RunState.seed_value, room.key])
+	var choices: Array[UpgradeDefinition] = UpgradePool.roll_upgrade_choices(rng, 3, luck, current_gate_ids(), player.upgrades, RunState.zone_index, min_rarity)
+	if choices.is_empty():
+		if room.type == RoomContainer.Type.HEART:
+			open_stairs(room, true)
+		return
+
+	var levels: Array[int] = []
+	for c in choices:
+		levels.append(UpgradePool.upcoming_upgrade_level(c.id, player.upgrades))
+	UpgradeSelectUI.show_choices(ui_root, choices, levels, func(def: UpgradeDefinition):
+		_grant_upgrade(def)
+		VfxPresets.level_up_burst(room, player.global_position)
+		if room.type == RoomContainer.Type.HEART:
+			open_stairs(room, true)
+	)
 
 # ---------------------------------------------------------------- Stairs & descent
 
@@ -552,7 +595,7 @@ func open_chest(room: RoomContainer) -> void:
 		return
 	var level: int = UpgradePool.upcoming_upgrade_level(def.id, player.upgrades)
 	_grant_upgrade(def)
-	print("LevelFlow: chest opened at %s (tier %s) — granted %s (Lv.%d)" % [room.key, UpgradeDefinition.Rarity.keys()[chest.tier], def.name, level])
+	RewardPopup.show_reward(ui_root, def, "Chest Reward", level)
 
 # ---------------------------------------------------------------- Kill rewards
 

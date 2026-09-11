@@ -234,69 +234,88 @@ about a burst that never appears at all (likely a parent/positioning
 issue) versus one that appears but looks visually wrong (likely a
 color/shape/timing tuning issue in `vfx_presets.gd`).
 
-### Step 9 — UI (in progress: upgrade-ownership system + core HUD landed; NOT yet live-tested)
+### Step 9 — UI (in progress: upgrade-ownership system, core HUD, and the room-clear/chest reward flow all landed and confirmed against a real running build)
 
-Per `GODOT_MIGRATION.md` §5. Split into two pieces so far, both real (no
-stubs) as far as they go, neither confirmed against the actual editor yet.
+Per `GODOT_MIGRATION.md` §5.
+
+**A capability upgrade partway through this step, worth recording:** this
+environment turned out to have no Godot editor/binary *pre-installed*, but
+nothing stopping one from being fetched — Godot 4.3's Linux binary
+downloads directly from its GitHub release, and `Xvfb` (an X virtual
+framebuffer, already present in the base image) gives it a real display to
+render into headlessly. So this pass (and everything after it) is no
+longer "authored against documentation and hoped" the way steps 1-8 and
+the first half of this one were: every screen below was actually built,
+run — `Godot_v4.3-stable_linux.x86_64 --path godot/ res://scenes/main/main.tscn
+--resolution 1152x648` under `DISPLAY=:99` with Xvfb serving that
+display — and checked against a real saved screenshot
+(`get_viewport().get_texture().get_image().save_png(...)`) and the
+console's own script-error output before being called done. This is how a
+real, previously-shipped bug in the HUD (below) actually got found and
+fixed, in-session, without needing a report back.
 
 **1. The upgrade-ownership system** — the prerequisite step 8's README
 flagged as missing (no owned-upgrades list on Player, no `UpgradePool`/
-`Shop` port). Now built:
+`Shop` port):
 
 | File | Ports | State |
 |---|---|---|
 | `entities/player.gd` | `Player.ts`'s `recomputeStats`/`addUpgrade`/`addBonusModifier`/synergies | `upgrades`/`active_synergies`/`bonus_modifiers` fields + the 5 methods, ported verbatim against the TS source (including the "wrath" synergy's same-tag-twice exception, see `synergy_definition.gd`) |
 | `godot/progression/` (new folder) | `data/playerProgression.ts`, `progression/UpgradePool.ts`, `world/Shop.ts` | `player_progression.gd`/`upgrade_pool.gd`/`shop.gd` — grouped as one domain rather than mirroring the TS split across `data/`/`progression/`/`world/`. `OwnedUpgrade`/`ShopOffer`/`PlayerStatDef` are small RefCounted data holders |
-| `autoload/level_flow.gd` | `Game.ts`'s `openChest`/`grantUpgrade`/`currentGateIds`/`spendStatPoint` | `open_chest()` now rolls and grants a real upgrade (a chest has no player-choice step, so it needed no new UI to wire for real); `spend_stat_point()` is the real entry point (checks the Bow/Zone-1 lock `RunState.spend_stat_point` deliberately never did) |
+| `autoload/level_flow.gd` | `Game.ts`'s `openChest`/`grantUpgrade`/`currentGateIds`/`spendStatPoint` | `spend_stat_point()` is the real entry point (checks the Bow/Zone-1 lock `RunState.spend_stat_point` deliberately never did) — no caller yet, that's `InventoryUI`'s Character tab, still ahead |
 
-Room-clear and shop/event rewards still print their old "deferred to step
-9" stub messages — those genuinely need a 3-choice/multi-offer `Control`
-screen to show the player, unlike a chest's single guaranteed grant.
+**2. The core HUD** (`ui/hud.gd` + `ui/hud_icon.gd` + `scenes/ui/hud.tscn`)
+— HP/stamina/energy bars with shield pips and buff icons, the ability
+slot with its cooldown sweep, weapon/ability name + icon, embers/timer/
+zone-room label, the corruption bar, the level/XP bar + stat-point hint,
+and the interact prompt. Built entirely in GDScript (`_ready()`
+constructs the whole Control tree) rather than hand-authored `.tscn` node
+data. **A real, confirmed-live bug found and fixed here**, worth keeping
+as a reference for the next Control-heavy screen: every region except the
+top-left one rendered completely off-screen, because `Hud`'s own
+`set_anchors_preset(PRESET_FULL_RECT)` call — made on a Control already
+in the scene tree (the instanced root) — computes offsets that *preserve*
+its pre-call (0,0) size instead of resetting to 0, unlike the same call
+made on a not-yet-parented node (every child region's own `col`/`row`),
+which cleanly resets. See `hud.gd`'s own header comment for the full
+write-up. Fixed by giving `Hud` itself explicit `offset_* = 0` right after
+its own preset call.
 
-**2. The core HUD** (`ui/hud.gd` + `ui/hud_icon.gd` + `scenes/ui/hud.tscn`,
-instanced under `main.tscn`'s `UI` CanvasLayer) — HP/stamina/energy bars
-with shield pips and buff icons, the ability slot with its cooldown sweep,
-weapon/ability name + icon, embers/timer/zone-room label, the corruption
-bar, the level/XP bar + stat-point hint, and the interact prompt. Built
-entirely in GDScript (`_ready()` constructs the whole Control tree) rather
-than hand-authored as `.tscn` node data — with no editor to lay out and
-verify ~25 nested Controls visually, straight-line code was the safer bet
-than cross-referencing a hand-typed node tree. Every color/pixel size was
-read off `style.css`'s own `.hud-*` rules, not guessed; every non-obvious
-Control/BoxContainer/Label/ColorRect API surface (anchors, `LayoutPreset`,
-theme overrides, `ceili`/`floori`) was checked against the real Godot 4.3
-class docs before use, same discipline step 8's VFX pass established.
+**3. The room-clear/chest reward flow** — the payoff the upgrade-ownership
+system was built for:
 
-**Deliberately deferred, not forgotten:** the minimap (`refreshMinimap`'s
-double-resolution grid algorithm), the toast/phase-banner/synergy-banner
-system, the boss bar (its data needs the boss attack-FSM gap closed
-first — see step 8's README section), and both vignettes (danger/
-corruption — Godot has no cheap radial-gradient-on-a-flat-Control
-primitive, and a botched full-screen overlay could make the game
-unreadable with no way to catch it before it ships). The debug/diagnostic
-panel (`DebugLabel`/`LiveLabel`) still exists — it starts hidden now that
-Hud covers the same core info for players, toggle it back with **F1** for
-the fuller picture (data registry counts, room/enemy internals, owned
-upgrades/synergies) when something needs closer inspection.
+| File | Ports | State |
+|---|---|---|
+| `ui/upgrade_card.gd` | `.upgrade-card`'s markup (shared by `UpgradeSelectUI.ts` and `RewardPopup.ts`) | One class serves both: `clickable` gates whether it handles clicks, `first_tag_text` is either a rarity name or a reward-source label. Border/background drawn via `_draw()`, not nested ColorRects, for a true unfilled outline |
+| `ui/upgrade_select_ui.gd` | `ui/UpgradeSelectUI.ts` | The 3-choice room-clear picker. A true modal — pauses the whole `SceneTree` (mirrors `updatePlaying()`'s own `!this.modalScreen` early-out) with itself marked `PROCESS_MODE_ALWAYS` so it still takes clicks while everything else freezes |
+| `ui/reward_popup.gd` | `ui/RewardPopup.ts` | Single auto-dismissing card (2.8s), non-modal — doesn't pause, doesn't block input, matches the source's own `pointer-events:none` |
+| `autoload/level_flow.gd` | `Game.ts`'s `grantRoomClearReward`/`chooseUpgrade`/`openChest` | `_grant_room_clear_reward` now rolls real choices and shows `UpgradeSelectUI`, including the zone-luck bonus and the Sanctum's raised minimum rarity; `open_chest` now shows a real `RewardPopup` instead of a print. New `ui_root` field (set by `main.gd`, mirrors `Game.ts`'s own `uiRoot`) is where every modal/popup parents itself — deliberately not the world-space `parent` `start_new_run()` takes, since a `Control` under a `Node2D` room would render in world space, following the camera, not as a screen overlay |
 
-**How to test it:** confirm the HUD appears (HP/stamina/energy bars top-
-left, embers/timer/zone top-right, ability slot bottom-left, level/XP
-bottom-right) and updates live as you play — take damage, swing until
-stamina empties, use the ability, kill something for XP, walk near an
-interactable for the E-prompt to appear. Open a chest and confirm a real
-upgrade is granted (its stats should visibly change — e.g. an armor
-upgrade should reduce damage taken) rather than the old "deferred" print.
-Press **F1** to confirm the old debug panel still works underneath.
-**Nothing above has been run in the actual editor yet** — report the
-first parse/runtime error verbatim, same as every step before this one.
+**Also newly real, found while porting the above:** clearing the one
+guaranteed elite den in the Ember Citadel (zone_index 2) now hands the
+Bow over directly, on top of the room's normal reward — `grantRoomClearReward`'s
+own logic in the source, never previously ported (masked by
+`main.gd`'s own debug seeding already unlocking every weapon up front).
+
+**Deliberately deferred, not forgotten:** the minimap, the toast/phase-
+banner/synergy-banner system, the boss bar (needs the boss attack-FSM gap
+closed first), both vignettes, `ShopUI`, `EventUI`, and `InventoryUI`. The
+debug/diagnostic panel (`DebugLabel`/`LiveLabel`) still exists, hidden by
+default — toggle with **F1**.
+
+**How to test it:** same as before (HUD live-updating, F1 toggle, opening
+a chest) — that part is now confirmed working via a real screenshot, not
+just believed to. New this pass: clear a non-boss, non-sanctum room (kill
+everything in it) and confirm a 3-card picker appears, pauses the action,
+and picking a card actually changes your stats; clear the Ember Citadel's
+elite den and confirm the Bow unlocks.
 
 ### Next steps (not started)
 
-Room-clear's 3-choice upgrade picker (`UpgradeSelectUI`), `ShopUI`,
-`EventUI`, `RewardPopup`, and `InventoryUI` (Character tab for spending
-stat points via the now-real `LevelFlow.spend_stat_point`, Build tab for
-owned upgrades/synergies) — these are what the upgrade-ownership system
-above was built to unblock. Then the minimap/toasts/banners/vignettes
-deferred above. `GODOT_MIGRATION.md`'s own Phase-A/Phase-B split (gameplay-
+`ShopUI`, `EventUI`, and `InventoryUI` (Character tab for spending stat
+points via the now-real `LevelFlow.spend_stat_point`, Build tab for owned
+upgrades/synergies) — the upgrade-ownership system above was built to
+unblock these too. Then the minimap/toasts/banners/vignettes deferred
+above. `GODOT_MIGRATION.md`'s own Phase-A/Phase-B split (gameplay-
 critical screens first, the MainMenu/PauseMenu/Settings/Victory/Credits
 meta-shell after) is the intended order.
