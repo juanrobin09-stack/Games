@@ -16,6 +16,13 @@ extends CharacterBody2D
 
 signal died(enemy: EnemyCharacter)
 
+## TEMPORARY, TEST-ONLY: cuts every enemy's HP for faster combat/particle
+## playtesting (asked for directly — mobs were taking too long to kill to
+## exercise hit/death VFX repeatedly). Not a balance change — revert to 1.0
+## (or delete this const and the one line that multiplies by it in setup()
+## below) once testing is done; base_hp in the .tres resources is untouched.
+const DEBUG_HP_MULT := 0.15
+
 enum State { SPAWNING, IDLE, CHASE, WINDUP, ATTACK, COOLDOWN, VANISHED, REAPPEARING, STAGGER, DEAD }
 
 var def: EnemyDefinition
@@ -97,7 +104,7 @@ func setup(enemy_def: EnemyDefinition, spawn_pos: Vector2, hp_mult: float, damag
 	radius = def.radius
 	difficulty_hp_mult = hp_mult
 	difficulty_damage_mult = damage_mult
-	max_hp = roundf(def.base_hp * hp_mult)
+	max_hp = roundf(def.base_hp * hp_mult * DEBUG_HP_MULT)
 	hp = max_hp
 	attack_cooldown_timer = def.attack_cooldown * (0.4 + randf() * 0.4)
 	state_timer = 0.15 + randf() * 0.2

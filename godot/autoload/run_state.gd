@@ -77,7 +77,13 @@ func grant_xp(amount: float) -> void:
 		player_level += 1
 		stat_points += 1
 		awarded += 1
+	# No real HUD exists yet (step 9) — the only other place XP/level shows
+	# is main.gd's small debug corner text, easy to miss in a wall of other
+	# live values. This print is the one immediate, hard-to-miss confirmation
+	# that a kill actually granted XP until that real UI exists.
+	print("RunState: +%.0f XP (%.0f/%.0f toward level %d)" % [amount, xp, xp_required_for_next_level(), player_level + 1])
 	if awarded > 0:
+		print("RunState: LEVEL UP -> %d (+%d stat point%s)" % [player_level, awarded, "" if awarded == 1 else "s"])
 		player_leveled_up.emit(player_level, awarded)
 
 func corruption_ratio() -> float:
