@@ -95,6 +95,7 @@ func _process(_delta: float) -> void:
 		"xp_to_next": RunState.xp_required_for_next_level(),
 		"stat_points": RunState.stat_points,
 		"is_max_level": RunState.player_level >= RunState.LEVEL_CAP,
+		"boss": _boss_hud_data(room),
 	})
 
 	if not _debug_visible:
@@ -131,6 +132,28 @@ func _process(_delta: float) -> void:
 		"interact [E]: %s" % (interaction["label"] if interaction != null else "-"),
 		_nearest_enemy_line(),
 	])
+
+## Ports Game.ts's updateHud() own boss branch — builds a BossHudInfo-
+## shaped Dictionary ({name, hp_ratio, phase, max_phase, invulnerable}) for
+## hud.gd's own boss bar, or null outside a boss room. The source also
+## reuses this exact same bar for a heart-room champion (max_phase=2) —
+## out of scope here, this port's champion fight has its own shield-break
+## banner already (level_flow.gd's _on_champion_shield_broken) and no
+## comparable phase concept to show dots for.
+func _boss_hud_data(room: RoomContainer) -> Variant:
+	if room == null or room.type != RoomContainer.Type.BOSS:
+		return null
+	for e in room.enemies:
+		var boss := e as BossCharacter
+		if boss != null:
+			return {
+				"name": boss.def.name if boss.def != null else "?",
+				"hp_ratio": boss.hp / maxf(1.0, boss.max_hp),
+				"phase": int(boss.phase),
+				"max_phase": 3,
+				"invulnerable": boss.invulnerable,
+			}
+	return null
 
 func _room_line(room: RoomContainer) -> String:
 	if room == null:

@@ -32,6 +32,15 @@ signal ability_cast(character: Node, ability_id: String)
 signal enemy_died(enemy: Node)
 signal player_died()
 signal champion_shield_broken(enemy: Node)
+## Ports Boss.ts/BossSystem.ts's own gameEvents.emit('bossPhaseChanged'/
+## 'bossDefeated') — this port has no generic pub/sub event bus autoload at
+## all (grepped project-wide; the closest existing pattern is exactly this:
+## a per-concern signal declared directly on the autoload that resolves
+## that concern, e.g. champion_shield_broken living here because
+## on_champion_shield_break is what detects it), so these two follow suit
+## rather than introducing a new bus just for the boss.
+signal boss_phase_changed(boss: Node)
+signal boss_defeated(boss: Node)
 
 const PROJECTILE_SCENE := preload("res://entities/projectile.tscn")
 const ENEMY_SCENE := preload("res://entities/enemy.tscn")
@@ -234,6 +243,98 @@ func on_champion_shield_break(enemy: EnemyCharacter) -> void:
 		parent.add_child(add)
 		add.setup(blightbloat_def, spawn_pos, enemy.difficulty_hp_mult * 0.8, enemy.difficulty_damage_mult * 0.8)
 		VfxPresets.spore_burst_vfx(parent, spawn_pos, 30.0)
+
+## Ports combat/BossSystem.ts's resolveBossPendingActions — resolves the
+## "pending" flags BossCharacter.tick() sets each frame (see boss.gd) into
+## real damage/VFX/summons. Called once per boss frame from EnemyAI.update()
+## right after tick() itself, mirroring the source's own per-frame
+## tick()-then-resolveBossPendingActions() order.
+##
+## Camera shake, hit-stop, and SFX are deliberately not ported here — see
+## this file's own header and boss.gd's own header for why (no such system
+## exists anywhere in this port yet, predating the boss).
+func resolve_boss_pending_actions(boss: BossCharacter, player: PlayerCharacter) -> void:
+	var parent := boss.get_parent()
+
+	if boss.boss_phase_just_changed:
+		boss.boss_phase_just_changed = false
+		boss_phase_changed.emit(boss)
+
+	if boss.pending_melee_slam:
+		boss.pending_melee_slam = false
+		var slam_pos: Vector2 = boss.global_position + Vector2(cos(boss.facing), sin(boss.facing)) * 60.0
+		if parent != null:
+			VfxPresets.ember_burst_vfx(parent, slam_pos, 90.0)
+		var slam_dist: float = boss.global_position.distance_to(player.global_position)
+		if slam_dist <= 130.0 + player.radius:
+			var dir: Vector2 = player.global_position - boss.global_position
+			dir = dir.normalized() if dir.length() > 0.01 else Vector2(cos(boss.facing), sin(boss.facing))
+			damage_enemy_to_player(player, boss.attack_damage() * 1.25, {
+				"knockback_dir": dir,
+				"knockback_force": 280.0,
+			})
+
+	if boss.pending_shockwave:
+		boss.pending_shockwave = false
+		if parent != null:
+			VfxPresets.ember_burst_vfx(parent, boss.global_position, 230.0 * 0.9)
+		var shock_dist: float = boss.global_position.distance_to(player.global_position)
+		if shock_dist <= 230.0 + player.radius:
+			var dir: Vector2 = player.global_position - boss.global_position
+			dir = dir.normalized() if dir.length() > 0.01 else Vector2(cos(boss.facing), sin(boss.facing))
+			damage_enemy_to_player(player, boss.attack_damage() * 1.1, {
+				"knockback_dir": dir,
+				"knockback_force": 320.0,
+			})
+
+	if boss.pending_projectile_angles.size() > 0:
+		for angle in boss.pending_projectile_angles:
+			spawn_enemy_projectile(boss, angle)
+		boss.pending_projectile_angles.clear()
+
+	if boss.pending_summon_count > 0:
+		var count: int = boss.pending_summon_count
+		boss.pending_summon_count = 0
+		var enemy_id: String = "shadowStalker" if boss.phase == BossCharacter.Phase.THREE else "ashCrawler"
+		var summon_def: EnemyDefinition = DataRegistry.get_enemy(enemy_id)
+		if summon_def != null and parent is RoomContainer:
+			var room := parent as RoomContainer
+			var factors: Dictionary = difficulty_factors(2, RunState.corruption_ratio())
+			for i in range(count):
+				var angle: float = (float(i) / float(count)) * TAU + randf() * 0.5
+				var dist: float = 160.0 + randf() * 60.0
+				var x: float = clampf(boss.global_position.x + cos(angle) * dist, RoomContainer.WALL_THICKNESS + 40.0, RoomContainer.ROOM_WIDTH - RoomContainer.WALL_THICKNESS - 40.0)
+				var y: float = clampf(boss.global_position.y + sin(angle) * dist, RoomContainer.WALL_THICKNESS + 40.0, RoomContainer.ROOM_HEIGHT - RoomContainer.WALL_THICKNESS - 40.0)
+				var add: EnemyCharacter = ENEMY_SCENE.instantiate()
+				room.add_enemy(add)
+				add.setup(summon_def, Vector2(x, y), factors["hp_mult"] * 0.8, factors["damage_mult"] * 0.8)
+
+	if boss.pending_meteor_impacts.size() > 0:
+		for impact in boss.pending_meteor_impacts:
+			if parent != null:
+				VfxPresets.ember_burst_vfx(parent, impact, 65.0)
+			var impact_dist: float = impact.distance_to(player.global_position)
+			if impact_dist <= 70.0 + player.radius:
+				var dir: Vector2 = player.global_position - impact
+				dir = dir.normalized() if dir.length() > 0.01 else Vector2.RIGHT
+				damage_enemy_to_player(player, boss.attack_damage() * 0.85, {
+					"knockback_dir": dir,
+					"knockback_force": 180.0,
+				})
+		boss.pending_meteor_impacts.clear()
+
+	# Deliberately delayed past the killing blow itself — on_enemy_death
+	# (called generically the instant hp hits 0, same as any other enemy)
+	# already fires its own single-color death burst well before this;
+	# this is BossSystem.ts's own separate, bigger two-tone fanfare, gated
+	# on the ~2.2s shrink/drop animation actually finishing, not just hp
+	# reaching 0 — see boss_defeat_resolved's own field comment in boss.gd.
+	if not boss.alive and boss.death_animation_done and not boss.boss_defeat_resolved:
+		boss.boss_defeat_resolved = true
+		if parent != null:
+			VfxPresets.death_burst(parent, boss.global_position, Palette.EMBER4)
+			VfxPresets.death_burst(parent, boss.global_position, Palette.EMBER6)
+		boss_defeated.emit(boss)
 
 # ---------------------------------------------------------------- Core damage pipeline
 

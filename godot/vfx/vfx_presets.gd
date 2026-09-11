@@ -12,13 +12,6 @@ extends RefCounted
 ##   ParticlePresets.ts but never called from anywhere in the Web build
 ##   (verified by grepping every call site). Porting an unreachable preset
 ##   would just be unused surface area.
-## - spawnEmberBurstVfx: every TS call site is the player's Ember Burst
-##   ability's damage application, an emberCritical-synergy detonation, or
-##   one of the Ashen Colossus's phase attacks (slam/shockwave/projectile
-##   impact) — none of those exist in this port yet (player.gd's
-##   start_ability() is animation-only with no damage effect resolved yet,
-##   and boss.gd has no attack FSM driving boss_state at all — see this
-##   step's README note). Nothing to wire it to.
 ## - spawnZoneAmbientParticle (drawRoom.ts, not ParticlePresets.ts, but the
 ##   same shape of gap): reads ZoneDefinition fields (ambientParticle,
 ##   sporeColors, palette.ambient/accent) that don't exist on this port's
@@ -76,6 +69,34 @@ static func death_burst(parent: Node, pos: Vector2, color_hex: String) -> void:
 		"color": color_hex, "alpha": 0.6, "life_min": 0.4,
 		"glow": true, "shape": "ring",
 	})
+
+## Ports rendering/ParticlePresets.ts's spawnEmberBurstVfx — previously
+## unported (every TS call site is the Ashen Colossus's slam/shockwave/
+## meteor-impact attacks or the player's own Ember Burst ability, none of
+## which had a driving FSM in this port yet; see this file's own former
+## header note). Now wired from CombatManager.resolve_boss_pending_actions
+## for all 3 boss impact types. `radius` scales both the spark spread and
+## the 3 successive rings' burst size, same convention as spore_burst_vfx's
+## own radius parameter.
+static func ember_burst_vfx(parent: Node, pos: Vector2, radius: float) -> void:
+	VfxSystem.emit(parent, {
+		"position": pos, "count": 36,
+		"speed_min": radius * 1.5, "speed_max": radius * 3.2,
+		"gravity": -20.0, "drag": 1.4,
+		"size_min": 3.0, "size_max": 8.0,
+		"color": Palette.EMBER5, "end_color": Palette.EMBER2,
+		"life_min": 0.4, "life_max": 0.85,
+		"glow": true, "shape": "spark",
+	})
+	for i in range(3):
+		var size_min: float = radius * 0.3
+		var size_end: float = radius * (1.6 + float(i) * 0.4)
+		VfxSystem.emit(parent, {
+			"position": pos, "size_min": size_min, "end_size_ratio": size_end / size_min,
+			"color": Palette.EMBER4, "alpha": 0.5 - float(i) * 0.1,
+			"life_min": 0.35 + float(i) * 0.12,
+			"glow": true, "shape": "ring",
+		})
 
 static func perfect_dodge_burst(parent: Node, pos: Vector2) -> void:
 	VfxSystem.emit(parent, {

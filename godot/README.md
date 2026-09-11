@@ -7,7 +7,7 @@ kept/improved/rebuilt, the recommended architecture, and the complete
 [`GODOT_MIGRATION.md`](../GODOT_MIGRATION.md) at the repo root. Read that
 first; this file only tracks what's actually been built here so far.
 
-## Status: build-order step 9 of 12 — UI (in progress)
+## Status: build-order step 9 of 12 — UI (complete)
 
 **Important caveat:** this project was authored without access to the
 Godot editor or engine binary — this environment doesn't have Godot
@@ -234,7 +234,7 @@ about a burst that never appears at all (likely a parent/positioning
 issue) versus one that appears but looks visually wrong (likely a
 color/shape/timing tuning issue in `vfx_presets.gd`).
 
-### Step 9 — UI (in progress: every Phase-A gameplay-critical screen, the toast/banner feedback system, the minimap, AND both vignettes — the only piece of `hud.gd` itself left unbuilt is now the boss bar — landed and confirmed against a real running build)
+### Step 9 — UI (complete: every Phase-A gameplay-critical screen, the toast/banner feedback system, the minimap, both vignettes, and the boss attack-FSM + boss bar — landed and confirmed against a real running build)
 
 Per `GODOT_MIGRATION.md` §5.
 
@@ -491,10 +491,42 @@ against a full-HP/no-corruption baseline. All four states stay readable —
 only the screen's outer edges darken; the player, HUD, and minimap stay
 legible throughout.
 
-**Deliberately deferred, not forgotten:** the boss bar (needs the boss
-attack-FSM gap closed first). The debug/diagnostic panel
-(`DebugLabel`/`LiveLabel`) still exists, hidden by default — toggle with
-**F1**.
+**9. The boss attack-FSM + boss bar** — the last piece: closing the gap
+this file's own header had flagged since step 4 ("the boss currently
+fights as a generic enemy with no slam/combo/shockwave/projectile/summon
+attacks"), then the HUD readout that data makes possible.
+
+| File | Ports | State |
+|---|---|---|
+| `entities/boss.gd` | `entities/Boss.ts`'s `tick`/`chooseNextAttack`/`updateMeteors`/`enterState`/`beginFight`/`takeDamage` override | The visual half (`_draw()`, `_update_light()`) was already landed here in an earlier step; this pass adds the actual FSM driving it — phase transitions at 64%/30% HP, 5 attack types (melee slam, 2-hit combo, shockwave, 3-shot projectile fan, summon), phase-3 meteor rain, and an own `_physics_process()` override (needed because the generic one — enemy.gd's — stops calling any AI at all once `alive` is false, but the boss's own dying state needs to keep ticking for its 2.2s death animation to finish) |
+| `combat/enemy_ai.gd` | (dispatch) | `EnemyAI.update()` special-cases `BossCharacter` at its own top — routes to `boss.tick()` + `CombatManager.resolve_boss_pending_actions()` instead of the generic `Behavior`-keyed dispatch every other enemy gets (the boss's own `.tres` `behavior` value, `ELITE`, is never actually read once this branch exists — a placeholder from before this port had a real boss FSM) |
+| `autoload/combat_manager.gd` | `combat/BossSystem.ts`'s `resolveBossPendingActions` | New `resolve_boss_pending_actions()` resolves the pending-action flags `tick()` sets each frame into real damage (reusing `damage_enemy_to_player`), projectiles (`spawn_enemy_projectile`), summons (`ashCrawler`/`shadowStalker`, spawned via `room.add_enemy` so `check_cleared()` still sees them), meteor impacts, and — gated on the ~2.2s death animation actually finishing, not just HP hitting 0 — a two-tone defeat fanfare. New `boss_phase_changed`/`boss_defeated` signals stand in for the source's own generic `gameEvents.emit(...)` calls (this port has no pub/sub event bus at all; every existing signal here already follows "declared on whichever autoload resolves that concern") |
+| `vfx/vfx_presets.gd` | `rendering/ParticlePresets.ts`'s `spawnEmberBurstVfx` | New `ember_burst_vfx()` — previously unported for lack of a caller (this file's own header said so explicitly); now wired to all 3 of the boss's impact types |
+| `autoload/level_flow.gd` | (wiring) | The boss's own `beginFight()` is gated on the Web build's intro/roar presentation beat, which this port has no cutscene system to reproduce — a plain fixed delay stands in instead, paired with an intro phase banner naming the boss, so the room-entry moment still reads as an event and the boss isn't instantly attacking the instant the door seals. `boss_phase_changed`/`boss_defeated` get their own banners ("PHASE 2", "THE ASHEN COLOSSUS FALLS"), same `show_phase_banner()` mechanism as every other beat |
+| `ui/hud.gd`, `scenes/main/main.gd` | `HUD.ts`'s `bossBar`/`bossName`/`bossFill`/`bossDots` + `Game.ts`'s own boss branch of `updateHud()` | A new top-center bar (name, HP fill, phase-remaining dots — ports the source's own `i < maxPhase - phase + 1` dot math exactly) shown only while `main.gd`'s new `_boss_hud_data()` finds a live `BossCharacter` in the current room |
+
+Camera shake, hit-stop, and SFX from `BossSystem.ts` are deliberately NOT
+ported — `combat_manager.gd`'s own header already flags this as a
+whole-game gap predating the boss (no such system exists anywhere in this
+port yet), so building one just for the boss's own attacks would be
+inconsistent with every other hit in the game still lacking the same
+polish. Left for that dedicated pass.
+
+Verified via a real headless run that warped straight to a forced zone-2
+boss room (rather than playing 3 zones to reach it) and exercised every
+state by hand: intro banner and delayed `begin_fight()`, a real phase-1
+attack cycle that actually landed damage on the (stationary) player and
+fired real projectiles, a phase-1 `SUMMONING` roll that spawned two real
+chasing adds entirely on its own (not forced), a forced HP drop crossing
+the 64% threshold confirmed via screenshot to show the invulnerability
+glow, the phase banner, and the boss bar's dots correctly depleting
+3-lit → 2-lit → 1-lit across phases 1/2/3 (pixel-zoomed to check, not just
+eyeballed), a forced phase-3 entry to confirm the meteor-telegraph code
+path doesn't error, and a forced death that correctly gated the two-tone
+defeat fanfare and "THE ASHEN COLOSSUS FALLS" banner on
+`death_animation_done`, not the instant HP hit 0. No script errors from
+any of it. The debug/diagnostic panel (`DebugLabel`/`LiveLabel`) still
+exists, hidden by default — toggle with **F1**.
 
 **How to test it:** same as before (HUD live-updating, F1 toggle, opening
 a chest, clearing a room for the 3-card picker, browsing the shop, an
@@ -512,15 +544,22 @@ down rather than growing past its corner. Also new: at low HP the screen
 edges should darken red (stronger as HP drops further, pulsing once
 below ~15%), and as a run drags on past the corruption soft cap the edges
 should also pick up a purple tint — both stay a background read, never
-cover the actual play area.
+cover the actual play area. Newest this pass: reach the Ember Citadel's
+Colossus room (zone 3) and the boss should sit still and invulnerable
+for a couple seconds under an intro banner before actually fighting —
+approaching, telegraphing (a ring for slam/combo, a pulsing wider ring
+for shockwave, a brief pause with no visible tell for the 3-shot
+projectile fan — matches the source), occasionally summoning adds or
+raining meteors once in phase 3. A top-center bar should track its name,
+HP, and phase (dots depleting left-to-right as phases pass); crossing a
+phase threshold should glow the boss briefly invulnerable and show a
+banner; killing it should hold on its shrink-and-fade for ~2 seconds
+before "THE ASHEN COLOSSUS FALLS" and a bigger burst than a normal kill.
 
 ### Next steps (not started)
 
-Every gameplay-critical (Phase-A) screen `GODOT_MIGRATION.md` calls for is
-now landed, and so is its toast/banner feedback layer, the minimap, and
-both vignettes. What's left before Phase B: only the boss bar (blocked on
-the boss attack-FSM gap — the boss currently fights as a generic enemy,
-with no slam/combo/shockwave/projectile/summon attacks for a health bar
-to telegraph against). Then Phase B itself: the MainMenu/PauseMenu/
-Settings/Victory/Credits meta-shell, per `GODOT_MIGRATION.md`'s own
-Phase-A/Phase-B split.
+Step 9 (UI) is complete — every Phase-A gameplay-critical screen
+`GODOT_MIGRATION.md` calls for is landed, along with the toast/banner
+feedback layer, the minimap, both vignettes, and the boss attack-FSM +
+boss bar. Next: Phase B, the MainMenu/PauseMenu/Settings/Victory/Credits
+meta-shell, per `GODOT_MIGRATION.md`'s own Phase-A/Phase-B split.

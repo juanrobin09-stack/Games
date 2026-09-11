@@ -16,7 +16,25 @@ extends RefCounted
 ## simplified to a plain teleport — there are no walls to inset from until
 ## Room/LevelGenerator lands in build-order step 6.
 
+## BossCharacter is special-cased here rather than in the match below — its
+## own tick() needs to keep running even after `alive` flips false (to
+## drive its dying-state death animation timer; see boss.gd's own
+## _physics_process override for why the shared alive-guard beneath this
+## would otherwise cut it off mid-animation), so it's routed to its own FSM
+## entry point before that guard runs at all, not folded into
+## EnemyDefinition.Behavior (the boss's own ELITE-behavior .tres value is
+## never actually read once this branch exists — it was only ever a
+## placeholder so the boss wouldn't hit an unhandled-behavior no-op before
+## this port had a real boss FSM). CombatManager.resolve_boss_pending_
+## actions() runs immediately after tick(), mirroring the source's own
+## per-frame tick()-then-resolveBossPendingActions() order.
 static func update(enemy: EnemyCharacter, player: PlayerCharacter, dt: float) -> void:
+	if enemy is BossCharacter:
+		if player != null:
+			var boss := enemy as BossCharacter
+			boss.tick(dt, player)
+			CombatManager.resolve_boss_pending_actions(boss, player)
+		return
 	if not enemy.alive or player == null:
 		return
 	var def := enemy.def

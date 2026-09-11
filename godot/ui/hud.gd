@@ -90,6 +90,10 @@ var _timer_label: Label
 var _zone_label: Label
 var _corruption_fill: ColorRect
 var _minimap: HudMinimap
+var _boss_bar: VBoxContainer
+var _boss_name_label: Label
+var _boss_fill: ColorRect
+var _boss_dots_row: HBoxContainer
 var _ability_slot: Control
 var _ability_icon: HudIcon
 var _ability_sweep: ColorRect
@@ -128,6 +132,7 @@ func _ready() -> void:
 	_build_bottom_right()
 	_build_interact_prompt()
 	_build_banners()
+	_build_boss_bar()
 
 # ---------------------------------------------------------------- Bar helper
 
@@ -564,6 +569,62 @@ func _build_banners() -> void:
 	_synergy_desc_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	synergy_col.add_child(_synergy_desc_label)
 
+## Ports HUD.ts's bossBar/bossName/bossFill/bossDots — a top-center readout
+## shown only while data["boss"] (see update()) is non-null. Built as its
+## own top-level child (like the source's own bossBar, a sibling of the
+## corner regions, not nested in any of them) rather than folded into
+## _build_banners(): it isn't a triggered feedback moment like a toast/
+## banner, it's a persistent status readout for as long as a boss room is
+## active, closer in kind to the HP/stamina/energy bars.
+##
+## The fill reuses _set_bar_ratio's own anchor_right convention (every
+## other bar in this file already works this way) rather than the source's
+## own `transform: scaleX(...)` — same substitution, same reason, as every
+## other bar here.
+func _build_boss_bar() -> void:
+	_boss_bar = VBoxContainer.new()
+	_boss_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_boss_bar.add_theme_constant_override("separation", 6)
+	_boss_bar.anchor_left = 0.5
+	_boss_bar.anchor_right = 0.5
+	_boss_bar.offset_left = -280.0
+	_boss_bar.offset_right = 280.0
+	_boss_bar.offset_top = 18.0
+	_boss_bar.offset_bottom = 18.0 + 44.0
+	_boss_bar.visible = false
+	add_child(_boss_bar)
+
+	_boss_name_label = Label.new()
+	_boss_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_boss_name_label.add_theme_font_size_override("font_size", 15)
+	_boss_name_label.add_theme_color_override("font_color", Color(Palette.EMBER5))
+	_boss_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_boss_bar.add_child(_boss_name_label)
+
+	var track := Control.new()
+	track.custom_minimum_size = Vector2(0.0, 16.0)
+	track.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_boss_bar.add_child(track)
+	var bg := ColorRect.new()
+	bg.color = BAR_TRACK_BG
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	track.add_child(bg)
+	_boss_fill = ColorRect.new()
+	_boss_fill.color = Color(Palette.BLOOD_BRIGHT)
+	_boss_fill.anchor_left = 0.0
+	_boss_fill.anchor_top = 0.0
+	_boss_fill.anchor_right = 0.0
+	_boss_fill.anchor_bottom = 1.0
+	_boss_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	track.add_child(_boss_fill)
+
+	_boss_dots_row = HBoxContainer.new()
+	_boss_dots_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_boss_dots_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	_boss_dots_row.add_theme_constant_override("separation", 6)
+	_boss_bar.add_child(_boss_dots_row)
+
 # ---------------------------------------------------------------- Toasts / banners
 
 ## Ports HUD.ts's showToast — appends a new toast (unlike the banners
@@ -698,12 +759,14 @@ func refresh_minimap(layout: Dictionary, current_room_key: String) -> void:
 
 # ---------------------------------------------------------------- Update
 
-## `data` keys mirror HUD.ts's HudFrameData minus what this pass defers
-## (boss, and staminaDenied/elapsedSeconds spelled snake_case): player,
-## embers, zone_name, room_label, corruption, weapon_name, ability_name,
-## weapon_icon, ability_icon, interact_prompt (String, "" = none),
-## elapsed_seconds, stamina_denied, player_level, xp, xp_to_next,
-## stat_points, is_max_level.
+## `data` keys mirror HUD.ts's HudFrameData (staminaDenied/elapsedSeconds
+## spelled snake_case): player, embers, zone_name, room_label, corruption,
+## weapon_name, ability_name, weapon_icon, ability_icon, interact_prompt
+## (String, "" = none), elapsed_seconds, stamina_denied, player_level, xp,
+## xp_to_next, stat_points, is_max_level, boss (Dictionary matching
+## BossHudInfo's own shape — name/hp_ratio/phase/max_phase/invulnerable —
+## or null when the current room isn't a boss room; see main.gd's own
+## _boss_hud_data()).
 func update(data: Dictionary) -> void:
 	var player: PlayerCharacter = data["player"]
 
@@ -801,6 +864,33 @@ func update(data: Dictionary) -> void:
 		_interact_label.visible = true
 	else:
 		_interact_label.visible = false
+
+	# Dots rebuilt every call rather than diffed — same "just requeue the
+	# children" convention as _shield_row/_buff_row above; max_phase never
+	# actually changes mid-fight in practice (always 3, the boss's own only
+	# caller), so this isn't the hot churn it would be for something that
+	# resizes every frame.
+	var boss_data = data.get("boss")
+	if boss_data != null:
+		_boss_bar.visible = true
+		_boss_name_label.text = boss_data["name"]
+		_set_bar_ratio(_boss_fill, boss_data["hp_ratio"])
+		for child in _boss_dots_row.get_children():
+			child.queue_free()
+		var max_phase: int = boss_data["max_phase"]
+		var boss_phase: int = boss_data["phase"]
+		for i in range(max_phase):
+			var dot := ColorRect.new()
+			dot.custom_minimum_size = Vector2(7.0, 7.0)
+			dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			# Dots represent phases REMAINING, depleting left-to-right —
+			# ports HUD.ts's own `i < maxPhase - phase + 1` exactly (phase 1
+			# lights every dot, phase 3 of 3 lights only the last one).
+			var active: bool = i < max_phase - boss_phase + 1
+			dot.color = Color(Palette.BLOOD_BRIGHT) if active else Color(Palette.BG3)
+			_boss_dots_row.add_child(dot)
+	else:
+		_boss_bar.visible = false
 
 ## Mirrors Game.ts's private roomTypeLabel.
 static func room_type_label(type: RoomContainer.Type) -> String:

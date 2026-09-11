@@ -68,7 +68,24 @@ func _ready() -> void:
 	CombatManager.enemy_died.connect(_on_enemy_died)
 	RunState.player_leveled_up.connect(_on_player_leveled_up)
 	CombatManager.champion_shield_broken.connect(_on_champion_shield_broken)
+	CombatManager.boss_phase_changed.connect(_on_boss_phase_changed)
+	CombatManager.boss_defeated.connect(_on_boss_defeated)
 	room_changed.connect(_on_room_changed)
+
+## Ports BossSystem.ts's own boss.phaseJustChanged handling — no exact
+## per-phase banner text exists in the source beyond the generic
+## gameEvents.emit('bossPhaseChanged', {phase}) payload, so this names the
+## beat directly rather than guessing at unported UI copy.
+func _on_boss_phase_changed(boss: Node) -> void:
+	var b := boss as BossCharacter
+	if b == null or hud == null:
+		return
+	hud.show_phase_banner("PHASE %d" % int(b.phase))
+
+## Ports BossSystem.ts's own deathAnimationDone-gated bossDefeated handling.
+func _on_boss_defeated(_boss: Node) -> void:
+	if hud != null:
+		hud.show_phase_banner("THE ASHEN COLOSSUS FALLS")
 
 ## Ports Game.ts's private onChampionShieldBreak's own showPhaseBanner call
 ## — the bloat-spawn/VFX half of that method already lives on CombatManager
@@ -238,6 +255,17 @@ func enter_room(room: RoomContainer, from_dir) -> void:
 				var boss: BossCharacter = BOSS_SCENE.instantiate()
 				room.add_enemy(boss)
 				boss.setup(boss_def, Vector2(RoomContainer.ROOM_WIDTH / 2.0, RoomContainer.ROOM_HEIGHT * 0.32), factors["hp_mult"], factors["damage_mult"])
+				# Boss.ts gates beginFight() on the Web build's own intro/roar
+				# presentation beat — this port has no cutscene system to gate
+				# the real thing on, so a plain fixed delay stands in: the
+				# phase banner gives the room-entry moment a readable beat, and
+				# staying `invulnerable`/immobile (BossState.INTRO's default,
+				# untouched until begin_fight() flips it) for that same stretch
+				# means the boss isn't instantly attacking the instant the door
+				# seals behind the player.
+				if hud != null:
+					hud.show_phase_banner(boss_def.name.to_upper())
+				get_tree().create_timer(1.8).timeout.connect(boss.begin_fight)
 	elif not room.spawned_content:
 		LevelGenerator.populate_room_content(room, RunState.current_layout()["zone"], _spawn_options())
 
