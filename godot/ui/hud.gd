@@ -835,7 +835,7 @@ func update(data: Dictionary) -> void:
 
 	_embers_label.text = _format_number(int(data["embers"]))
 	_zone_label.text = "%s · %s" % [data["zone_name"], data["room_label"]]
-	_timer_label.text = _format_time(float(data["elapsed_seconds"]))
+	_timer_label.text = format_time(float(data["elapsed_seconds"]))
 	_set_bar_ratio(_corruption_fill, float(data["corruption"]))
 
 	# Sweep covers the icon while charging and clears as `energy` (the
@@ -925,7 +925,7 @@ static func _format_number(n: int) -> String:
 	return str(n)
 
 ## Mirrors MathUtils.ts's formatTime.
-static func _format_time(seconds: float) -> String:
+static func format_time(seconds: float) -> String:
 	var total: int = int(seconds)
 	var m: int = total / 60
 	var s: int = total % 60

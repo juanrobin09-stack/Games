@@ -150,6 +150,18 @@ func _physics_process(delta: float) -> void:
 ## startNewRun marking that one room spawnedContent=true directly instead
 ## of routing it through populate_room_content like every other room.
 func start_new_run(seed_string: String, p_player: PlayerCharacter, parent: Node) -> void:
+	# Frees every room this port itself created for a PREVIOUS run, if any
+	# (RunState.layouts is empty on the very first call, so this is a
+	# no-op then) — GODOT_MIGRATION.md §6 warns explicitly against the
+	# alternative ("silently leaving stale nodes around, which a GC-free
+	# engine won't clean up for you"): without this, Play-again-after-a-
+	# run-ends would pile up a second, third, ... full set of RoomContainer
+	# nodes underneath `parent` on every replay, each still holding its own
+	# enemies/obstacles/pickups.
+	for old_layout in RunState.layouts.values():
+		for old_room in (old_layout["rooms"] as Dictionary).values():
+			if is_instance_valid(old_room):
+				old_room.queue_free()
 	RunState.reset_for_new_run(seed_string)
 	player = p_player
 	_transition.clear()

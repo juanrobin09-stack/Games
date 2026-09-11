@@ -1,23 +1,24 @@
 extends Node2D
-## Entry point for build-order steps 1-8. Boots a real run through
-## LevelFlow.start_new_run() — 3 fully generated zones, real rooms with
-## real walls/obstacles/enemies/chests, bidirectional stairs, real
-## per-entity rendering and lighting (step 7), and GPUParticles2D VFX
-## (step 8) — instead of the fixed one-enemy-per-behavior "playground"
-## earlier steps used.
+## Entry point + top-level screen orchestrator — the Godot counterpart to
+## core/Game.ts's own role as "the single per-frame orchestrator"
+## (GODOT_MIGRATION.md §1's architecture diagram). Boots to the main menu;
+## Play routes through LevelFlow.start_new_run() for a real run — 3 fully
+## generated zones, real rooms with real walls/obstacles/enemies/chests,
+## bidirectional stairs, real per-entity rendering/lighting (step 7),
+## GPUParticles2D VFX (step 8), and now the full meta-shell (step 9's own
+## "Phase B": MainMenu/PauseMenu/Settings/Victory/Defeat/Credits/Armory).
 ##
-## Controls: WASD/arrows move, mouse aims, left click attacks (melee or
-## ranged depending on the equipped weapon), space dodges, right click
-## channels the ability (still no damage/radius effect resolved — the
-## player's actual ability effects are progression-system work, not done
-## yet), Q cycles the equipped weapon (debug stand-in for the real loadout
-## screen, step 9), **E interacts** (chests, the sanctum circle, resting at
-## a brazier, stairs). Shop/event landmarks exist and are walkable-up-to
-## but their actual interaction is deferred to step 9 (real UI) — pressing
-## E on one just prints why nothing happened.
+## Controls once a run is live: WASD/arrows move, mouse aims, left click
+## attacks (melee or ranged depending on the equipped weapon), space
+## dodges, right click channels the ability (still no damage/radius effect
+## resolved — the player's actual ability effects are progression-system
+## work, not done yet), Q cycles the equipped weapon (debug stand-in for
+## the real loadout screen — LoadoutSelectUI, still not built; see
+## godot/README.md), **E interacts** (chests, the sanctum circle, resting
+## at a brazier, stairs, shop/event landmarks).
 ##
-## A run seed is generated fresh each time this scene loads (shown in the
-## debug panel) — same seed always regenerates the same 3 zone layouts in
+## A run seed is generated fresh each Play unless the MainMenu's seed field
+## is filled in — same seed always regenerates the same 3 zone layouts in
 ## this engine (GODOT_MIGRATION.md §6: seeds are engine-local, not expected
 ## to match the Web build's own layouts for the same seed string).
 
@@ -31,8 +32,13 @@ const PLAYER_SCENE := preload("res://entities/player.tscn")
 @onready var live_label: Label = $UI/LiveLabel
 @onready var hud: HudLayer = $UI/Hud
 
-var player: PlayerCharacter
+var player: PlayerCharacter = null
 var run_seed: String = ""
+## Guards _end_run() against firing twice for the same run (e.g. a status-
+## effect tick killing the player the same frame the boss's own death
+## animation finishes) — mirrors Boss.ts/BossSystem.ts's own
+## deathHandled-style single-fire guards used throughout this port already.
+var _run_ending: bool = false
 
 ## The debug/diagnostic panel (DebugLabel + LiveLabel) starts hidden now
 ## that Hud carries the player-facing version of the same core info —
@@ -42,21 +48,89 @@ var run_seed: String = ""
 var _debug_visible: bool = false
 var _f1_key_down: bool = false
 
+## Whichever meta-shell screen is currently on top (MainMenu, Credits,
+## Victory/Defeat — later PauseMenu/Settings/Armory too), so the next
+## transition can close it first. Mirrors Game.ts's own closeModal()/
+## modalScreen slot — one screen up at a time, the caller's job to tear
+## the old one down before showing the next, not each screen's own.
+var _current_screen: Control = null
+
+func _close_current_screen() -> void:
+	if _current_screen != null and is_instance_valid(_current_screen):
+		_current_screen.queue_free()
+	_current_screen = null
+
 func _ready() -> void:
 	_print_diagnostics()
-	_start_run()
-
-func _start_run() -> void:
-	run_seed = str(Time.get_unix_time_from_system()) + ":" + str(randi())
-	player = PLAYER_SCENE.instantiate()
-	add_child(player)
-	# Debug-only: the real Armory/loadout unlock flow is steps 6/9. Seeding
-	# all 4 here is what makes the Q weapon-cycle (player.gd) able to reach
-	# the ranged weapons at all before that screen exists.
-	player.unlocked_weapons = ["emberBlade", "voidScythe", "solarSpear", "bow"]
 	LevelFlow.ui_root = $UI
 	LevelFlow.hud = hud
+	CombatManager.boss_defeated.connect(func(_boss): _end_run(true))
+	CombatManager.player_died.connect(func(): _end_run(false))
+	hud.visible = false
+	_show_main_menu()
+
+func _show_main_menu() -> void:
+	_close_current_screen()
+	GameState.change_state(GameState.State.MAIN_MENU)
+	_current_screen = MainMenuUI.show_main_menu($UI, {
+		"on_play": func(seed_text: String): _begin_run(seed_text),
+		# TODO(Phase B, next commit): Armory (Upgrades/Armory tabs) and a
+		# standalone Settings screen — both still unbuilt as of this commit;
+		# wired as soon as they land rather than left silently dead.
+		"on_upgrades": func(): print("Armory (Upgrades) — not built yet"),
+		"on_armory": func(): print("Armory — not built yet"),
+		"on_settings": func(): print("Settings — not built yet"),
+		"on_credits": _show_credits,
+	})
+
+func _show_credits() -> void:
+	_close_current_screen()
+	_current_screen = CreditsUI.show_credits($UI, _show_main_menu)
+
+## Ports Game.ts's startNewRun. Frees the PREVIOUS run's room nodes (see
+## LevelFlow.start_new_run's own new cleanup block) and player instance
+## before building fresh ones — the first-ever call has nothing to free
+## (RunState.layouts starts empty, `player` starts null), so this is safe
+## to call exactly once (first boot's own eventual Play click) or
+## repeatedly (Defeat's Try Again, or Play again after a prior run ended).
+func _begin_run(seed_text: String) -> void:
+	_close_current_screen()
+	GameState.change_state(GameState.State.RUN_START)
+	_run_ending = false
+	if player != null and is_instance_valid(player):
+		player.queue_free()
+	run_seed = seed_text if seed_text != "" else (str(Time.get_unix_time_from_system()) + ":" + str(randi()))
+	MetaProgression.last_seed = run_seed
+	player = PLAYER_SCENE.instantiate()
+	# Permanent-upgrade modifiers are baked into base_stats BEFORE this
+	# node enters the tree, so _ready()'s own recompute_stats() (which
+	# reads base_stats) picks them up on its first pass rather than
+	# needing a second manual recompute after add_child().
+	player.base_stats = StatBlock.fresh().apply_modifiers(MetaProgression.get_permanent_stat_modifiers())
+	player.unlocked_weapons.append_array(MetaProgression.get_unlocked_weapon_ids())
+	player.unlocked_abilities.append_array(MetaProgression.get_unlocked_ability_ids())
+	add_child(player)
+	hud.visible = true
 	LevelFlow.start_new_run(run_seed, player, self)
+	GameState.change_state(GameState.State.EXPLORATION)
+
+## Ports Game.ts's endRun: banks Soul Ash via the same formula
+## (kills*0.6 + eliteKills*4 + (victory?70:0) + embers*0.08), records the
+## lifetime stats, then hands off to the matching end screen.
+func _end_run(victory: bool) -> void:
+	if _run_ending:
+		return
+	_run_ending = true
+	var formula_ash: int = floori(RunState.kills * 0.6 + RunState.elite_kills * 4.0 + (70.0 if victory else 0.0) + RunState.embers * 0.08)
+	RunState.soul_ash_earned += formula_ash
+	MetaProgression.add_soul_ash(formula_ash)
+	MetaProgression.record_run_end(RunState.kills, not victory, victory, RunState.elapsed_time, RunState.embers_collected)
+	hud.visible = false
+	GameState.change_state(GameState.State.VICTORY if victory else GameState.State.DEFEAT)
+	if victory:
+		_current_screen = VictoryDefeatUI.show_victory($UI, RunState.soul_ash_earned, _show_main_menu)
+	else:
+		_current_screen = VictoryDefeatUI.show_defeat($UI, RunState.soul_ash_earned, func(): _begin_run(""), _show_main_menu)
 
 ## Live readout of input/gating/combat/room state, refreshed every frame.
 func _process(_delta: float) -> void:
@@ -215,7 +289,7 @@ func _data_registry_summary(counts: Dictionary) -> String:
 func _print_diagnostics() -> void:
 	var state_name: String = GameState.State.keys()[GameState.current]
 	var lines: Array[String] = [
-		"EMBERFALL: LAST LIGHT — Godot scaffold (build-order step 8 of 12)",
+		"EMBERFALL: LAST LIGHT — Godot scaffold (build-order step 9 of 12)",
 		"WASD move, mouse aim, LMB attack, Space dodge, RMB ability, Q cycle weapon, E interact, F1 debug overlay",
 		"GameState: %s (simulating: %s)   Soul Ash: %d   save loaded: %s" % [
 			state_name, GameState.is_simulating(), MetaProgression.soul_ash,

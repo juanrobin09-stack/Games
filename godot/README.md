@@ -7,7 +7,7 @@ kept/improved/rebuilt, the recommended architecture, and the complete
 [`GODOT_MIGRATION.md`](../GODOT_MIGRATION.md) at the repo root. Read that
 first; this file only tracks what's actually been built here so far.
 
-## Status: build-order step 9 of 12 — UI (complete)
+## Status: build-order step 9 of 12 — UI (complete; Phase B meta-shell in progress)
 
 **Important caveat:** this project was authored without access to the
 Godot editor or engine binary — this environment doesn't have Godot
@@ -556,10 +556,103 @@ phase threshold should glow the boss briefly invulnerable and show a
 banner; killing it should hold on its shrink-and-fade for ~2 seconds
 before "THE ASHEN COLOSSUS FALLS" and a bigger burst than a normal kill.
 
-### Next steps (not started)
+### Phase B — the meta-shell (in progress)
 
-Step 9 (UI) is complete — every Phase-A gameplay-critical screen
-`GODOT_MIGRATION.md` calls for is landed, along with the toast/banner
-feedback layer, the minimap, both vignettes, and the boss attack-FSM +
-boss bar. Next: Phase B, the MainMenu/PauseMenu/Settings/Victory/Credits
-meta-shell, per `GODOT_MIGRATION.md`'s own Phase-A/Phase-B split.
+Every in-run screen (Phase A) is done. Phase B wraps a run: MainMenu,
+PauseMenu, Settings, Victory/Defeat, Credits, and the Armory (permanent
+upgrades + weapon/ability unlocks), per `GODOT_MIGRATION.md`'s own
+Phase-A/Phase-B split. Landing in ordered slices rather than one pass —
+each slice is a real, tested, working state of the game, not a partial
+screen with dead buttons.
+
+**Slice 1 — meta-progression + run-stats foundation.** Pure data/logic,
+no new screens: `MetaProgression`'s real permanent-upgrade cost/afford/
+purchase logic and `get_permanent_stat_modifiers()` (ports
+`MetaProgression.ts`, never carried over before — nothing needed it),
+unlock purchase/afford + weapon/ability-id resolution, a `settings`
+Dictionary, hint tracking, `last_seed`; `RunState.add_embers`/
+`record_kill`/`record_damage_dealt`/`record_damage_taken`/
+`record_upgrade` (ports `RunState.ts`'s own already-centralized methods,
+also never carried over), wired at the natural existing hook points
+(`CombatManager`'s damage pipeline and `on_enemy_death`, pickup
+collection, the upgrade-grant funnel).
+
+**Slice 2 — MainMenu, Victory/Defeat, Credits, and the real GameState
+machine.** The single biggest structural change so far: the game used to
+boot straight into a run (`main.gd`'s own header used to say so
+explicitly) with `GameState`'s stack machine fully ported but never once
+called anywhere in the whole port — confirmed by a project-wide grep
+during this slice's own research pass, zero call sites for
+`change_state`/`push_state`/`pop_state` outside the autoload's own
+definitions. Now:
+
+| File | Ports | State |
+|---|---|---|
+| `ui/menu_ui_kit.gd` | style.css's shared `.screen-overlay`/`.screen-panel`/`.btn*`/`.button-row`/`.button-column` primitives | New shared `MenuUiKit` — every other screen this project has built keeps its own private copy of this kind of helper (fine at 2-3 files), but 7 meta-shell screens all wanting the exact same overlay/panel/button chrome is a different scale of duplication, so this one case gets a shared module (the same reasoning already applied to `DrawUtils`/`VfxPresets`/`VfxSystem` for their own cross-cutting concerns) |
+| `ui/main_menu_ui.gd` | `ui/MainMenu.ts` | Title, seed field (typed text only so far — no `?seed=` URL param to pre-fill from), Play/Upgrades/Armory/Settings/Credits buttons. The rising-ember canvas animation is rewritten against `GPUParticles2D` rather than ported line-by-line (GODOT_MIGRATION.md §4: particles are a rewrite, not a port, case — same call this project's own step 8 already made) |
+| `ui/victory_defeat_ui.gd` | `ui/VictoryScreen.ts`'s own `VictoryScreen` + `DefeatScreen` | One file, two static factories, not two classes — the source's own two classes are already near-identical (same stat-grid, seed label, panel chrome; only title/subtitle copy and button count differ), which doesn't earn a second class here either |
+| `ui/credits_ui.gd` | `ui/CreditsScreen.ts` | Static text panel; the "tech" line is adapted (Godot Engine/GDScript), not translated verbatim — the source's own line names TypeScript/Vite/Canvas2D/Web Audio, which would be factually wrong here |
+| `autoload/game_state.gd` (no changes — just finally called) | `core/GameStateMachine`'s real transitions | `main.gd` now calls `change_state` at every point the source's own `Game.ts` does: boot → `MAIN_MENU`, Play → `RUN_START` → `EXPLORATION`, boss-defeated/player-died → `VICTORY`/`DEFEAT`. `EVENT`/`SHOP`/`COMBAT` stay unentered for now (Shop/Event already work correctly as pause-gated modals with no state-machine dependency; a boss room sets `BOSS`... not yet either — deferred to the same follow-up as PauseMenu, see below) |
+| `scenes/main/main.gd` | `core/Game.ts`'s own top-level orchestration (`showMainMenu`/`startNewRun`/`endRun`) | Rewritten from a direct `_start_run()` boot into a real screen orchestrator: `_show_main_menu()`/`_begin_run()`/`_end_run()`, a `_current_screen` slot mirroring the source's own single `modalScreen` (closed before the next screen opens — a real bug caught here, not guessed: the first working draft never freed the previous end screen, so "Try Again" would leave Defeat's own panel sitting on top of the new run), and the exact Soul Ash formula (`kills*0.6 + eliteKills*4 + (victory?70:0) + embers*0.08`) |
+| `autoload/level_flow.gd` | (new) | `start_new_run()` now frees every room the PREVIOUS run created before generating fresh ones — GODOT_MIGRATION.md §6's own explicit warning ("stale nodes... a GC-free engine won't clean up for you"); the first-ever call has nothing to free (`RunState.layouts` starts empty) so this needed a second run to actually exercise and catch |
+
+Permanent-upgrade modifiers are applied for real now too: `_begin_run()`
+bakes `MetaProgression.get_permanent_stat_modifiers()` into the player's
+`base_stats` *before* the node enters the tree, so `player.gd`'s own
+`_ready()` → `recompute_stats()` picks them up on its first pass with no
+second manual recompute needed. `unlocked_weapons`/`unlocked_abilities`
+now start from the player's own real baseline (`["emberBlade"]`/
+`["emberBurst"]`) plus whatever's actually been purchased, replacing the
+old hardcoded "all 4 weapons" debug seed — the Q-cycle debug stand-in
+(still no real loadout-selection screen — `LoadoutSelectUI`, not built
+yet) now cycles through what's genuinely unlocked instead.
+
+Two real bugs found and fixed by actually running this, not just reading
+the diff:
+- **`GPUParticles2D` has no `mouse_filter`** (that's `Control`-only —
+  this node is a `Node2D`) — assigning it threw a script error that
+  silently aborted the rest of `_build_ember_particles()` before
+  `emitting = true` or `add_child()` ever ran, so the very first screenshot
+  showed no ember background at all, not a broken one.
+- **`DrawUtils.glow_texture()`'s native size is 256×256px** (its own doc
+  comment: "texture_scale = desiredRadius / 128.0") — every other call
+  site divides by 128 first; this one didn't, and a `scale_min/max` of
+  `1.0`-`2.6` turned each of the 46 motes into a 250+px blown-out circle,
+  confirmed via a real screenshot showing the entire lower half of the
+  screen as one saturated white mass. Fixed to `0.02`-`0.05` (a ~5-13px
+  dot, matching the source's own small mote size) and reconfirmed via a
+  second screenshot.
+- (A third, non-visual layout bug: `VBoxContainer` stretches a plain
+  child to its own full width regardless of `custom_minimum_size` — the
+  MainMenu's button column and seed field rendered full-screen-wide until
+  `size_flags_horizontal = SIZE_SHRINK_CENTER` was added to both.)
+
+**Verified** via a real headless run: menu boots and renders (particles
+included, after the fixes above), Play starts a real run (HUD visible,
+room populated, weapon/ability correctly show the real baseline), a
+forced player death correctly shows Defeat with the right zone name and
+a real stat grid, Try Again correctly starts a **second** run with no
+orphaned-node errors (the room-cleanup fix, actually exercised), a forced
+boss-defeat correctly shows Victory, and `MetaProgression.lifetime_stats`
+correctly accumulated across both runs (`runs_started`, `runs_won`,
+`total_deaths`, `best_time_seconds`, `total_soul_ash_earned` all checked
+against the exact expected formula, not just "looked fine").
+
+**Not built yet** (next slices): PauseMenu + Settings (standalone and
+pause-embedded) — MainMenu's Settings/Upgrades/Armory buttons currently
+just print a placeholder rather than doing nothing silently; Escape
+currently has no input-map binding at all. The Armory/permanent-upgrades
+screen (`MetaProgressionMenu.ts`). `LoadoutSelectUI` (weapon/ability
+choice at run start — Q-cycle remains the interim access method). Most
+of Settings' own controls (volumes, mute, particle/graphics quality, text
+scale, high-contrast, reduced-motion, language) will be built as real,
+saved, honestly-inert preferences rather than left out or faked: this
+port has no audio system, no quality-tier system, no accessibility
+system, and — a genuinely new finding this slice — **no i18n system at
+all** (the French localization work referenced elsewhere in this
+project's history was TS-only, never ported; every Godot-side string in
+this whole project is English-only today). Only the fullscreen toggle
+(`DisplayServer`, one call) and language storage-without-effect will do
+anything real; the rest is exactly the same "camera shake/hit-stop/SFX"
+kind of honest, documented gap this project already carries from the
+boss work, not a new one invented here.
