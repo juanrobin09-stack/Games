@@ -565,11 +565,16 @@ func _on_enemy_died(enemy: Node) -> void:
 	var xp_gained: int = maxi(1, int(round(XP_PER_WEIGHT * e.def.xp_weight * (1.0 + RunState.zone_index * XP_ZONE_BONUS_PER_INDEX))))
 	RunState.grant_xp(xp_gained)
 
-	var ember_total: int = int(round(e.def.ember_value * (0.85 + randf() * 0.3)))
-	if ember_total <= 0:
-		return
 	var room := e.get_parent() as RoomContainer
 	if room == null:
+		return
+	# The only in-game (not Output-panel) feedback for a kill's XP until a
+	# real HUD popup/toast system exists — RunState.grant_xp() above already
+	# prints the same number, this just makes it visible without the console.
+	FloatingText.spawn(room, e.global_position + Vector2(0.0, -20.0), "+%d XP" % xp_gained, Color(Palette.GOLD_BRIGHT))
+
+	var ember_total: int = int(round(e.def.ember_value * (0.85 + randf() * 0.3)))
+	if ember_total <= 0:
 		return
 	var count: int = clampi(int(round(ember_total / 3.0)), 1, 5)
 	var per: int = maxi(1, int(round(float(ember_total) / count)))

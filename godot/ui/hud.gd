@@ -305,6 +305,13 @@ func _build_bottom_left() -> void:
 	_ability_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ability_row.add_child(_ability_name_label)
 
+## Rebuilt to reuse _make_bar_row (proven working — HP/stamina/energy all
+## confirmed live) instead of the bespoke inline track/fill/label
+## construction this originally had, after that version's XP bar and level
+## label reportedly never appeared at all despite every other bar working.
+## No confirmed root cause without an editor to inspect — this removes the
+## one place step 9's first HUD commit diverged from the shared helper
+## rather than leave that divergence unexplained.
 func _build_bottom_right() -> void:
 	var col := VBoxContainer.new()
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -314,47 +321,21 @@ func _build_bottom_right() -> void:
 	col.anchor_right = 1.0
 	col.anchor_bottom = 1.0
 	col.offset_left = -14.0 - 220.0
-	col.offset_top = -14.0 - 40.0
+	col.offset_top = -14.0 - 44.0
 	col.offset_right = -14.0
 	col.offset_bottom = -14.0
-
 	add_child(col)
 
-	var xp_row := HBoxContainer.new()
-	xp_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	xp_row.add_theme_constant_override("separation", 8)
-	col.add_child(xp_row)
+	var xp := _make_bar_row(col, "", Color.WHITE, Color(Palette.GOLD_BRIGHT))
+	_xp_fill = xp["fill"]
+	_xp_label = xp["label"]
 	_level_label = Label.new()
 	_level_label.text = "Lv.1"
 	_level_label.add_theme_font_size_override("font_size", 13)
 	_level_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var xp_row := xp["row"] as HBoxContainer
 	xp_row.add_child(_level_label)
-
-	var xp_track := Control.new()
-	xp_track.custom_minimum_size = Vector2(120.0, 18.0)
-	xp_track.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	xp_track.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	xp_row.add_child(xp_track)
-	var xp_bg := ColorRect.new()
-	xp_bg.color = BAR_TRACK_BG
-	xp_bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	xp_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	xp_track.add_child(xp_bg)
-	_xp_fill = ColorRect.new()
-	_xp_fill.color = Color(Palette.GOLD_BRIGHT)
-	_xp_fill.anchor_left = 0.0
-	_xp_fill.anchor_top = 0.0
-	_xp_fill.anchor_right = 0.0
-	_xp_fill.anchor_bottom = 1.0
-	_xp_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	xp_track.add_child(_xp_fill)
-	_xp_label = Label.new()
-	_xp_label.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_xp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_xp_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_xp_label.add_theme_font_size_override("font_size", 11)
-	_xp_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	xp_track.add_child(_xp_label)
+	xp_row.move_child(_level_label, 0)
 
 	_points_hint = Label.new()
 	_points_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
