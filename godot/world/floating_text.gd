@@ -17,14 +17,19 @@ const HALF_WIDTH := 70.0
 var _age: float = 0.0
 var _text: String = ""
 var _color: Color = Color.WHITE
+var _font_size: int = FONT_SIZE
 
 ## Spawns one popup as a child of `parent`, positioned at `world_pos` (a
 ## global position — `parent` need not be at the origin). Fires and
 ## forgets: the caller keeps no reference, the node frees itself.
-static func spawn(parent: Node, world_pos: Vector2, text: String, color: Color) -> void:
+## `font_size` defaults to FONT_SIZE (every existing caller's own size) —
+## damage numbers are the one caller that varies it, matching
+## DamageNumber.ts's own crit(20)/normal(15)/blocked(12) sizing.
+static func spawn(parent: Node, world_pos: Vector2, text: String, color: Color, font_size: int = FONT_SIZE) -> void:
 	var ft := FloatingText.new()
 	ft._text = text
 	ft._color = color
+	ft._font_size = font_size
 	parent.add_child(ft)
 	ft.global_position = world_pos
 
@@ -43,5 +48,5 @@ func _draw() -> void:
 	var fill_color := _color
 	fill_color.a = alpha
 	var pos := Vector2(-HALF_WIDTH, 0.0)
-	draw_string_outline(font, pos, _text, HORIZONTAL_ALIGNMENT_CENTER, HALF_WIDTH * 2.0, FONT_SIZE, 3, outline_color)
-	draw_string(font, pos, _text, HORIZONTAL_ALIGNMENT_CENTER, HALF_WIDTH * 2.0, FONT_SIZE, fill_color)
+	draw_string_outline(font, pos, _text, HORIZONTAL_ALIGNMENT_CENTER, HALF_WIDTH * 2.0, _font_size, 3, outline_color)
+	draw_string(font, pos, _text, HORIZONTAL_ALIGNMENT_CENTER, HALF_WIDTH * 2.0, _font_size, fill_color)

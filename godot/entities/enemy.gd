@@ -16,21 +16,6 @@ extends CharacterBody2D
 
 signal died(enemy: EnemyCharacter)
 
-## TEMPORARY, TEST-ONLY: cuts every enemy's HP for faster combat/particle
-## playtesting (asked for directly — mobs were taking too long to kill to
-## exercise hit/death VFX repeatedly). Not a balance change — revert to 1.0
-## (or delete this const and the one line that multiplies by it in setup()
-## below) once testing is done; base_hp in the .tres resources is untouched.
-## Sanctum rite waves opt out via setup()'s apply_debug_hp_mult param — the
-## rite's wave-to-wave pacing (a fixed 1.6s gap, spawn slots that don't
-## avoid the player, ported byte-for-byte from Game.ts/LevelGenerator.ts)
-## assumes normal-speed kills; at this multiplier a wave dies fast enough
-## that the next one's spawn can land right as the player is still standing
-## where the last wave died, which reads as "instant respawn, spawned on
-## me, couldn't get out" — reported directly. That's this multiplier
-## fighting the rite's own pacing, not a separate bug in the rite itself.
-const DEBUG_HP_MULT := 0.15
-
 enum State { SPAWNING, IDLE, CHASE, WINDUP, ATTACK, COOLDOWN, VANISHED, REAPPEARING, STAGGER, DEAD }
 
 var def: EnemyDefinition
@@ -106,13 +91,13 @@ func attack_damage() -> float:
 
 ## Call once after instancing (before or after add_child, either order
 ## works — _ready() re-applies the collision radius either way).
-func setup(enemy_def: EnemyDefinition, spawn_pos: Vector2, hp_mult: float, damage_mult: float, apply_debug_hp_mult: bool = true) -> void:
+func setup(enemy_def: EnemyDefinition, spawn_pos: Vector2, hp_mult: float, damage_mult: float) -> void:
 	def = enemy_def
 	global_position = spawn_pos
 	radius = def.radius
 	difficulty_hp_mult = hp_mult
 	difficulty_damage_mult = damage_mult
-	max_hp = roundf(def.base_hp * hp_mult * (DEBUG_HP_MULT if apply_debug_hp_mult else 1.0))
+	max_hp = roundf(def.base_hp * hp_mult)
 	hp = max_hp
 	attack_cooldown_timer = def.attack_cooldown * (0.4 + randf() * 0.4)
 	state_timer = 0.15 + randf() * 0.2
@@ -442,24 +427,26 @@ func _draw_dashed_circle(circle_radius: float, color: Color, width: float, dash:
 		draw_arc(Vector2.ZERO, circle_radius, angle, end_angle, 6, color, width, true)
 		angle += dash_angle + gap_angle
 
-## Ports drawEnemy.ts's statusOverlay(): a burn tint (while alive) and the
-## on-hit white flash (regardless of alive, matching the source exactly).
 ## The source reads a dedicated `enemy.burn` field; this port's
 ## generalized `status_effects` array (see status_effect_instance.gd) has
 ## no equivalent single field, so this looks for an active "burn"
-## instance in it instead — same visual, same trigger condition.
+## instance in it instead — same condition, same trigger. Shared by the
+## ashFire synergy check (CombatManager.damage_player_to_enemy) and the
+## status overlay's own burn tint below.
+func has_burn() -> bool:
+	for entry in status_effects:
+		var inst: StatusEffectInstance = entry
+		if inst != null and inst.definition != null and inst.definition.id == "burn":
+			return true
+	return false
+
+## Ports drawEnemy.ts's statusOverlay(): a burn tint (while alive) and the
+## on-hit white flash (regardless of alive, matching the source exactly).
 func _status_overlay(r: float) -> void:
-	if alive:
-		var burning := false
-		for entry in status_effects:
-			var inst: StatusEffectInstance = entry
-			if inst != null and inst.definition != null and inst.definition.id == "burn":
-				burning = true
-				break
-		if burning:
-			var burn_color := Color(Palette.EMBER4)
-			burn_color.a = 0.35 + sin(anim_phase * 16.0) * 0.12
-			draw_circle(Vector2(0.0, -r * 0.2), r * 0.9, burn_color)
+	if alive and has_burn():
+		var burn_color := Color(Palette.EMBER4)
+		burn_color.a = 0.35 + sin(anim_phase * 16.0) * 0.12
+		draw_circle(Vector2(0.0, -r * 0.2), r * 0.9, burn_color)
 	if hit_flash_timer > 0.0:
 		draw_circle(Vector2.ZERO, r * 1.05, Color(1.0, 1.0, 1.0, (hit_flash_timer / 0.16) * 0.75))
 

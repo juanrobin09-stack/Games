@@ -12,13 +12,11 @@ extends EnemyCharacter
 ## resolve_boss_pending_actions() resolves the pending_* flags tick() sets
 ## into real damage/VFX/summons each frame (ports combat/BossSystem.ts).
 ##
-## Camera shake and hit-stop from BossSystem.ts are still NOT ported
-## anywhere in this file or in resolve_boss_pending_actions(): no such
-## system exists ANYWHERE in this Godot port yet (combat_manager.gd's own
-## header already documents this as a whole-game gap predating the boss).
-## SFX (bossRoar/bossPhase/bossHit/bossDeath) IS now wired, in
-## resolve_boss_pending_actions() (step 10, audio_engine.gd) — the same
-## pending-flag branches that already spawn this boss's VFX.
+## Camera shake and hit-stop from BossSystem.ts are wired too, in
+## resolve_boss_pending_actions() (player.add_camera_shake()/this
+## autoload's own trigger_hit_stop(), see combat_manager.gd), the same
+## pending-flag branches that already spawn this boss's VFX and SFX
+## (bossRoar/bossPhase/bossHit/bossDeath, step 10, audio_engine.gd).
 ##
 ## Boss.ts's own field list re-declares `comboStep = 0` even though its
 ## parent `Enemy` already has one (used there for the warden's champion

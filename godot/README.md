@@ -201,23 +201,32 @@ TS call site each one ports) needed porting, not the engine underneath them.
 reasoning on each): 5 of the 18 `ParticlePresets.ts` functions are dead
 code in the TS source itself (never called from anywhere in the Web
 build) and porting them would just be unused surface area. `spawnEmberBurstVfx`
-has no reachable trigger in this port yet — every TS call site is the
-player's Ember Burst ability's damage effect (not implemented —
-`player.gd`'s `start_ability()` is animation-only) or one of the Ashen
-Colossus's phase attacks. **That surfaced a real, previously-undocumented
-gap this pass**: the boss has no attack FSM at all in this port —
-`boss.gd`'s `boss_state`/`Phase` fields exist and drive its rendering, but
-nothing anywhere ever assigns `boss_state`, so a run's boss currently
-fights back only as a generic (very large) enemy via `EnemyAI`, none of
-the slam/combo/shockwave/projectile/summon attacks `GODOT_MIGRATION.md`
-describes. Worth a dedicated pass of its own rather than folding into this
-one. `spawnZoneAmbientParticle` (a continuous per-zone atmosphere effect,
+had no reachable trigger in this port at the time this step was built —
+every TS call site was either the player's Ember Burst ability's damage
+effect (`player.gd`'s `start_ability()` was animation-only then) or one of
+the Ashen Colossus's phase attacks; the ability side is real now, wired
+via `CombatManager.ember_burst_ability()` (see the "everything necessary"
+pass at this README's end). This paragraph used to claim that surfaced a
+real gap — "the boss has no attack FSM at all in this port" — reasoning
+from `boss_state` having no visible trigger at the time this step was
+written. Re-checked directly while writing the "everything necessary"
+pass at this README's end: that claim was already stale by then. `boss.gd`
+has a complete `BossState` enum (`INTRO`/`IDLE`/`TELEGRAPH_SLAM`/
+`TELEGRAPH_COMBO`/`TELEGRAPH_SHOCKWAVE`/`TELEGRAPH_PROJECTILE`/
+`SUMMONING`/`RECOVER`/`PHASE_TRANSITION`/`DYING`) with real telegraph-
+timing logic that sets `pending_melee_slam`/`pending_shockwave`/
+`pending_summon_count`, resolved every frame by `CombatManager.
+resolve_boss_pending_actions()` into the slam/combo/shockwave/projectile/
+summon attacks `GODOT_MIGRATION.md` describes — no dedicated pass needed,
+this was integration glue away from working, not a missing system.
+`spawnZoneAmbientParticle` (a continuous per-zone atmosphere effect,
 technically `drawRoom.ts` not `ParticlePresets.ts`) reads `ZoneDefinition`
 fields (`ambientParticle`, `sporeColors`, `palette.ambient`/`accent`) that
 don't exist on this port's `ZoneDefinition` resource yet — left for a
-dedicated atmosphere pass. And a handful of individual call sites of
-otherwise-ported presets stay unwired because they're gated on the
-shop/event UI or the reward-choice system (step 9).
+dedicated atmosphere pass. (A handful of individual call sites of
+otherwise-ported presets were unwired at this step because they were
+gated on the shop/event UI or the reward-choice system — all resolved
+once step 9 built those; see `vfx_presets.gd`'s own header.)
 
 **How to test it:** run the project and trigger the actions above one at a
 time — land a normal hit and a blocked (shield) hit on a Hollow Warden,
@@ -800,16 +809,16 @@ the latter needed the same before/after `state` comparison the existing
 attack-trigger check already made, not a new mechanism), `pickup_node.gd`
 (ember/heart collection), `player.gd` (dodge), `main.gd` (pause), and
 five UI screens (`shop_ui.gd`, `inventory_ui.gd`, `upgrade_select_ui.gd`,
-`event_ui.gd`, `armory_ui.gd`) — 71 of the 75 wired, the remaining 4
-correctly left silent because the system they'd trigger from doesn't
-exist yet in this port: 2 of Game.ts's own ability-effect calls
-(Warding Sigil, Stormstep — no ability-execution system exists, only the
-animation-only `start_ability()` stub main.gd's own header already
-documents), a synergy-triggered chain-detonation SFX (synergy *effects*,
-not just synergy *ownership*, aren't wired into the damage pipeline
-yet), and one legacy no-stairwell `advanceZone()` fallback path Godot's
-own `get_interaction()` never offers to begin with (already noted in
-that function's own comment before this slice).
+`event_ui.gd`, `armory_ui.gd`) — 71 of the 75 wired at the time, the
+remaining 4 correctly left silent because the system they'd trigger from
+didn't exist yet in this port: 2 of Game.ts's own ability-effect calls
+(Warding Sigil, Stormstep) and a synergy-triggered detonation SFX
+(emberCritical's own, since synergy *effects* weren't wired into the
+damage pipeline yet) are all real now — see the "everything necessary"
+pass at this README's end. Only one legacy no-stairwell `advanceZone()`
+fallback path stays silent, correctly: Godot's own `get_interaction()`
+never offers that path to begin with (already noted in that function's
+own comment before this slice).
 One genuine two-layer case, replicated rather than "simplified" away:
 spending a stat point plays `uiClick` from inside
 `LevelFlow.spend_stat_point()` (the core-logic level, matching
@@ -1110,10 +1119,128 @@ resolving exactly as designed. Debug harness fully reverted (verified via
 `git diff`) after confirming; none of it ships.
 
 Every system `GODOT_MIGRATION.md`'s recommended build order calls for now
-has at least one working, tested pass — all 12 steps. **What's genuinely
-left, and needs a human, not this environment**: actually playing it —
-does combat feel weighty, is the pacing across 3 zones right, do the
+has at least one working, tested pass — all 12 steps.
+
+### Closing the disclosed gaps — synergy/ability effects, and a real bug
+
+Asked directly to keep going and implement whatever was still genuinely
+missing rather than stop at "audited and disclosed," this pass closed
+every gap step 12 named, plus one it hadn't looked for.
+
+**A real, currently-active bug, found on the way in.** `entities/enemy.gd`
+carried a `DEBUG_HP_MULT := 0.15` constant — explicitly marked temporary
+in its own comment ("asked for directly... revert to 1.0... once testing
+is done") — applied to every enemy's max HP by default. Sanctum rite
+waves were the one deliberate opt-out; everything else, including the
+zone-2 boss, was spawning at 15% of its real HP. `ashCrawler.tres`'s own
+`base_hp = 200.0` matches this session's own earlier-established "~200 HP"
+Zone 0 balance target exactly — the debug cut was never reverted after
+whatever testing pass asked for it. Removed the constant and the
+parameter entirely (`setup()`'s signature shrinks back to 4 args, the one
+opt-out call site in `level_generator.gd`'s sanctum-wave spawn drops its
+now-meaningless 5th argument) rather than just flipping it to 1.0, so
+there's no dead toggle left for a future pass to wonder about. Verified
+via a real headless run: the same `ashCrawler` that spawned at 30 HP
+before now spawns at exactly 200; the zone-2 boss that had 369 HP now has
+exactly 2460 (369 / 0.15) — precise confirmation this was a pure
+multiplier bug, not a coincidence.
+
+**Synergy effects** — `player.gd` gained `synergy_damage_multiplier()`
+(wrath's HP-scaled bonus, up to +50% at the brink of death, times 1.35
+while `perfect_dodge_timer` is running) and `trigger_perfect_dodge()`,
+threaded into both weapon-damage formulas in `combat_manager.gd`
+(`perform_melee_attack`/`fire_player_projectile`) exactly where the
+source multiplies by its own `synergyDamageMultiplier` getter.
+`damage_player_to_enemy` gained ashFire (1.4x damage on a burning target
+— `EnemyCharacter.has_burn()` is a new small public helper, factored out
+of the status-overlay's own inline burn check it already had) and
+emberCritical (a 35%-chance VFX/SFX-only detonation on a crit, no bonus
+damage — ported exactly as the source has it, not "improved").
+`on_enemy_death` gained lightHealing (40% chance to heal 6% max HP when a
+burning-or-elite enemy dies) and, since a DoT-tick kill previously passed
+`on_enemy_death` a null player (the one place this port's own more
+general status-effect system needed a small extension the source never
+needed, since it always has `this.player` in scope), `StatusEffectRuntime`
+now threads the effect's own `source` through so a burn-DoT kill still
+credits the right player. `damage_enemy_to_player` gained the
+shadowDodge trigger on a perfect dodge.
+
+**Ability effects** — `CombatManager` gained an "Ability" section:
+`ember_burst_ability()` (radial damage + knockback + VFX + camera shake +
+hit-stop), `perform_stormstep()` (a 5-sample dash-line hit check, a direct
+position teleport with no collision resolution — Stormstep is meant to
+cut through what's in its way — brief invulnerability), and
+`warding_sigil_tick()` (a continuous AoE damage+heal zone, ticked every
+physics frame from `player.gd` while `warding_sigil_active` is set,
+`silent` on its own damage calls so a multi-tick-per-second zone doesn't
+spam a hit's normal VFX/SFX/damage-number/camera-shake). `player.gd`'s
+`start_ability()` now dispatches by `ability_id` right after resetting
+the resource/animation state — same "instant effect, cosmetic animation
+plays alongside it" shape `start_attack()`'s own weapon-behavior dispatch
+already had.
+
+**Camera shake and hit-stop, previously whole-game gaps, not just an
+ability one.** `Camera.ts`'s magnitude/duration/decay math (a new shake
+only overrides a weaker, still-decaying one) ported onto the player's own
+`Camera2D.offset` rather than a second manual coordinate system, since
+this port already uses a native camera. `HitStop.ts`'s controller ported
+onto `Engine.time_scale` — genuinely simpler than the source's own
+approach of threading a scaled `dt` through every system by hand, since
+Godot already scales every `_process`/`_physics_process` delta engine-
+wide from one place. The one real subtlety: the countdown has to be
+tracked in real (`Time.get_ticks_msec()`) time, not `_process()`'s own
+delta — that delta is itself scaled once a hit-stop is active, so
+counting down with it would make a slowdown outlast its own requested
+duration. Wiring these up surfaced that `combat_manager.gd`'s own crit/
+elite-hit/elite-death shake and hit-stop calls, and — cross-referencing
+`BossSystem.ts` directly while already in this territory — every one of
+the Ashen Colossus's own phase-change/melee-slam/shockwave/meteor/death
+shakes, were all real source calls with nothing to attach to before now;
+all wired, with their exact literal magnitudes, not approximated. The
+phase-change beat was also missing its own ember-burst VFX entirely
+(spawnEmberBurstVfx at 180 radius) — added alongside its shake.
+
+**Damage numbers** reuse `world/floating_text.gd` (already built for the
+XP-on-kill popup) rather than a second floating-text system, extended
+with an optional font-size parameter so a crit (20pt, ember) reads bigger
+than a normal hit (15pt, cream) or a blocked one (12pt, grey) — matching
+`DamageNumber.ts`'s own sizing exactly.
+
+**Verified** via a real headless run driving every new code path
+directly: wrath's multiplier at full HP (1.0) and 10% Hp (1.45, matching
+`1 + 0.9*0.5`); a dodge-blocked hit correctly setting the 3-second
+perfect-dodge timer and the *1.35 it adds; ashFire dealing exactly 140
+damage from a 100 base hit (`100 * 1.4`); 20 emberCritical crits and 15
+lightHealing burning-kills run back to back with no error and at least
+one real heal landing; Ember Burst damaging every enemy in its radius
+with the right shake/hit-stop state; Stormstep moving the player exactly
+230px and damaging what it passed through; Warding Sigil ticking damage
+and healing for 30 frames then correctly clearing on a forced expiry;
+camera shake decaying to exactly `(0, 0)` well past its requested
+duration; hit-stop restoring `time_scale` to exactly `1.0` ~117ms after a
+100ms request; and a damage number actually appearing as a new
+`FloatingText` child after a hit. Followed by a full regression pass
+reusing step 12's own playtest shape — a real heart-room clear, two zone
+descents, and a real zone-2 boss kill through to VICTORY — all still
+completing with zero script errors now that the entire damage pipeline
+routes through several times more code on every single hit than it did
+before this pass, and every enemy (including that boss) has ~6.67x the
+HP it briefly had. Debug harness fully reverted (verified via `git diff`)
+after confirming; none of it ships.
+
+**What's genuinely left, and needs a human, not this environment**:
+actually playing it — does combat feel weighty, is the pacing across 3
+zones right now that enemies have their real intended HP back, do the
 numbers this session tuned on the Web build still feel the same once
-movement is real physics instead of a fixed timestep loop — plus the two
-disclosed feature gaps above (synergy/ability effects) and the smaller
-honest gaps each earlier step's own README section already named.
+movement is real physics instead of a fixed timestep loop. Two smaller,
+still-honest gaps remain, both real features rather than integration
+work: the boss's own attack FSM (`boss_state`, `BossSystem.ts`'s full
+telegraph/attack cycle) turned out to already be fully ported — a stale
+step-8 README note claiming otherwise is fixed above — so there's
+nothing left there; damage numbers/camera-shake/hit-stop are the ones
+this pass closed. What's still actually open: `spawnZoneAmbientParticle`
+(per-zone atmosphere particles, needs new `ZoneDefinition` fields) and
+a handful of settings (particle/graphics quality, text scale, high
+contrast, reduced motion, i18n) that persist correctly but have no
+engine-side effect yet — both already named honestly in their own
+sections above, not new.

@@ -7,29 +7,18 @@ extends Node
 ## rolls, knockback, and warden-shield-block handling. Read directly from
 ## CombatSystem.ts/EnemyAI.ts/Enemy.ts this session — not approximated.
 ##
-## Deferred this pass, on purpose (see GODOT_MIGRATION.md and each
-## function's own comment for exactly what and why):
-## - Synergies (ashFire/emberCritical/lightHealing/wrath/shadowDodge) — the
-##   upgrade-ownership system these depend on is real now (player.upgrades,
-##   MetaProgression, the Armory/Inventory screens), and synergy FORMATION
-##   is fully wired (player.add_upgrade returns newly-completed synergies,
-##   LevelFlow._grant_upgrade banners + plays synergyFormed for each) — but
-##   their actual gameplay EFFECTS (ashFire spreading burn, wrath's damage
-##   boost, etc.) still have no combat-pipeline hook at all, confirmed
-##   still true as of step 12's audit. A real feature to build, not
-##   integration glue — out of scope for a testing/tuning pass.
-## - Abilities' actual effects (Ember Burst, Warding Sigil) — same shape of
-##   gap as synergies above, still true as of step 12: weapon execution
-##   itself (melee arc + projectile shot) is done, in combat/weapon_behavior.gd,
-##   but start_ability() is still animation-only (main.gd's own header still
-##   documents this correctly).
-## - Damage numbers, camera shake, hit-stop — still deferred (no such
-##   system exists in this port at all yet). Particles (step 8) and SFX
-##   (step 10, autoload/audio_engine.gd) are both wired now — but only
-##   for the code paths that exist above; the source's own SFX calls for
-##   hazards/synergy-chain-detonation/ability effects have nothing to
-##   attach to yet (still deferred, same as the systems themselves) and
-##   are not wired here for exactly that reason, not an oversight.
+## Synergy effects (ashFire/emberCritical/lightHealing/shadowDodge, plus
+## wrath's damage curve on PlayerCharacter itself), the 3 abilities' real
+## gameplay effects (Ember Burst/Stormstep/Warding Sigil), damage numbers,
+## camera shake, and hit-stop are all real now — see the "Ability" section
+## below and PlayerCharacter's own synergy_damage_multiplier()/
+## trigger_perfect_dodge()/add_camera_shake(). Synergy FORMATION
+## (player.upgrades, MetaProgression, the banner/SFX on completion) was
+## already wired before this; this closed the remaining gap, confirmed via
+## a grep-based audit that it was still genuinely open, not stale.
+##
+## Still deferred, on purpose (see GODOT_MIGRATION.md and each function's
+## own comment for exactly what and why):
 ## - Hazards (spore clouds) — Bloat and the Warden champion still deal
 ##   their direct-hit damage below; the lingering cloud they'd normally
 ##   also leave is a self-contained follow-up.
@@ -91,6 +80,43 @@ func roll_crit(chance: float) -> bool:
 func _angle_diff(from: float, to: float) -> float:
 	return wrapf(to - from, -PI, PI)
 
+# ---------------------------------------------------------------- Hit-stop
+## Ports core/HitStop.ts's HitStopController through Engine.time_scale —
+## the native Godot way to get a GLOBAL slowdown (every _process/
+## _physics_process delta, animations, timers) without threading a custom
+## dt through every system the way the TS source's own loop() does. The
+## real-time deadline is tracked via Time.get_ticks_msec() rather than
+## accumulating _process()'s own delta, since that delta is ITSELF scaled
+## by time_scale once a hit-stop is active — counting down with it would
+## make the slowdown outlast its own requested duration.
+const NORMAL_SHAKE := 4.0
+const CRIT_SHAKE_BONUS := 3.0
+const ELITE_SHAKE := 9.0
+
+var _hit_stop_strength: float = 1.0
+var _hit_stop_end_msec: int = 0
+
+## `strength` is a fraction of normal speed (0.06 = simulation crawls at
+## 6% speed). A longer OR stronger request always wins over one already in
+## flight; a shorter, weaker one is dropped rather than cutting the active
+## one short — exact port of the source's own trigger() gate.
+func trigger_hit_stop(duration_seconds: float, strength: float) -> void:
+	var now: int = Time.get_ticks_msec()
+	var remaining_seconds: float = maxf(0.0, float(_hit_stop_end_msec - now) / 1000.0)
+	var is_longer: bool = duration_seconds > remaining_seconds
+	var is_stronger: bool = strength < _hit_stop_strength
+	if not is_longer and not is_stronger:
+		return
+	_hit_stop_end_msec = now + int(maxf(duration_seconds, remaining_seconds) * 1000.0)
+	_hit_stop_strength = minf(strength, _hit_stop_strength)
+	Engine.time_scale = _hit_stop_strength
+
+func _process(_delta: float) -> void:
+	if _hit_stop_end_msec > 0 and Time.get_ticks_msec() >= _hit_stop_end_msec:
+		_hit_stop_end_msec = 0
+		_hit_stop_strength = 1.0
+		Engine.time_scale = 1.0
+
 # ---------------------------------------------------------------- Player -> Enemy
 
 ## The player's own weapon swing — checked once, instantly, the moment the
@@ -115,7 +141,7 @@ func perform_melee_attack(player: PlayerCharacter) -> void:
 		if absf(_angle_diff(player.attack_facing_lock, angle_to_enemy)) > half_arc:
 			continue
 		var crit: bool = roll_crit(player.stats.crit_chance + weapon.crit_bonus)
-		var base_damage: float = weapon.base_damage * player.stats.damage_mult
+		var base_damage: float = weapon.base_damage * player.stats.damage_mult * player.synergy_damage_multiplier()
 		var dir: Vector2 = offset.normalized() if dist > 0.01 else Vector2(cos(angle_to_enemy), sin(angle_to_enemy))
 		damage_player_to_enemy(player, enemy, base_damage, crit, {
 			"knockback_dir": dir,
@@ -149,7 +175,7 @@ func fire_player_projectile(player: PlayerCharacter, weapon: WeaponDefinition) -
 	var spread: float = 0.18 if count > 1 else 0.0
 	var speed: float = weapon.projectile_speed if weapon.projectile_speed > 0.0 else 500.0
 	var range_val: float = weapon.range if weapon.range > 0.0 else 400.0
-	var base_damage: float = weapon.base_damage * player.stats.damage_mult
+	var base_damage: float = weapon.base_damage * player.stats.damage_mult * player.synergy_damage_multiplier()
 	for i in range(count):
 		var t: float = (float(i) / float(count - 1) - 0.5) if count > 1 else 0.0
 		var angle: float = player.attack_facing_lock + t * spread * count
@@ -267,10 +293,12 @@ func on_champion_shield_break(enemy: EnemyCharacter) -> void:
 ## right after tick() itself, mirroring the source's own per-frame
 ## tick()-then-resolveBossPendingActions() order.
 ##
-## Camera shake and hit-stop are deliberately not ported here — no such
-## system exists anywhere in this port yet (see this file's own header).
-## SFX is (step 10, audio_engine.gd), matching every pending-flag branch
-## below the source's own resolveBossPendingActions() plays one for.
+## Camera shake and hit-stop are wired now (player.add_camera_shake()/
+## this file's own trigger_hit_stop(), see the "everything necessary" pass
+## at the README's end) — every magnitude/duration below is the source's
+## own literal value, not a guess. SFX (step 10, audio_engine.gd) matches
+## every pending-flag branch the source's own resolveBossPendingActions()
+## plays one for.
 func resolve_boss_pending_actions(boss: BossCharacter, player: PlayerCharacter) -> void:
 	var parent := boss.get_parent()
 
@@ -281,6 +309,10 @@ func resolve_boss_pending_actions(boss: BossCharacter, player: PlayerCharacter) 
 	if boss.boss_phase_just_changed:
 		boss.boss_phase_just_changed = false
 		AudioEngine.play_sfx("bossPhase")
+		player.add_camera_shake(16.0, 0.6)
+		trigger_hit_stop(0.1, 0.04)
+		if parent != null:
+			VfxPresets.ember_burst_vfx(parent, boss.global_position, 180.0)
 		boss_phase_changed.emit(boss)
 
 	if boss.pending_melee_slam:
@@ -289,6 +321,7 @@ func resolve_boss_pending_actions(boss: BossCharacter, player: PlayerCharacter) 
 		if parent != null:
 			VfxPresets.ember_burst_vfx(parent, slam_pos, 90.0)
 		AudioEngine.play_sfx("bossHit")
+		player.add_camera_shake(13.0, 0.3)
 		var slam_dist: float = boss.global_position.distance_to(player.global_position)
 		if slam_dist <= 130.0 + player.radius:
 			var dir: Vector2 = player.global_position - boss.global_position
@@ -303,6 +336,7 @@ func resolve_boss_pending_actions(boss: BossCharacter, player: PlayerCharacter) 
 		if parent != null:
 			VfxPresets.ember_burst_vfx(parent, boss.global_position, 230.0 * 0.9)
 		AudioEngine.play_sfx("bossHit")
+		player.add_camera_shake(15.0, 0.4)
 		var shock_dist: float = boss.global_position.distance_to(player.global_position)
 		if shock_dist <= 230.0 + player.radius:
 			var dir: Vector2 = player.global_position - boss.global_position
@@ -349,6 +383,7 @@ func resolve_boss_pending_actions(boss: BossCharacter, player: PlayerCharacter) 
 					"knockback_force": 180.0,
 				})
 		boss.pending_meteor_impacts.clear()
+		player.add_camera_shake(6.0, 0.2)
 
 	# Deliberately delayed past the killing blow itself — on_enemy_death
 	# (called generically the instant hp hits 0, same as any other enemy)
@@ -362,6 +397,8 @@ func resolve_boss_pending_actions(boss: BossCharacter, player: PlayerCharacter) 
 			VfxPresets.death_burst(parent, boss.global_position, Palette.EMBER4)
 			VfxPresets.death_burst(parent, boss.global_position, Palette.EMBER6)
 		AudioEngine.play_sfx("bossDeath")
+		player.add_camera_shake(20.0, 0.8)
+		trigger_hit_stop(0.14, 0.03)
 		boss_defeated.emit(boss)
 
 # ---------------------------------------------------------------- Core damage pipeline
@@ -370,6 +407,8 @@ func damage_player_to_enemy(player: PlayerCharacter, enemy: EnemyCharacter, base
 	if player == null or enemy == null or not enemy.alive:
 		return
 	var dmg: float = base_damage * (player.stats.crit_damage if crit else 1.0)
+	if player.has_synergy("ashFire") and enemy.has_burn():
+		dmg *= 1.4
 
 	# Warden shield: hits arriving inside the frontal arc are mostly turned
 	# aside — no knockback, no stagger, no burn.
@@ -388,17 +427,31 @@ func damage_player_to_enemy(player: PlayerCharacter, enemy: EnemyCharacter, base
 	hit_landed.emit(player, enemy, dmg, crit)
 
 	# Ports CombatSystem.ts's damagePlayerToEnemy: shield-sparks on a
-	# blocked hit, a normal hit-impact burst otherwise. Damage numbers/
-	# camera shake/hit-stop/SFX stay deferred (see this file's header).
+	# blocked hit, a normal hit-impact burst (+ damage number, camera
+	# shake, hit-stop on a crit) otherwise. `silent` (the warding sigil's
+	# own continuous tick) skips all of this — same gate as the source's
+	# own `if (!opts.silent)`.
 	var parent := enemy.get_parent()
-	if parent != null:
+	if not opts.get("silent", false) and parent != null:
 		if blocked:
 			var spark_pos: Vector2 = enemy.global_position + Vector2(cos(enemy.facing), sin(enemy.facing)) * enemy.radius * 0.9
 			VfxPresets.shield_sparks(parent, spark_pos, enemy.facing)
 			AudioEngine.play_sfx("shieldClang", 50.0)
+			FloatingText.spawn(parent, enemy.global_position + Vector2(0.0, -enemy.radius), str(roundi(dmg)), Color("#8f8a9e"), 12)
 		else:
 			VfxPresets.hit_impact(parent, enemy.global_position, enemy.def.accent_color, crit)
 			AudioEngine.play_sfx("impactCrit" if crit else "impactLight", 20.0)
+			FloatingText.spawn(parent, enemy.global_position + Vector2(0.0, -enemy.radius), str(roundi(dmg)), Color(Palette.EMBER6) if crit else Color("#f4ecdd"), 20 if crit else 15)
+			if crit:
+				player.add_camera_shake(NORMAL_SHAKE + CRIT_SHAKE_BONUS, 0.15)
+				trigger_hit_stop(0.045, 0.08)
+			if enemy.def.is_elite:
+				player.add_camera_shake(2.0, 0.08)
+
+	if crit and not blocked and player.has_synergy("emberCritical") and randf() < 0.35:
+		if parent != null:
+			VfxPresets.ember_burst_vfx(parent, enemy.global_position, 70.0)
+		AudioEngine.play_sfx("impactCrit", 0.0)
 
 	var knockback_force: float = opts.get("knockback_force", 0.0)
 	if knockback_force != 0.0 and not blocked:
@@ -423,7 +476,7 @@ func damage_player_to_enemy(player: PlayerCharacter, enemy: EnemyCharacter, base
 ## Centralizes the fallout of an enemy dying, however it died (a direct
 ## hit here, or a status-effect tick discovered in apply_status_tick_damage)
 ## — every death must go through this exactly once.
-func on_enemy_death(_player: PlayerCharacter, enemy: EnemyCharacter) -> void:
+func on_enemy_death(player: PlayerCharacter, enemy: EnemyCharacter) -> void:
 	if enemy.death_handled:
 		return
 	enemy.death_handled = true
@@ -432,6 +485,16 @@ func on_enemy_death(_player: PlayerCharacter, enemy: EnemyCharacter) -> void:
 	if parent != null:
 		VfxPresets.death_burst(parent, enemy.global_position, enemy.def.accent_color)
 	AudioEngine.play_sfx("eliteDeath" if enemy.def.is_elite else "enemyDeath")
+	if enemy.def.is_elite and player != null:
+		player.add_camera_shake(ELITE_SHAKE, 0.35)
+		trigger_hit_stop(0.08, 0.04)
+	# Ports CombatSystem.ts's onEnemyDeath: 40% chance to heal 6% max HP when
+	# a burning-or-elite enemy dies, gated on the lightHealing synergy.
+	if player != null and player.has_synergy("lightHealing") and (enemy.has_burn() or enemy.def.is_elite) and randf() < 0.4:
+		var heal_amount: float = player.stats.max_hp * 0.06
+		player.heal(heal_amount)
+		if parent != null:
+			FloatingText.spawn(parent, player.global_position + Vector2(0.0, -player.radius - 6.0), "+%d" % roundi(heal_amount), Color(Palette.EMBER4))
 	enemy_died.emit(enemy)
 
 func damage_enemy_to_player(player: PlayerCharacter, base_damage: float, opts: Dictionary = {}) -> bool:
@@ -446,6 +509,8 @@ func damage_enemy_to_player(player: PlayerCharacter, base_damage: float, opts: D
 	var result: Dictionary = player.take_damage(base_damage)
 	if result["blocked"]:
 		if was_dodging:
+			player.trigger_perfect_dodge()
+			dodge_perfected.emit(player)
 			var dodge_parent := player.get_parent()
 			if dodge_parent != null:
 				VfxPresets.perfect_dodge_burst(dodge_parent, player.global_position)
@@ -469,10 +534,112 @@ func damage_enemy_to_player(player: PlayerCharacter, base_damage: float, opts: D
 
 ## Called by StatusEffectRuntime on every DoT tick — `target` is a
 ## PlayerCharacter or EnemyCharacter, addressed generically since this is
-## the one place both directions share.
-func apply_status_tick_damage(target: Node, amount: float) -> void:
+## the one place both directions share. `source` is whoever applied the
+## effect (StatusEffectInstance.source) — threaded through to
+## on_enemy_death so a burn-DoT kill still counts for lightHealing/elite-
+## death feedback, exactly like every TS call site passing a real player
+## (this port's status-effect system is more general than the source's
+## single hardcoded Enemy.burn field, but a kill is still always credited
+## to whoever's damage caused it).
+func apply_status_tick_damage(target: Node, amount: float, source: Node = null) -> void:
 	if amount <= 0.0 or not target.has_method("take_damage"):
 		return
 	target.call("take_damage", amount)
 	if target is EnemyCharacter and not (target as EnemyCharacter).alive:
-		on_enemy_death(null, target as EnemyCharacter)
+		on_enemy_death(source as PlayerCharacter, target as EnemyCharacter)
+
+# ---------------------------------------------------------------- Ability
+## Ports Game.ts's private performAbility/performStormstep +
+## CombatSystem.ts's emberBurstAbility/wardingSigilTick — every ability's
+## actual gameplay effect. Called from PlayerCharacter.start_ability()
+## (emberBurst/stormstep) or per-frame from its own _physics_process while
+## warding_sigil_active is set, mirroring how start_attack() dispatches
+## into this same autoload for weapon damage rather than resolving it
+## itself. Every enemy lookup below self-scans get_tree().get_nodes_in_
+## group("enemies") rather than taking a pre-filtered targets array —
+## matches perform_melee_attack's own established convention (see its
+## header), a deliberate simplification of allTargetableEnemies() that's
+## already proven correct there.
+
+func ember_burst_ability(player: PlayerCharacter) -> void:
+	var radius: float = 140.0 * player.stats.area_damage_mult
+	var damage: float = 55.0 * player.stats.ability_damage_mult * player.stats.ember_power * player.synergy_damage_multiplier()
+	for node in player.get_tree().get_nodes_in_group("enemies"):
+		var enemy := node as EnemyCharacter
+		if enemy == null or not enemy.alive:
+			continue
+		var offset: Vector2 = enemy.global_position - player.global_position
+		var dist: float = offset.length()
+		if dist > radius + enemy.radius:
+			continue
+		var falloff: float = 1.0 - minf(1.0, dist / (radius + enemy.radius)) * 0.35
+		var dir: Vector2 = offset / maxf(0.01, dist)
+		damage_player_to_enemy(player, enemy, damage * falloff, false, {
+			"knockback_dir": dir,
+			"knockback_force": 320.0,
+		})
+	var parent := player.get_parent()
+	if parent != null:
+		VfxPresets.ember_burst_vfx(parent, player.global_position, radius)
+	player.add_camera_shake(11.0, 0.3)
+	trigger_hit_stop(0.06, 0.05)
+	AudioEngine.play_sfx("abilityEmberBurst")
+
+## A short dash along the player's current facing, damaging (once each,
+## via hit_enemies — TS dedupes by enemy.id, this port's enemies have no
+## such numeric id, so the enemy node itself is the dedup key instead)
+## everything within 26px of any of 5 evenly-sampled points along the
+## dash line. The move itself is a direct position set, not
+## move_and_slide() — Stormstep is meant to cut through whatever's in its
+## path, not be stopped by it, matching the source's own player.x +=
+## dx*dist with no collision resolution.
+func perform_stormstep(player: PlayerCharacter) -> void:
+	var dist: float = 230.0
+	var dir := Vector2(cos(player.facing), sin(player.facing))
+	var hit_enemies: Array[EnemyCharacter] = []
+	var steps := 5
+	for i in range(1, steps + 1):
+		var t: float = float(i) / float(steps)
+		var p: Vector2 = player.global_position + dir * dist * t
+		for node in player.get_tree().get_nodes_in_group("enemies"):
+			var enemy := node as EnemyCharacter
+			if enemy == null or not enemy.alive or hit_enemies.has(enemy):
+				continue
+			if p.distance_to(enemy.global_position) < enemy.radius + 26.0:
+				hit_enemies.append(enemy)
+				var damage: float = 30.0 * player.stats.ability_damage_mult * player.stats.ember_power * player.synergy_damage_multiplier()
+				damage_player_to_enemy(player, enemy, damage, false, {
+					"knockback_dir": dir,
+					"knockback_force": 200.0,
+				})
+	player.global_position += dir * dist
+	player.invuln_timer = maxf(player.invuln_timer, 0.45)
+	AudioEngine.play_sfx("abilityStormstep")
+	player.add_camera_shake(6.0, 0.15)
+
+## Called every physics frame from PlayerCharacter._physics_process while
+## warding_sigil_active is set (5s duration, ticks continuously — unlike
+## emberBurst/stormstep's one-shot effects). `silent` on the damage call
+## suppresses the per-hit VFX/SFX/damage-number/camera-shake a normal hit
+## gets — a sigil landing dozens of ticks a second would otherwise spam
+## all of it. Deliberately NOT multiplied by synergy_damage_multiplier()
+## — matches the source's own dps formula exactly, which omits it here
+## while emberBurst/stormstep both include it.
+func warding_sigil_tick(player: PlayerCharacter, dt: float) -> void:
+	if player.warding_sigil_active.is_empty():
+		return
+	var sigil_pos: Vector2 = player.warding_sigil_active["pos"]
+	var radius: float = 90.0 * player.stats.area_damage_mult
+	var dps: float = 14.0 * player.stats.ability_damage_mult * player.stats.ember_power
+	for node in player.get_tree().get_nodes_in_group("enemies"):
+		var enemy := node as EnemyCharacter
+		if enemy == null or not enemy.alive:
+			continue
+		var dist: float = sigil_pos.distance_to(enemy.global_position)
+		if dist > radius + enemy.radius:
+			continue
+		damage_player_to_enemy(player, enemy, dps * dt, false, {
+			"silent": true,
+			"source_pos": sigil_pos,
+		})
+	player.heal(4.0 * dt)

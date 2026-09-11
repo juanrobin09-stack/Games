@@ -10,9 +10,9 @@ extends Node2D
 ##
 ## Controls once a run is live: WASD/arrows move, mouse aims, left click
 ## attacks (melee or ranged depending on the equipped weapon), space
-## dodges, right click channels the ability (still no damage/radius effect
-## resolved — the player's actual ability effects are progression-system
-## work, not done yet), **E interacts** (chests, the sanctum circle,
+## dodges, right click channels the equipped ability (Ember Burst radial
+## burst, Stormstep dash, or Warding Sigil's healing/damage zone — see
+## CombatManager's own "Ability" section), **E interacts** (chests, the sanctum circle,
 ## resting at a brazier, stairs, shop/event landmarks). Which weapon/
 ## ability a run starts with is chosen once, before EXPLORATION begins —
 ## LoadoutSelectUI when there's a real choice (more than the single

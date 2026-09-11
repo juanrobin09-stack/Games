@@ -99,12 +99,31 @@ var facing: float = 0.0
 var run_time: float = 0.0
 var perfect_dodge_timer: float = 0.0
 
+## Ports Player.ts's wardingSigilActive — empty Dictionary means inactive,
+## matching this codebase's own established convention for an "optional
+## struct" field (LevelFlow._transition uses the identical empty-dict-is-
+## absent shape). {"pos": Vector2, "timer": float, "duration": float}.
+var warding_sigil_active: Dictionary = {}
+
+## Ports Camera.ts's shake state — TS drives a fully manual camera
+## (position/renderX/renderY it also uses for worldToScreen); this port
+## uses a native Camera2D instead (GODOT_MIGRATION.md's own steer toward
+## engine-native equivalents over a byte-exact manual port), so shake
+## becomes a perturbation of that node's own `offset` property rather than
+## a second coordinate system. The magnitude/duration/decay math itself —
+## including the "a new shake only overrides a weaker, still-decaying one"
+## rule — is still the exact same port.
+var _shake_time: float = 0.0
+var _shake_duration: float = 0.0
+var _shake_magnitude: float = 0.0
+
 ## No status effect currently ever targets the player (only enemies can be
 ## burned/bled today) — present for symmetry so StatusEffectRuntime can
 ## treat Player and Enemy identically, not because anything applies one yet.
 var status_effects: Array = []
 
 @export var body_color: Color = Color("#e0c9a6")
+@onready var camera: Camera2D = $Camera2D
 
 ## Null-guarded and loud on failure (push_error, once per distinct missing
 ## id) rather than letting a bad/missing DataRegistry entry silently break
@@ -187,12 +206,26 @@ func start_dodge(dir: Vector2) -> void:
 	stamina = maxf(0.0, stamina - DODGE_STAMINA_COST)
 	stamina_regen_delay_timer = STAMINA_REGEN_DELAY
 
+## Ports Game.ts's performAbility: startAbility() resets the resource/
+## animation state, then the effect fires immediately (not delayed to
+## whenever the cast animation finishes) — same "instant effect, cosmetic
+## animation plays alongside it" shape as start_attack()'s own weapon-
+## behavior dispatch just above.
 func start_ability() -> void:
 	energy = 0.0
 	is_channeling_ability = true
 	ability_anim_timer = 0.0
 	anim_state = AnimState.ABILITY
 	anim_time = 0.0
+	match ability_id:
+		"emberBurst":
+			CombatManager.ember_burst_ability(self)
+		"stormstep":
+			CombatManager.perform_stormstep(self)
+		"wardingSigil":
+			warding_sigil_active = {"pos": global_position, "timer": 0.0, "duration": 5.0}
+			AudioEngine.play_sfx("abilityWardingSigil")
+	CombatManager.ability_cast.emit(self, ability_id)
 
 ## Returns {taken, blocked, shield_consumed} — mirrors Player.ts's return
 ## shape exactly (a Dictionary here, an object literal there).
@@ -274,6 +307,45 @@ func recompute_synergies() -> void:
 func has_synergy(id: String) -> bool:
 	return active_synergies.has(id)
 
+## Damage multiplier from the Wrath synergy: scales up to +50% as HP drops toward 0.
+func wrath_multiplier() -> float:
+	if not has_synergy("wrath"):
+		return 1.0
+	var missing_ratio: float = 1.0 - clampf(hp / maxf(1.0, stats.max_hp), 0.0, 1.0)
+	return 1.0 + missing_ratio * 0.5
+
+## Combined damage multiplier from all active synergy/state buffs (wrath,
+## perfect dodge) — every weapon/ability damage formula multiplies by this,
+## matching Player.ts's own synergyDamageMultiplier getter exactly.
+func synergy_damage_multiplier() -> float:
+	var mult: float = wrath_multiplier()
+	if perfect_dodge_timer > 0.0:
+		mult *= 1.35
+	return mult
+
+func trigger_perfect_dodge() -> void:
+	if has_synergy("shadowDodge"):
+		perfect_dodge_timer = 3.0
+
+## Ports Camera.ts's addShake: a new shake only overrides a still-decaying
+## one if it's stronger than what that one has decayed to by now — a weak
+## shake can't cut a strong one short, but a strong one always wins.
+func add_camera_shake(magnitude: float, duration: float) -> void:
+	_shake_magnitude = maxf(_shake_magnitude * (1.0 - _shake_time / maxf(_shake_duration, 0.001)), magnitude)
+	_shake_duration = duration
+	_shake_time = 0.0
+
+func _update_camera_shake(dt: float) -> void:
+	if camera == null:
+		return
+	if _shake_time < _shake_duration:
+		_shake_time += dt
+		var t: float = 1.0 - _shake_time / _shake_duration
+		var power: float = _shake_magnitude * maxf(t, 0.0)
+		camera.offset = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * power
+	else:
+		camera.offset = Vector2.ZERO
+
 ## Applies the upgrade (stacking it if already owned, up to its own
 ## max_stacks — 0 means uncapped here; the zone-based offer cap that
 ## actually gates what gets OFFERED lives in UpgradePool.is_upgrade_available,
@@ -332,6 +404,9 @@ func _physics_process(delta: float) -> void:
 		_update_state(delta)
 		move_and_slide()
 		StatusEffectRuntime.process(self, delta)
+		if not warding_sigil_active.is_empty():
+			CombatManager.warding_sigil_tick(self, delta)
+	_update_camera_shake(delta)
 	queue_redraw()
 
 func _read_input() -> void:
@@ -375,6 +450,11 @@ func _update_state(dt: float) -> void:
 	if dodge_cooldown_timer > 0.0: dodge_cooldown_timer -= dt
 	if stamina_regen_delay_timer > 0.0: stamina_regen_delay_timer -= dt
 	if perfect_dodge_timer > 0.0: perfect_dodge_timer -= dt
+
+	if not warding_sigil_active.is_empty():
+		warding_sigil_active["timer"] = (warding_sigil_active["timer"] as float) + dt
+		if (warding_sigil_active["timer"] as float) >= (warding_sigil_active["duration"] as float):
+			warding_sigil_active = {}
 
 	hp = clampf(hp + stats.hp_regen * dt, 0.0, stats.max_hp)
 	if stamina_regen_delay_timer <= 0.0:

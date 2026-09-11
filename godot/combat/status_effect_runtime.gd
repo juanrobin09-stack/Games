@@ -112,7 +112,7 @@ static func _apply_tick(target: Node, inst: StatusEffectInstance) -> void:
 	var tick_damage: float = rate * def.tick_interval * float(inst.stacks)
 	if tick_damage <= 0.0:
 		return
-	CombatManager.apply_status_tick_damage(target, tick_damage)
+	CombatManager.apply_status_tick_damage(target, tick_damage, inst.source)
 
 static func _max_hp(target: Node) -> float:
 	var stats = target.get("stats")
