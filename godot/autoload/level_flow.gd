@@ -68,6 +68,7 @@ func _ready() -> void:
 	CombatManager.enemy_died.connect(_on_enemy_died)
 	RunState.player_leveled_up.connect(_on_player_leveled_up)
 	CombatManager.champion_shield_broken.connect(_on_champion_shield_broken)
+	room_changed.connect(_on_room_changed)
 
 ## Ports Game.ts's private onChampionShieldBreak's own showPhaseBanner call
 ## — the bloat-spawn/VFX half of that method already lives on CombatManager
@@ -75,6 +76,17 @@ func _ready() -> void:
 ## first specifically so the banner isn't coupled to that logic succeeding.
 func _on_champion_shield_broken(_enemy: Node) -> void:
 	hud.show_phase_banner("THE SHIELD SHATTERS")
+
+## Ports every refreshMinimap() call site in Game.ts EXCEPT its one debug/
+## dev-warp helper and the legacy no-stairwell advanceZone() fallback
+## (Godot's own get_interaction() never offers that fallback path to begin
+## with — see its own HEART-room branch) — room_changed already fires from
+## exactly the remaining cases: start_new_run's own initial room, every
+## same-zone enter_room, and both zone-transition landings via
+## _land_after_transition. One connection here covers all of them, rather
+## than a refresh_minimap call repeated at each of those call sites by hand.
+func _on_room_changed(_room: RoomContainer) -> void:
+	hud.refresh_minimap(RunState.current_layout(), RunState.current_room_key)
 
 ## Ports Game.ts's grantKillXp: "if (levelsGained > 0) { ...
 ## spawnLevelUpBurst(...) }" — RunState.grant_xp() (called from

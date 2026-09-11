@@ -234,7 +234,7 @@ about a burst that never appears at all (likely a parent/positioning
 issue) versus one that appears but looks visually wrong (likely a
 color/shape/timing tuning issue in `vfx_presets.gd`).
 
-### Step 9 — UI (in progress: every Phase-A gameplay-critical screen AND the toast/banner feedback system — upgrade-ownership, core HUD, room-clear/chest rewards, the shop, the event/shrine screen, the character sheet, toasts/phase-banners/synergy-banners — landed and confirmed against a real running build; only the minimap/boss-bar/vignettes remain before Phase B)
+### Step 9 — UI (in progress: every Phase-A gameplay-critical screen, the toast/banner feedback system, AND the minimap — the only pieces of `hud.gd` itself left unbuilt are now the boss bar and the two vignettes — landed and confirmed against a real running build)
 
 Per `GODOT_MIGRATION.md` §5.
 
@@ -434,32 +434,50 @@ questions than a screenshot is):
   C parallel with B, itself parallel with A, correctly starts A/B/C all
   together), which is exactly what multi-property keyframes need.
 
-**Deliberately deferred, not forgotten:** the minimap, the boss bar (needs
-the boss attack-FSM gap closed first), and both vignettes. The debug/
-diagnostic panel (`DebugLabel`/`LiveLabel`) still exists, hidden by
-default — toggle with **F1**.
+**8. The minimap** — `refreshMinimap`'s "double-resolution" room-graph
+grid, the last piece of `hud.gd` itself this step was waiting on.
+
+| File | Ports | State |
+|---|---|---|
+| `ui/hud_minimap.gd` | `HUD.ts`'s `refreshMinimap` + its `.hud-minimap*` CSS | A new `HudMinimap` Control, drawn entirely via one `_draw()` (this project's usual approach for anything hand-drawn — see `hud_icon.gd`) rather than as a tree of child Controls in a CSS-Grid-equivalent container, since the real layout is sparse (most (col,row) slots are empty) and needs alternating room-sized/gap-sized tracks — neither fits `GridContainer`'s "N uniform columns" model. Room cells tint by type (reusing existing `Palette` tokens — every one of the source's 6 `MINIMAP_TINT` values turned out to already be an exact match for one), the heart/boss room draws as a rotated gold diamond and is always shown regardless of discovery, a "hint" cell (faint outline only) marks a room known-but-unvisited, and door connectors between two shown rooms tint ember when either end is the current room |
+| `autoload/level_flow.gd` | (wiring) | New `_on_room_changed` connects to the already-existing `room_changed` signal (already fired from run start, every same-zone room entry, and both zone-transition landings) — one connection covers every real `refreshMinimap` call site in the source at once, rather than repeating the call by hand at each of those functions the way the source itself does |
+
+Sizing/positioning reuses the exact `scale` + `pivot_offset` technique the
+toast/banner fix above established: `HudMinimap` sets its own anchor
+fractions once in `_ready()` (top-right of the HUD), then every `refresh()`
+call only ever reassigns offsets (to a box sized to the current zone's
+actual room-graph footprint) and `scale` (`min(1, MAX_PX / footprint)`,
+matching the source's own "shrink large zones down, never grow small
+ones" rule) — offsets and direct anchor/scale reassignment are both plain,
+safe property writes even on an already-parented node (this project's own
+bar-fill-ratio code has reassigned `anchor_right` every frame for 3 steps
+now with no issue); only `set_anchors_preset()` itself has the "discards
+the current rect" gotcha this step's HUD investigation first turned up.
+
+**Deliberately deferred, not forgotten:** the boss bar (needs the boss
+attack-FSM gap closed first) and both vignettes. The debug/diagnostic
+panel (`DebugLabel`/`LiveLabel`) still exists, hidden by default — toggle
+with **F1**.
 
 **How to test it:** same as before (HUD live-updating, F1 toggle, opening
 a chest, clearing a room for the 3-card picker, browsing the shop, an
-event's shrine, the character sheet) — all confirmed working via real
-screenshots, not just believed to. New this pass: level up and confirm a
-"LEVEL N" banner plus a stat-point toast appear; rest at a brazier and
-confirm its toast; clear the Ember Citadel's elite den and confirm the
-Bow banner+toast; pick up a synergy-completing upgrade (from any source —
-chest, room-clear, shop, event) and confirm the synergy banner appears
-(and, picking one that completes two at once, that they stack 0.9s
-apart rather than overlapping); descend or ascend a zone's stairs and
-confirm the zone-name banner (descend only: the delayed subtitle toast
-too); in the Hollow Ruins' sanctum, begin the rite and confirm "THE RITE
-BEGINS", each wave's banner, and "THE RITE IS DONE" plus its reward toast
-in sequence; in the Ember Citadel, break the Sunken Warden's shield and
-confirm "THE SHIELD SHATTERS".
+event's shrine, the character sheet, every toast/banner) — all confirmed
+working via real screenshots, not just believed to. New this pass: check
+the minimap appears top-right below the corruption bar, the current room
+shows a bright ring, room types you've found tint correctly (chest gold,
+shop frost-blue, elite blood-red, event toxic-green, rest ember,
+sanctum fungal-teal), a room one door away but not yet entered shows only
+a faint outline, the heart/boss room shows as a gold diamond from the
+start (never hidden), connectors between discovered rooms light up ember
+only where they touch the room you're standing in, and — in a zone with
+enough rooms to exceed the "mini" footprint — the whole thing shrinks
+down rather than growing past its corner.
 
 ### Next steps (not started)
 
 Every gameplay-critical (Phase-A) screen `GODOT_MIGRATION.md` calls for is
-now landed, and so is its toast/banner feedback layer. What's left before
-Phase B: the minimap, the boss bar (blocked on the boss attack-FSM gap),
-and both vignettes. Then Phase B itself: the MainMenu/PauseMenu/Settings/
-Victory/Credits meta-shell, per `GODOT_MIGRATION.md`'s own Phase-A/Phase-B
-split.
+now landed, and so is its toast/banner feedback layer and the minimap.
+What's left before Phase B: the boss bar (blocked on the boss attack-FSM
+gap) and both vignettes. Then Phase B itself: the MainMenu/PauseMenu/
+Settings/Victory/Credits meta-shell, per `GODOT_MIGRATION.md`'s own
+Phase-A/Phase-B split.

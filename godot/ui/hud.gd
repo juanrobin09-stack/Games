@@ -76,6 +76,7 @@ var _embers_label: Label
 var _timer_label: Label
 var _zone_label: Label
 var _corruption_fill: ColorRect
+var _minimap: HudMinimap
 var _ability_slot: Control
 var _ability_icon: HudIcon
 var _ability_sweep: ColorRect
@@ -266,6 +267,14 @@ func _build_top_right() -> void:
 	_corruption_fill.anchor_bottom = 1.0
 	_corruption_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	corruption_track.add_child(_corruption_fill)
+
+	# Not nested inside `col` above (unlike every other top-right element) —
+	# HudMinimap positions/sizes itself independently every refresh() (a
+	# variable-sized box scaled to fit, anchored to Hud's own top-right
+	# corner), which a Container parent would fight over sizing authority
+	# with; a plain Control sibling avoids that question entirely.
+	_minimap = HudMinimap.new()
+	add_child(_minimap)
 
 func _build_bottom_left() -> void:
 	var row := HBoxContainer.new()
@@ -602,6 +611,15 @@ func show_synergy_banner(synergy_name: String, description: String) -> void:
 	_synergy_banner_tween.tween_property(_synergy_banner, "offset_top", SYNERGY_BANNER_REST_TOP - 12.0, 0.63).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_IN)
 	_synergy_banner_tween.parallel()
 	_synergy_banner_tween.tween_property(_synergy_banner, "offset_bottom", SYNERGY_BANNER_REST_TOP - 12.0 + 90.0, 0.63).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_IN)
+
+## Ports HUD.ts's refreshMinimap — a passthrough to HudMinimap's own
+## refresh(), called from LevelFlow whenever room_changed fires (run
+## start, any same-zone room entry, or a zone transition landing) rather
+## than every frame from update() below — the source calls it from the
+## same handful of "the room graph's discovered state actually changed"
+## moments, not its own per-frame render loop either.
+func refresh_minimap(layout: Dictionary, current_room_key: String) -> void:
+	_minimap.refresh(layout, current_room_key)
 
 # ---------------------------------------------------------------- Update
 
