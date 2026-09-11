@@ -58,6 +58,7 @@ var ui_root: Node = null
 var _active_room: RoomContainer = null
 var _transition: Dictionary = {}
 var _interact_key_down: bool = false
+var _inventory_key_down: bool = false
 
 func _ready() -> void:
 	CombatManager.enemy_died.connect(_on_enemy_died)
@@ -91,6 +92,7 @@ func _physics_process(delta: float) -> void:
 		return
 	_check_door_crossing()
 	_check_interact_key()
+	_check_inventory_key()
 	_update_room_clear(delta)
 
 # ---------------------------------------------------------------- Run bootstrap
@@ -303,6 +305,25 @@ func _check_interact_key() -> void:
 	var interaction = get_interaction()
 	if interaction != null:
 		(interaction["action"] as Callable).call()
+
+## Ports Game.ts's own `else if (this.input.wasPressed('inventory'))
+## this.openInventory();` branch — a global keybind (I), unlike every
+## other modal here (chest/shop/event), which only ever opens via E-key
+## proximity to a room landmark. Debounced the same way _check_interact_key
+## is; this function only runs at all while the tree isn't paused (this
+## whole script is an autoload with the default PROCESS_MODE_INHERIT, so
+## _physics_process stops the instant any modal sets get_tree().paused),
+## which already gives open_inventory_ui the same "can't open on top of
+## another modal" guarantee the source enforces by hand with its own
+## `if (this.modalScreen) return;` at the top of openInventory.
+func _check_inventory_key() -> void:
+	if not Input.is_physical_key_pressed(KEY_I):
+		_inventory_key_down = false
+		return
+	if _inventory_key_down:
+		return
+	_inventory_key_down = true
+	open_inventory_ui()
 
 # ---------------------------------------------------------------- Room clearing
 
@@ -776,3 +797,14 @@ func spend_stat_point(stat_id: String) -> bool:
 	mod.value = def.value_per_level
 	player.add_bonus_modifier(mod)
 	return true
+
+## Ports Game.ts's private openInventory. Called from the global I-key
+## (_check_inventory_key above); PauseMenu's own "Your Build" entry point
+## (Game.ts's other call site, `openInventory('build')`) stays deferred
+## along with the rest of Phase B's meta-shell screens — nothing else
+## calls this with initial_tab yet, so it just keeps the parameter for
+## when that button exists.
+func open_inventory_ui(initial_tab: InventoryUI.Tab = InventoryUI.Tab.CHARACTER) -> void:
+	if player == null or not is_instance_valid(player):
+		return
+	InventoryUI.show_inventory(ui_root, player, spend_stat_point, initial_tab)

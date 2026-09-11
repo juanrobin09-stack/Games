@@ -234,7 +234,7 @@ about a burst that never appears at all (likely a parent/positioning
 issue) versus one that appears but looks visually wrong (likely a
 color/shape/timing tuning issue in `vfx_presets.gd`).
 
-### Step 9 — UI (in progress: upgrade-ownership system, core HUD, the room-clear/chest reward flow, the shop, and the event/shrine screen all landed and confirmed against a real running build)
+### Step 9 — UI (in progress: every Phase-A gameplay-critical screen — upgrade-ownership system, core HUD, room-clear/chest rewards, the shop, the event/shrine screen, and the character sheet — landed and confirmed against a real running build; only the minimap/toasts/banners/vignettes remain before Phase B)
 
 Per `GODOT_MIGRATION.md` §5.
 
@@ -367,27 +367,51 @@ title+description+options group instead of leaving it all as dead space
 under the last option (the default top-packed behavior, confirmed to look
 noticeably less finished via a real screenshot before this fix).
 
+**6. The character sheet (`InventoryUI`)** — the last screen the upgrade-
+ownership system was built to unblock, and by far the biggest so far:
+
+| File | Ports | State |
+|---|---|---|
+| `ui/inventory_ui.gd` | `ui/InventoryUI.ts` | Two tabs (Character: Level/XP bar + the 7 stat-point rows; Build: active synergies + every owned upgrade), opened globally with **I** rather than via a room landmark. First screen with a `ScrollContainer` — the panel's chrome (title/tabs/Back) stays fixed while only the tab body scrolls, since both tabs' content is open-ended (0 to 25+ owned upgrades) unlike every previous screen's small fixed content |
+| `ui/upgrade_card.gd` | (extended) | New `show_tags: bool` — the Build tab reuses this same card for owned upgrades but, like the source's own simpler Build-tab markup, with no tags row (level folds into the name line instead) and a shorter fixed height (`CARD_SIZE_NO_TAGS`) rather than the picker's taller one, which left visibly dead space below the description once the tags row was gone (confirmed, then fixed, via a real screenshot) |
+| `autoload/level_flow.gd` | `Game.ts`'s `openInventory` + its own `update()`'s inventory-key branch | New `open_inventory_ui()` and `_check_inventory_key()`/`_check_inventory_key_down` (mirrors `_check_interact_key`'s own debounce). Unlike chest/shop/event, this key check runs unconditionally (not gated on room type or proximity) — matches the source checking `wasPressed('inventory')` globally too |
+
+Two things worth flagging about this screen specifically:
+- **It's a global keybind, not a room interaction** — the only step-9 modal
+  opened this way so far. The source guards `openInventory()` with
+  `if (this.modalScreen) return;` so pressing I on top of another open
+  screen no-ops; the Godot port gets the same guarantee for free from
+  `get_tree().paused` itself — `LevelFlow._physics_process` (where the I
+  key is checked) simply doesn't run at all while any other modal has
+  paused the tree, since the autoload was never marked
+  `PROCESS_MODE_ALWAYS` the way the modals themselves are.
+- **PauseMenu's own entry point stays deferred.** The source also opens
+  this screen (on the Build tab) from a "Your Build" button in `PauseMenu`
+  — that menu doesn't exist yet (Phase B), so `open_inventory_ui`'s
+  `initial_tab` parameter has no second caller yet, kept for when it does.
+
 **Deliberately deferred, not forgotten:** the minimap, the toast/phase-
 banner/synergy-banner system, the boss bar (needs the boss attack-FSM gap
-closed first), both vignettes, and `InventoryUI`. The debug/diagnostic
-panel (`DebugLabel`/`LiveLabel`) still exists, hidden by default — toggle
-with **F1**.
+closed first), and both vignettes. The debug/diagnostic panel
+(`DebugLabel`/`LiveLabel`) still exists, hidden by default — toggle with
+**F1**.
 
 **How to test it:** same as before (HUD live-updating, F1 toggle, opening
-a chest, clearing a room for the 3-card picker, browsing the shop) — all
-confirmed working via real screenshots, not just believed to. New this
-pass: walk up to an event room's shrine and press E, confirm the panel
-opens and pauses the action, confirm an option you can't afford shows
-dimmed and does nothing when clicked, and confirm picking an affordable
-one resolves the room (clears it, closes the screen) with the right effect
-(HP/embers/upgrade actually changes).
+a chest, clearing a room for the 3-card picker, browsing the shop, an
+event's shrine) — all confirmed working via real screenshots, not just
+believed to. New this pass: press **I** from anywhere during a run,
+confirm the Character tab shows real Level/XP/stat rows (a locked one —
+Ability Damage before Zone 1 — should read differently from a spendable
+one), spend a point and confirm the row/XP bar/available-points count all
+update immediately, switch to the Build tab and confirm every owned
+upgrade appears as a card and any active synergies appear above them, and
+confirm **Back** closes the screen and unpauses.
 
 ### Next steps (not started)
 
-`InventoryUI` (Character tab for spending stat points via the now-real
-`LevelFlow.spend_stat_point`, Build tab for owned upgrades/synergies) —
-the last screen the upgrade-ownership system above was built to unblock.
-Then the minimap/toasts/banners/vignettes deferred above.
-`GODOT_MIGRATION.md`'s own Phase-A/Phase-B split (gameplay-critical
-screens first, the MainMenu/PauseMenu/Settings/Victory/Credits meta-shell
-after) is the intended order.
+Every gameplay-critical (Phase-A) screen `GODOT_MIGRATION.md` calls for is
+now landed. What's left before Phase B: the minimap, the toast/phase-
+banner/synergy-banner system, the boss bar (blocked on the boss attack-FSM
+gap), and both vignettes — all deferred above. Then Phase B itself: the
+MainMenu/PauseMenu/Settings/Victory/Credits meta-shell, per
+`GODOT_MIGRATION.md`'s own Phase-A/Phase-B split.

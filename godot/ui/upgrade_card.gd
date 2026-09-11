@@ -13,6 +13,11 @@ extends Control
 signal chosen(def: UpgradeDefinition)
 
 const CARD_SIZE := Vector2(220.0, 210.0)
+## Same width (InventoryUI's Build-tab grid still wants uniform columns),
+## shorter height — without a tags row there's ~55px less content to fit,
+## and the full CARD_SIZE would just leave that much dead space at the
+## bottom of every card (confirmed via a real screenshot before this).
+const CARD_SIZE_NO_TAGS := Vector2(220.0, 155.0)
 const PADDING := 12.0
 const ICON_BADGE_SIZE := 40.0
 
@@ -20,12 +25,17 @@ var def: UpgradeDefinition = null
 var level: int = 1
 var first_tag_text: String = ""
 var clickable: bool = true
+## InventoryUI's Build tab reuses this card for owned upgrades but, like
+## the source's own Build-tab card markup, shows no tags row at all (no
+## rarity/level pills) — level is already in the name line there.
+var show_tags: bool = true
 
 var _hovering: bool = false
 
 func _ready() -> void:
-	custom_minimum_size = CARD_SIZE
-	size = CARD_SIZE
+	var effective_size: Vector2 = CARD_SIZE if show_tags else CARD_SIZE_NO_TAGS
+	custom_minimum_size = effective_size
+	size = effective_size
 	mouse_filter = Control.MOUSE_FILTER_STOP if clickable else Control.MOUSE_FILTER_IGNORE
 	if clickable:
 		mouse_entered.connect(func(): _hovering = true; queue_redraw())
@@ -79,7 +89,11 @@ func _build_content() -> void:
 	badge.add_child(icon)
 
 	var name_label := Label.new()
-	name_label.text = def.name
+	# The tags row below normally carries "Level N" as its own pill; when
+	# it's suppressed (show_tags = false), fold that into the name line
+	# instead — matches the source's Build-tab card, whose name text is
+	# `${name} — Level ${stacks}` with no separate tags row at all.
+	name_label.text = def.name if show_tags else "%s — Level %d" % [def.name, level]
 	name_label.add_theme_font_size_override("font_size", 16)
 	name_label.add_theme_color_override("font_color", _rarity_color())
 	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD
@@ -96,13 +110,14 @@ func _build_content() -> void:
 	desc_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(desc_label)
 
-	var tags_row := HBoxContainer.new()
-	tags_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	tags_row.add_theme_constant_override("separation", 6)
-	col.add_child(tags_row)
-	if first_tag_text != "":
-		tags_row.add_child(_make_tag(first_tag_text, _rarity_color()))
-	tags_row.add_child(_make_tag("Level %d" % level, Color(Palette.TEXT_DIM)))
+	if show_tags:
+		var tags_row := HBoxContainer.new()
+		tags_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		tags_row.add_theme_constant_override("separation", 6)
+		col.add_child(tags_row)
+		if first_tag_text != "":
+			tags_row.add_child(_make_tag(first_tag_text, _rarity_color()))
+		tags_row.add_child(_make_tag("Level %d" % level, Color(Palette.TEXT_DIM)))
 
 func _make_tag(text: String, color: Color) -> Control:
 	var wrap := PanelContainer.new()
