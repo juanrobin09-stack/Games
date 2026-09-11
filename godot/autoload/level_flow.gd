@@ -254,10 +254,7 @@ func _find_obstacle(room: RoomContainer, visual: ObstacleNode.Visual) -> Obstacl
 # ---------------------------------------------------------------- Interaction
 
 ## Returns {"label": String, "action": Callable} for whatever's in range to
-## interact with, or null. Mirrors Game.ts's getRoomInteraction — event
-## still resolves to a real landmark you can walk up to, but its actual
-## interaction is deferred (EventUI, still ahead in step 9); pressing E on
-## it just prints why nothing happened instead of silently doing nothing.
+## interact with, or null. Mirrors Game.ts's getRoomInteraction.
 func get_interaction() -> Variant:
 	if not _transition.is_empty() or player == null:
 		return null
@@ -278,7 +275,7 @@ func get_interaction() -> Variant:
 	if room.type == RoomContainer.Type.EVENT and not room.event_resolved:
 		var shrine := _find_obstacle(room, ObstacleNode.Visual.SHRINE)
 		if shrine != null and p.distance_to(shrine.position) < 110.0:
-			return {"label": "Investigate (deferred to step 9)", "action": func(): print("LevelFlow: event interaction needs real UI — step 9")}
+			return {"label": "Investigate", "action": func(): open_event_room(room)}
 	if room.type == RoomContainer.Type.REST and not room.rest_used:
 		var brazier := _find_obstacle(room, ObstacleNode.Visual.BRAZIER)
 		if brazier != null and p.distance_to(brazier.position) < 110.0:
@@ -629,6 +626,101 @@ func open_shop_room(room: RoomContainer) -> void:
 		reroll_count[0] += 1
 		return make_offers.call()
 	ShopUI.show_shop(ui_root, make_offers.call(), on_buy_upgrade, on_buy_heal, on_reroll)
+
+## Ports Game.ts's private openEvent. An event room keeps whichever id it
+## first rolled (room.event_id) for the rest of the run — picked once,
+## here, the first time it's opened — same as the source's own
+## `if (!room.eventId)` guard. Zone-bound events (WorldEventDefinition's
+## own zone_id) only ever appear in their own zone and are preferred there
+## while unused, matching the source's own "the ruins should feel like
+## they have their own stories" comment.
+func open_event_room(room: RoomContainer) -> void:
+	if room.event_resolved:
+		return
+	if room.event_id == "":
+		var zone_id: String = (RunState.current_layout()["zone"] as ZoneDefinition).id
+		var eligible: Array = []
+		for e in DataRegistry.all("events"):
+			if (e as WorldEventDefinition).zone_id == "" or (e as WorldEventDefinition).zone_id == zone_id:
+				eligible.append(e)
+		var available: Array = []
+		for e in eligible:
+			if not RunState.used_event_ids.has((e as WorldEventDefinition).id):
+				available.append(e)
+		var zone_own: Array = []
+		for e in available:
+			if (e as WorldEventDefinition).zone_id == zone_id:
+				zone_own.append(e)
+		if not zone_own.is_empty():
+			available = zone_own
+		if available.is_empty():
+			available = eligible
+		var rng := LevelGenerator.rng_from("%s:event:%s" % [RunState.seed_value, room.key])
+		room.event_id = (available[rng.randi_range(0, available.size() - 1)] as WorldEventDefinition).id
+	var def: WorldEventDefinition = DataRegistry.get_event(room.event_id)
+	RunState.used_event_ids.append(def.id)
+	EventUI.show_event(ui_root, def, func(option: EventOption):
+		_apply_event_effect(option, room)
+		room.event_resolved = true
+		room.cleared = true
+	)
+
+## Ports Game.ts's private applyEventEffect. `option.cost`/`option.value`
+## default to 0.0 the same way whether an EventOption's .tres explicitly
+## writes 0 or omits the field entirely (Godot Resources have no separate
+## "unset" state for a plain @export float) — so, same as the source's own
+## `?? default` only ever meaningfully firing for a genuinely-absent value,
+## every `> 0.0 else <default>` fallback below is the faithful reading:
+## no shipped event option actually wants "grant exactly zero" as an
+## effect, so the two cases were never distinguishable in practice either.
+func _apply_event_effect(option: EventOption, room: RoomContainer) -> void:
+	if option.cost > 0.0 and not RunState.spend_embers(int(option.cost)):
+		return
+	match option.apply:
+		EventOption.EffectKind.NOTHING:
+			pass
+		EventOption.EffectKind.GAIN_EMBERS:
+			RunState.embers += int(option.value)
+		EventOption.EffectKind.GAIN_HP:
+			player.heal(option.value)
+			VfxPresets.heal_sparkle(room, player.global_position)
+		EventOption.EffectKind.GAIN_RANDOM_UPGRADE:
+			var min_rarity: UpgradeDefinition.Rarity = int(option.value)
+			var rng := LevelGenerator.rng_from("%s:eventupgrade:%s:%s" % [RunState.seed_value, room.key, option.id])
+			var def := UpgradePool.pick_upgrade_at_least_rarity(rng, min_rarity, current_gate_ids(), player.upgrades, RunState.zone_index)
+			var level: int = UpgradePool.upcoming_upgrade_level(def.id, player.upgrades)
+			_grant_upgrade(def)
+			RewardPopup.show_reward(ui_root, def, "The Merchant", level)
+		EventOption.EffectKind.LOSE_HP_FOR_RARE_UPGRADE:
+			var loss: float = player.stats.max_hp * (option.value if option.value > 0.0 else 0.25)
+			player.hp = maxf(1.0, player.hp - loss)
+			var rng2 := LevelGenerator.rng_from("%s:eventupgrade:%s:%s" % [RunState.seed_value, room.key, option.id])
+			var def2 := UpgradePool.pick_upgrade_at_least_rarity(rng2, UpgradeDefinition.Rarity.RARE, current_gate_ids(), player.upgrades, RunState.zone_index)
+			var level2: int = UpgradePool.upcoming_upgrade_level(def2.id, player.upgrades)
+			_grant_upgrade(def2)
+			RewardPopup.show_reward(ui_root, def2, "The Dying Flame", level2)
+		EventOption.EffectKind.GAMBLE_EMBERS:
+			if randf() < 0.5:
+				RunState.embers += RunState.embers
+			else:
+				var loss: int = int(floor(RunState.embers * 0.5))
+				RunState.embers = maxi(0, RunState.embers - loss)
+		EventOption.EffectKind.GAIN_SOUL_ASH_NOW:
+			MetaProgression.add_soul_ash(int(option.value))
+		EventOption.EffectKind.GAIN_SHIELD_CHARGE:
+			player.shield_charges += int(option.value) if option.value > 0.0 else 1
+		EventOption.EffectKind.GAIN_MAX_HP:
+			var amount: float = option.value if option.value > 0.0 else 15.0
+			var mod := StatModifier.new()
+			mod.stat = "max_hp"
+			mod.mode = StatModifier.Mode.FLAT
+			mod.value = amount
+			player.add_bonus_modifier(mod)
+			player.heal(amount)
+			VfxPresets.heal_sparkle(room, player.global_position)
+		EventOption.EffectKind.LOSE_HP_FOR_EMBERS:
+			player.hp = maxf(1.0, player.hp - player.stats.max_hp * 0.15)
+			RunState.embers += int(option.value) if option.value > 0.0 else 50
 
 # ---------------------------------------------------------------- Kill rewards
 

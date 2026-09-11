@@ -234,7 +234,7 @@ about a burst that never appears at all (likely a parent/positioning
 issue) versus one that appears but looks visually wrong (likely a
 color/shape/timing tuning issue in `vfx_presets.gd`).
 
-### Step 9 — UI (in progress: upgrade-ownership system, core HUD, the room-clear/chest reward flow, and the shop all landed and confirmed against a real running build)
+### Step 9 — UI (in progress: upgrade-ownership system, core HUD, the room-clear/chest reward flow, the shop, and the event/shrine screen all landed and confirmed against a real running build)
 
 Per `GODOT_MIGRATION.md` §5.
 
@@ -340,26 +340,54 @@ against; `UpgradeCard`'s own opaque background made its absence far less
 obvious). Now wrapped in a `PanelContainer` with the same style as
 `ShopUI`'s own panel.
 
+**5. The event/shrine encounter** — the last of the room-landmark screens:
+
+| File | Ports | State |
+|---|---|---|
+| `ui/event_ui.gd` | `ui/EventUI.ts` | Modal like the others, but with no Leave/Cancel — matches the source having none either; an encounter must be resolved by picking one of its (affordable) options. Each option is a `PanelContainer` (auto-sizes to its label/detail/cost text, which varies per event), not a `Button` — clicks come from `Control`'s own `gui_input` signal, which every Control already has, wired by hand instead of listening for a `pressed` a real Button would emit |
+| `autoload/run_state.gd` | `RunState.ts`'s `usedEventIds` | New `used_event_ids: Array[String]` — a plain array, not a Set, since it never holds more than the 7 world events |
+| `autoload/level_flow.gd` | `Game.ts`'s `openEvent`/`applyEventEffect` | New `open_event_room(room)` (rolls a zone-aware event the first time a room is opened, preferring one this run hasn't used yet) and `_apply_event_effect(option, room)` (all 10 `EventOption.EffectKind` branches — embers/HP/upgrade grants, the 50/50 embers gamble, Soul Ash, shield charges, max-HP, the two lose-HP-for-a-reward trades). The event interact prompt now calls it for real |
+
+`_apply_event_effect` skips two details the source has that nothing in the
+Godot port can call yet, same as every other screen this step: `playSfx(...)`
+(no audio system exists yet — a separate, not-yet-started migration step)
+and `camera.addShake(...)` on the `loseHpForEmbers` option (no camera-shake
+utility has been ported either). Neither changes what the option actually
+grants, only how it *feels* landing — worth remembering if a camera-shake
+utility gets built later, since this is the one call site already waiting
+for it.
+
+A small layout lesson from this screen, useful for any future variable-
+length modal (`InventoryUI` included): a `VBoxContainer`'s `alignment`
+property centers its *own* stack within extra space on its primary axis,
+not just cross-axis content — events range from 2-3 options with
+descriptions of very different lengths, so the fixed-size panel often has
+real slack; `ALIGNMENT_CENTER` distributes it evenly above and below the
+title+description+options group instead of leaving it all as dead space
+under the last option (the default top-packed behavior, confirmed to look
+noticeably less finished via a real screenshot before this fix).
+
 **Deliberately deferred, not forgotten:** the minimap, the toast/phase-
 banner/synergy-banner system, the boss bar (needs the boss attack-FSM gap
-closed first), both vignettes, `EventUI`, and `InventoryUI`. The debug/
-diagnostic panel (`DebugLabel`/`LiveLabel`) still exists, hidden by
-default — toggle with **F1**.
+closed first), both vignettes, and `InventoryUI`. The debug/diagnostic
+panel (`DebugLabel`/`LiveLabel`) still exists, hidden by default — toggle
+with **F1**.
 
 **How to test it:** same as before (HUD live-updating, F1 toggle, opening
-a chest, clearing a room for the 3-card picker) — all confirmed working
-via real screenshots, not just believed to. New this pass: walk up to a
-shop room's merchant stall and press E, confirm the panel opens and pauses
-the action, buy an upgrade or the heal offer and confirm embers deduct and
-the row flips to "Sold", reroll and confirm the offers actually change
-(not just cost embers), and confirm Leave closes it and unpauses.
+a chest, clearing a room for the 3-card picker, browsing the shop) — all
+confirmed working via real screenshots, not just believed to. New this
+pass: walk up to an event room's shrine and press E, confirm the panel
+opens and pauses the action, confirm an option you can't afford shows
+dimmed and does nothing when clicked, and confirm picking an affordable
+one resolves the room (clears it, closes the screen) with the right effect
+(HP/embers/upgrade actually changes).
 
 ### Next steps (not started)
 
-`EventUI` and `InventoryUI` (Character tab for spending stat points via
-the now-real `LevelFlow.spend_stat_point`, Build tab for owned upgrades/
-synergies) — the upgrade-ownership system above was built to unblock
-these too. Then the minimap/toasts/banners/vignettes deferred above.
+`InventoryUI` (Character tab for spending stat points via the now-real
+`LevelFlow.spend_stat_point`, Build tab for owned upgrades/synergies) —
+the last screen the upgrade-ownership system above was built to unblock.
+Then the minimap/toasts/banners/vignettes deferred above.
 `GODOT_MIGRATION.md`'s own Phase-A/Phase-B split (gameplay-critical
 screens first, the MainMenu/PauseMenu/Settings/Victory/Credits meta-shell
 after) is the intended order.

@@ -45,6 +45,13 @@ var stat_points: int = 0
 ## attackSpeed.
 var stat_levels: Dictionary = {}
 
+## Ports RunState.ts's usedEventIds (a Set<string> there — plain Array
+## here, since it never holds more than the 7 world events, so the O(n)
+## `.has()` a real Set would optimize away is never worth the complexity).
+## Read by LevelFlow.open_event_room to avoid repeating an event this run
+## already used, while it still has an unused one left to offer instead.
+var used_event_ids: Array[String] = []
+
 func reset_for_new_run(new_seed: String) -> void:
 	seed_value = new_seed
 	zone_index = 0
@@ -56,6 +63,7 @@ func reset_for_new_run(new_seed: String) -> void:
 	xp = 0.0
 	stat_points = 0
 	stat_levels.clear()
+	used_event_ids.clear()
 
 ## XP required to go from (player_level) to (player_level + 1). Level 2
 ## costs XP_BASE_COST; every level after costs XP_GROWTH more.
