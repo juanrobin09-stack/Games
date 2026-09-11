@@ -450,6 +450,16 @@ func _update_rite(room: RoomContainer, delta: float) -> void:
 	if room.ritual_wave >= LevelGenerator.SANCTUM_WAVE_COUNT:
 		_complete_rite(room)
 		return
+	# Confirms the wave gate really did wait for a clear, not cascade — by
+	# construction the loop above already found 0 alive among whatever was
+	# in room.enemies up to this point (or this line wouldn't run at all),
+	# but room.enemies never shrinks (dead enemies stay for their fade
+	# animation), so its size alone looks alarming out of context — e.g. a
+	# debug panel reading "enemies=14" after 3 waves (5+4+5) that each fully
+	# died before the next spawned, not 14 live enemies at once.
+	print("LevelFlow: sanctum wave %d/%d gate passed (0/%d previously-tracked enemies alive) — spawning next wave" % [
+		room.ritual_wave + 1, LevelGenerator.SANCTUM_WAVE_COUNT, room.enemies.size()
+	])
 	var spawned: Array[EnemyCharacter] = LevelGenerator.spawn_sanctum_wave(room, RunState.current_layout()["zone"], room.ritual_wave, _spawn_options())
 	for e in spawned:
 		VfxPresets.spore_burst_vfx(room, e.global_position, 26.0)

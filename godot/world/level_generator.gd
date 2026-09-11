@@ -548,7 +548,10 @@ static func spawn_sanctum_wave(room: RoomContainer, zone: ZoneDefinition, wave_i
 		var pos: Vector2 = _settle_spawn(room, slot.x + rng.randf_range(-16.0, 16.0), slot.y + rng.randf_range(-12.0, 12.0), def.radius)
 		var enemy: EnemyCharacter = ENEMY_SCENE.instantiate()
 		room.add_enemy(enemy)
-		enemy.setup(def, pos, factors["hp_mult"] * SANCTUM_HP_MULT, factors["damage_mult"] * SANCTUM_DAMAGE_MULT)
+		# apply_debug_hp_mult=false: the rite's fixed 1.6s wave-to-wave gap
+		# (LevelFlow._update_rite) assumes normal-speed kills — see enemy.gd's
+		# own DEBUG_HP_MULT comment for why sanctum waves opt out of it.
+		enemy.setup(def, pos, factors["hp_mult"] * SANCTUM_HP_MULT, factors["damage_mult"] * SANCTUM_DAMAGE_MULT, false)
 		enemy.state_timer = -0.14 * i
 		spawned.append(enemy)
 	return spawned

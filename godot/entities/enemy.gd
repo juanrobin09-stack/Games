@@ -21,6 +21,14 @@ signal died(enemy: EnemyCharacter)
 ## exercise hit/death VFX repeatedly). Not a balance change — revert to 1.0
 ## (or delete this const and the one line that multiplies by it in setup()
 ## below) once testing is done; base_hp in the .tres resources is untouched.
+## Sanctum rite waves opt out via setup()'s apply_debug_hp_mult param — the
+## rite's wave-to-wave pacing (a fixed 1.6s gap, spawn slots that don't
+## avoid the player, ported byte-for-byte from Game.ts/LevelGenerator.ts)
+## assumes normal-speed kills; at this multiplier a wave dies fast enough
+## that the next one's spawn can land right as the player is still standing
+## where the last wave died, which reads as "instant respawn, spawned on
+## me, couldn't get out" — reported directly. That's this multiplier
+## fighting the rite's own pacing, not a separate bug in the rite itself.
 const DEBUG_HP_MULT := 0.15
 
 enum State { SPAWNING, IDLE, CHASE, WINDUP, ATTACK, COOLDOWN, VANISHED, REAPPEARING, STAGGER, DEAD }
@@ -98,13 +106,13 @@ func attack_damage() -> float:
 
 ## Call once after instancing (before or after add_child, either order
 ## works — _ready() re-applies the collision radius either way).
-func setup(enemy_def: EnemyDefinition, spawn_pos: Vector2, hp_mult: float, damage_mult: float) -> void:
+func setup(enemy_def: EnemyDefinition, spawn_pos: Vector2, hp_mult: float, damage_mult: float, apply_debug_hp_mult: bool = true) -> void:
 	def = enemy_def
 	global_position = spawn_pos
 	radius = def.radius
 	difficulty_hp_mult = hp_mult
 	difficulty_damage_mult = damage_mult
-	max_hp = roundf(def.base_hp * hp_mult * DEBUG_HP_MULT)
+	max_hp = roundf(def.base_hp * hp_mult * (DEBUG_HP_MULT if apply_debug_hp_mult else 1.0))
 	hp = max_hp
 	attack_cooldown_timer = def.attack_cooldown * (0.4 + randf() * 0.4)
 	state_timer = 0.15 + randf() * 0.2
