@@ -15,22 +15,26 @@ extends Control
 ## convention player.gd/chest_node.gd already use throughout for the same
 ## reason (no cheap gradient-fill primitive on a plain Control here either).
 ##
-## Root cause of the first version's "only top-left renders" bug, for
-## the record: every region here is positioned via anchors set through
-## plain property assignment (`col.anchor_left = 1.0`), which goes through
-## Control.set_anchor()'s default push_opposite_anchor=true. On a freshly
-## created Control (every anchor still at its default 0.0), setting e.g.
-## anchor_left to 1.0 BEFORE anchor_right has been touched makes the new
-## value cross the still-default opposite anchor (1.0 > 0.0) — Godot then
-## silently "pushes" the opposite anchor to resolve the now-invalid rect,
-## corrupting the offsets any later explicit assignment doesn't fully
-## undo. top_left was the one region that happened to need every anchor
-## left at 0.0 (a no-op, never crossing anything), which is exactly why it
-## was the only one that ever rendered. Every region below now goes
-## through set_anchors_preset() instead — the same single atomic call the
-## root Hud control's own PRESET_FULL_RECT already used successfully —
-## then sets custom offsets afterward, which is safe since offsets are
-## plain pixel deltas with no "opposite side" to cross.
+## Root cause of the "only top-left renders" bug, for the record — found
+## by actually building and running this project headlessly under Xvfb
+## and comparing a real screenshot against a full Control-tree dump (see
+## _ready()'s own comment): calling set_anchors_preset() on a Control that
+## is ALREADY in the scene tree (true of this Control itself — the
+## instanced scene root, parented under main.tscn's UI CanvasLayer before
+## _ready() runs) computes offsets that PRESERVE its current rect rather
+## than resetting to 0, which for a freshly-instanced (0,0)-sized root
+## left it (0,0)-sized even inside a real window — every child anchored at
+## 0.0 (top-left) is blind to that (0 * anything = 0), every child
+## anchored at 1.0 or 0.5 isn't. Calling set_anchors_preset() on a node
+## BEFORE parenting it (true of every region's own col/row below, and
+## every bar's internal track background) doesn't have this problem —
+## there's no prior rect for it to preserve, so it cleanly resets to 0.
+## An earlier fix attempt (switching every region from raw anchor_*
+## property assignment to set_anchors_preset()) treated a real but
+## unrelated Godot gotcha — Control.set_anchor()'s default
+## push_opposite_anchor=true silently "pushing" an unset opposite anchor
+## when its sibling jumps past it — as the cause; it wasn't, which is
+## exactly why that fix alone didn't resolve the symptom.
 ##
 ## Deferred to a follow-up commit — NOT full step 9 yet, see godot/README.md:
 ## the minimap (refreshMinimap's double-resolution grid algorithm), the
@@ -76,7 +80,13 @@ var _ability_icon_id: String = ""
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# The 4 explicit offset resets are load-bearing, not redundant with the
+	# preset above — see this file's own header comment for why.
 	set_anchors_preset(Control.PRESET_FULL_RECT)
+	offset_left = 0.0
+	offset_top = 0.0
+	offset_right = 0.0
+	offset_bottom = 0.0
 	_build_top_left()
 	_build_top_right()
 	_build_bottom_left()
@@ -148,20 +158,6 @@ func _make_small_icon(icon_id: String, color: Color) -> HudIcon:
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return icon
 
-## TEMPORARY diagnostic (remove once the "regions besides top-left don't
-## render" bug is confirmed fixed): a loud, impossible-to-miss flat-color
-## background as the first child of a region container, so a screenshot
-## alone shows whether that container is actually positioned/visible on
-## screen at all — regardless of whether ITS OWN children (icons/labels/
-## fills) separately fail to render. Isolates "container never appears"
-## from "container appears but is empty."
-func _debug_marker(parent: Control, color: Color) -> void:
-	var marker := ColorRect.new()
-	marker.color = color
-	marker.set_anchors_preset(Control.PRESET_FULL_RECT)
-	marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	parent.add_child(marker)
-
 # ---------------------------------------------------------------- Regions
 
 func _build_top_left() -> void:
@@ -207,7 +203,6 @@ func _build_top_right() -> void:
 	col.offset_right = -14.0
 	col.offset_bottom = 14.0 + 90.0
 	add_child(col)
-	_debug_marker(col, Color.MAGENTA)
 
 	var embers_row := HBoxContainer.new()
 	embers_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -261,7 +256,6 @@ func _build_bottom_left() -> void:
 	row.offset_right = 14.0 + 260.0
 	row.offset_bottom = -16.0
 	add_child(row)
-	_debug_marker(row, Color.CYAN)
 
 	_ability_slot = Control.new()
 	_ability_slot.custom_minimum_size = Vector2(ABILITY_SLOT_SIZE, ABILITY_SLOT_SIZE)
@@ -344,7 +338,6 @@ func _build_bottom_right() -> void:
 	col.offset_right = -14.0
 	col.offset_bottom = -14.0
 	add_child(col)
-	_debug_marker(col, Color.YELLOW)
 
 	var xp := _make_bar_row(col, "", Color.WHITE, Color(Palette.GOLD_BRIGHT))
 	_xp_fill = xp["fill"]
@@ -377,10 +370,8 @@ func _build_interact_prompt() -> void:
 	_interact_label.add_theme_font_size_override("font_size", 15)
 	_interact_label.add_theme_color_override("font_color", Color(Palette.TEXT_WARM))
 	_interact_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_interact_label.text = "[E] (diagnostic — always shown for now)"
-	_interact_label.visible = true # TEMPORARY: forced on so this region is visible in a screenshot regardless of interaction state; update() still overwrites visible/text every frame once a real interaction exists.
+	_interact_label.visible = false
 	add_child(_interact_label)
-	_debug_marker(_interact_label, Color.ORANGE)
 
 # ---------------------------------------------------------------- Update
 
@@ -464,10 +455,8 @@ func update(data: Dictionary) -> void:
 	if prompt != "":
 		_interact_label.text = "[E] %s" % prompt
 		_interact_label.visible = true
-	# TEMPORARY: the "else: _interact_label.visible = false" branch is
-	# disabled while diagnosing the missing-regions bug, so the forced-on
-	# marker from _build_interact_prompt() stays visible through every
-	# update() call for the next screenshot. Restore it once that's fixed.
+	else:
+		_interact_label.visible = false
 
 ## Mirrors Game.ts's private roomTypeLabel.
 static func room_type_label(type: RoomContainer.Type) -> String:
