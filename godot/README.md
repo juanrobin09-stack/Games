@@ -922,5 +922,90 @@ correctly swapped in `RUINS_PLUCK_SCALE`; and a `stop()`/`start()` cycle
 correctly silenced then correctly revived all 3 drone voices.
 
 Every system `GODOT_MIGRATION.md`'s recommended build order calls for
-through Step 10 is now built, wired, and verified. **Not built yet**:
-Step 11 (save-system parity pass) and Step 12 (full playtest/rebalance).
+through Step 10 is now built, wired, and verified.
+
+### Step 11 — Save system hardening (complete)
+
+`GODOT_MIGRATION.md`'s own framing for this step — "port `SaveSystem.ts`'s
+validation/migration logic onto `FileAccess`/`JSON`" — undersold it.
+`MetaProgression.load_save()` already existed (it's had to, since
+Settings/Armory/Inventory needed real persistence from Phase B onward) and
+already looked thorough: every field individually pulled from the parsed
+Dictionary with a fallback default. Reading it next to `SaveSystem.ts`'s
+own `migrateSave()`/`sanitizeSettings()` line by line turned up gaps that
+weren't cosmetic — they were a real crash path, confirmed by writing and
+running actual malformed-save fixtures through it rather than reasoning
+about the code in the abstract:
+
+- **`int(x)`/`float(x)` abort on the wrong Variant type — they don't
+  return a fallback.** TS's `num()` helper is a *guard*:
+  `typeof value === 'number' && Number.isFinite(value) ? value : fallback`,
+  so any non-number — `null`, a nested object, an array — just falls back.
+  GDScript's `int()`/`float()` constructors have no such guard: a real
+  headless test confirmed `int(null)` and `int({})` both abort with
+  "Invalid call. Nonexistent 'int' constructor", not a caught exception —
+  GDScript has nothing resembling `loadSave()`'s own top-level try/catch,
+  so one bad field was one script error away from wherever `load_save()`
+  happened to stop. A save file with `"soul_ash": null` — corrupted mid-
+  write, hand-edited, or produced by a future bug elsewhere — hit exactly
+  this.
+- **`permanent_levels`/`unlocks` were accepted wholesale once confirmed to
+  be *a* Dictionary, with no per-entry check.** `migrateSave()` validates
+  every entry (`typeof value === 'number' && Number.isFinite(value) &&
+  value >= 0`, floored) and drops the rest; the Godot side just took the
+  whole Dictionary as-is, so one bad entry (a string, a negative, a
+  nested object) among many good ones would have carried straight into
+  `get_permanent_cost()`'s `pow(cost_growth, level)`.
+- **`settings` was type-checked, not range/enum-checked.** A `master_volume:
+  999` or `language: "xx"` matched its field's Godot type (FLOAT, STRING)
+  and was accepted outright — `sanitizeSettings()` additionally clamps
+  every volume/`textScale` to its real range and checks every enum field
+  (`particleQuality`/`graphicsQuality`/`language`) against its actual
+  allowed-value list, neither of which a bare type match catches.
+
+Fixed by adding `_safe_num()`/`_safe_int()`/`_safe_bool()` — direct ports
+of `num()`/`bool()` — and routing every conversion in `load_save()`
+through them instead of a raw `int()`/`float()` on unchecked JSON, plus
+per-entry validation for `permanent_levels`/`unlocks` and per-field range/
+enum validation for `settings`, matching `sanitizeSettings()` field for
+field. `hints_shown`/`last_seed` already had correct per-element/type
+checks and needed no change. One thing deliberately *not* ported:
+`migrateSave()`'s legacy-`tutorialSeen`-to-`hintsShown` migration branch —
+this Godot save format has had `hints_shown` from its first version, so
+there is no pre-`hints_shown` Godot save to ever migrate from; porting
+that branch would be dead code guarding against a history this engine
+never had.
+
+**A second real bug, found by the fixtures, not by re-reading the code**:
+the initial `unlocks` fix wrote `if loaded_unlocks[key] == true`, which
+looks like the obviously-safe version of the old unchecked assignment —
+until a fixture with `"shadowStep": 1` (a JSON number) hit it and
+GDScript's `==` threw "Invalid operands 'float' and 'bool' in operator
+'=='" instead of just returning false the way JS's `===` would. Fixed by
+checking `typeof(value) == TYPE_BOOL` first so the mismatched `==` is
+never reached — the same lesson as the `int()`/`float()` fix one level
+up: a comparison across Variant types is exactly as unsafe here as a
+conversion across them, and both need the type check to come first.
+
+**Verified** via a real headless run against 11 fixtures written straight
+to the real save path and loaded through the actual `load_save()`, not a
+mocked one: unparseable text, a JSON array/number at the top level (both
+correctly reset to full defaults); `soul_ash` as `null`, a nested object,
+and a bare `true` (all three correctly settled on the safe default `0`
+with zero script errors — the exact crash class this was fixing);
+`permanent_levels` with 5 mixed entries (string, negative, float, nested
+object, valid int) correctly kept only the 2 valid ones, the float
+correctly floored; `unlocks` with 4 mixed entries (bool, string, bool,
+number) correctly kept only the 2 real booleans; a `settings` block with
+an out-of-range volume, an unknown language, an unknown quality tier, an
+out-of-range `text_scale`, and a non-bool `muted` all correctly clamped
+or fell back to default, field by field; a `lifetime_stats` block with a
+`null` counter correctly defaulted while a legitimately negative
+`best_time_seconds` was correctly accepted as-is (matches the source —
+it's never floored to 0, only checked for finiteness); and, the
+regression check that matters as much as any fixture, a fully well-formed
+save with every field populated loaded back byte-for-byte correctly,
+confirming none of the hardening changed behavior on the actual common
+case of a save file nothing has ever corrupted.
+
+**Not built yet**: Step 12 (full playtest/rebalance pass).

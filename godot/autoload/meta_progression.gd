@@ -219,6 +219,31 @@ func save() -> void:
 	file.store_string(JSON.stringify(data))
 	file.close()
 
+## Ports SaveSystem.ts's own num()/bool() guards — TS's `typeof value ===
+## 'number' && Number.isFinite(value)` check rejects anything that isn't a
+## genuine finite number before ever using it. The GDScript equivalent
+## isn't optional polish: confirmed via a real headless run, `int(null)`
+## and `int({})` both abort with a hard "Invalid call. Nonexistent 'int'
+## constructor" script error (there's no try/catch to fall back on here,
+## unlike loadSave()'s own), and `int(NAN)`/`int(INF)` don't error at all
+## — they silently return -9223372036854775808 (INT64_MIN), which every
+## maxi(0, ...) call below happens to clamp back to a harmless 0, but a
+## bare float field (settings, best_time_seconds) would carry a live NaN/
+## Infinity straight into gameplay math with nothing to catch it. Every
+## conversion below goes through one of these instead of a raw int()/
+## float() on unchecked JSON, so a hand-edited or corrupted save is
+## sanitized field-by-field, never a crash.
+static func _safe_num(value: Variant, fallback: float) -> float:
+	if (typeof(value) == TYPE_FLOAT or typeof(value) == TYPE_INT) and is_finite(float(value)):
+		return float(value)
+	return fallback
+
+static func _safe_int(value: Variant, fallback: int) -> int:
+	return int(_safe_num(value, float(fallback)))
+
+static func _safe_bool(value: Variant, fallback: bool) -> bool:
+	return value if typeof(value) == TYPE_BOOL else fallback
+
 ## Every field is individually type/range-validated on load with a safe
 ## fallback rather than trusted — a corrupted or hand-edited save can never
 ## crash the game; it's silently replaced with (and immediately persisted
@@ -238,11 +263,37 @@ func load_save() -> void:
 		push_warning("MetaProgression.load_save: save file was not a JSON object — resetting to default")
 		save()
 		return
-	soul_ash = maxi(0, int(parsed.get("soul_ash", 0)))
+	soul_ash = maxi(0, _safe_int(parsed.get("soul_ash", 0), 0))
+
+	# Each entry validated individually rather than trusting the whole
+	# Dictionary once it's confirmed to be one — ports migrateSave()'s own
+	# per-entry `typeof value === 'number' && Number.isFinite(value) &&
+	# value >= 0` filter exactly; a malformed single entry (a string, a
+	# negative, a nested object) is dropped, not allowed to corrupt every
+	# other real entry alongside it.
 	var loaded_levels = parsed.get("permanent_levels", {})
-	permanent_levels = loaded_levels if typeof(loaded_levels) == TYPE_DICTIONARY else {}
+	permanent_levels = {}
+	if typeof(loaded_levels) == TYPE_DICTIONARY:
+		for key in loaded_levels.keys():
+			var v = loaded_levels[key]
+			if (typeof(v) == TYPE_FLOAT or typeof(v) == TYPE_INT) and is_finite(float(v)) and float(v) >= 0.0:
+				permanent_levels[key] = int(floor(float(v)))
+
+	# Same per-entry discipline for unlocks — this Dictionary only ever
+	# holds id -> true (see purchase_unlock()); anything else in a
+	# hand-edited save is dropped rather than trusted verbatim. The
+	# typeof() check has to come first and short-circuit: GDScript's `==`
+	# doesn't quietly return false comparing a bool to a number — a real
+	# fixture (`"id": 1`) confirmed it hard-errors ("Invalid operands
+	# 'float' and 'bool' in operator '=='") instead, so a raw `value ==
+	# true` is exactly as unsafe here as the raw int()/float() calls above.
 	var loaded_unlocks = parsed.get("unlocks", {})
-	unlocks = loaded_unlocks if typeof(loaded_unlocks) == TYPE_DICTIONARY else {}
+	unlocks = {}
+	if typeof(loaded_unlocks) == TYPE_DICTIONARY:
+		for key in loaded_unlocks.keys():
+			if typeof(loaded_unlocks[key]) == TYPE_BOOL and loaded_unlocks[key] == true:
+				unlocks[key] = true
+
 	var loaded_stats = parsed.get("lifetime_stats", {})
 	if typeof(loaded_stats) == TYPE_DICTIONARY:
 		for key in lifetime_stats.keys():
@@ -250,26 +301,40 @@ func load_save() -> void:
 			# legitimately negative — the "no time recorded yet" sentinel);
 			# every other lifetime_stats key is a plain non-negative counter.
 			if key == "best_time_seconds":
-				lifetime_stats[key] = float(loaded_stats.get(key, -1.0))
+				lifetime_stats[key] = _safe_num(loaded_stats.get(key, -1.0), -1.0)
 			else:
-				lifetime_stats[key] = maxi(0, int(loaded_stats.get(key, 0)))
+				lifetime_stats[key] = maxi(0, _safe_int(loaded_stats.get(key, 0), 0))
+
+	# Ports sanitizeSettings() field-by-field: every numeric setting is
+	# range-clamped (not just type-checked), and every enum-shaped string
+	# setting is checked against its real allowed-value set — a raw
+	# type match alone would let a hand-edited save through with e.g.
+	# master_volume: 999 or graphics_quality: "ultra", neither of which
+	# this port (or the source) ever offers as a real value.
 	var loaded_settings = parsed.get("settings", {})
 	if typeof(loaded_settings) == TYPE_DICTIONARY:
-		for key in settings.keys():
-			if not loaded_settings.has(key):
-				continue
-			var default_value = settings[key]
-			var loaded_value = loaded_settings[key]
-			match typeof(default_value):
-				TYPE_BOOL:
-					if typeof(loaded_value) == TYPE_BOOL:
-						settings[key] = loaded_value
-				TYPE_FLOAT:
-					if typeof(loaded_value) == TYPE_FLOAT or typeof(loaded_value) == TYPE_INT:
-						settings[key] = float(loaded_value)
-				TYPE_STRING:
-					if typeof(loaded_value) == TYPE_STRING:
-						settings[key] = loaded_value
+		if loaded_settings.has("master_volume"):
+			settings["master_volume"] = clampf(_safe_num(loaded_settings["master_volume"], settings["master_volume"]), 0.0, 1.0)
+		if loaded_settings.has("music_volume"):
+			settings["music_volume"] = clampf(_safe_num(loaded_settings["music_volume"], settings["music_volume"]), 0.0, 1.0)
+		if loaded_settings.has("sfx_volume"):
+			settings["sfx_volume"] = clampf(_safe_num(loaded_settings["sfx_volume"], settings["sfx_volume"]), 0.0, 1.0)
+		if loaded_settings.has("muted"):
+			settings["muted"] = _safe_bool(loaded_settings["muted"], settings["muted"])
+		if loaded_settings.has("screen_shake"):
+			settings["screen_shake"] = _safe_bool(loaded_settings["screen_shake"], settings["screen_shake"])
+		if loaded_settings.has("particle_quality") and typeof(loaded_settings["particle_quality"]) == TYPE_STRING and ["low", "medium", "high"].has(loaded_settings["particle_quality"]):
+			settings["particle_quality"] = loaded_settings["particle_quality"]
+		if loaded_settings.has("graphics_quality") and typeof(loaded_settings["graphics_quality"]) == TYPE_STRING and ["low", "medium", "high"].has(loaded_settings["graphics_quality"]):
+			settings["graphics_quality"] = loaded_settings["graphics_quality"]
+		if loaded_settings.has("text_scale"):
+			settings["text_scale"] = clampf(_safe_num(loaded_settings["text_scale"], settings["text_scale"]), 0.85, 1.3)
+		if loaded_settings.has("high_contrast"):
+			settings["high_contrast"] = _safe_bool(loaded_settings["high_contrast"], settings["high_contrast"])
+		if loaded_settings.has("reduced_motion"):
+			settings["reduced_motion"] = _safe_bool(loaded_settings["reduced_motion"], settings["reduced_motion"])
+		if loaded_settings.has("language") and typeof(loaded_settings["language"]) == TYPE_STRING and ["en", "fr"].has(loaded_settings["language"]):
+			settings["language"] = loaded_settings["language"]
 	hints_shown.clear()
 	var loaded_hints = parsed.get("hints_shown", [])
 	if typeof(loaded_hints) == TYPE_ARRAY:
