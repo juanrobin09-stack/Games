@@ -192,7 +192,7 @@ func _draw() -> void:
 	eye_color.a = death_alpha
 	for eye_cx in [-r * 0.22, r * 0.22]:
 		var eye_pts := PackedVector2Array()
-		for p in _ellipse_points(eye_cx, -r * 0.75, 5.0, 3.0):
+		for p in _boss_ellipse_points(eye_cx, -r * 0.75, 5.0, 3.0):
 			eye_pts.append(_boss_xf(p.rotated(eye_angle), sx, sy, ty))
 		draw_colored_polygon(eye_pts, eye_color)
 
@@ -259,7 +259,15 @@ func _boss_xf(p: Vector2, sx: float, sy: float, ty: float) -> Vector2:
 ## Own private copy of the same helper player.gd and obstacle_node.gd each
 ## already keep (see player.gd's own copy for why it isn't shared/why this
 ## doesn't call DrawUtils's underscore-prefixed _draw_ellipse directly).
-func _ellipse_points(cx: float, cy: float, rx: float, ry: float, segments: int = 20) -> PackedVector2Array:
+## Named _boss_ellipse_points rather than plain _ellipse_points: BossCharacter
+## extends EnemyCharacter, which already declares its own static
+## _ellipse_points(cx, cy, rx, ry, rotation=0.0, segments=24) for the warden's
+## shield rendering — same name here would be a GDScript override the
+## parser rejects outright (signature mismatch), not a harmless shadow the
+## way an unrelated same-named private helper is everywhere else in this
+## file. player.gd/obstacle_node.gd don't have this problem since neither
+## extends a class that already owns the name.
+func _boss_ellipse_points(cx: float, cy: float, rx: float, ry: float, segments: int = 20) -> PackedVector2Array:
 	var pts := PackedVector2Array()
 	for i in range(segments + 1):
 		var angle: float = (float(i) / float(segments)) * TAU
