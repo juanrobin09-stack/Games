@@ -71,7 +71,7 @@ func _collect(player: PlayerCharacter) -> void:
 	alive = false
 	if kind == Kind.EMBER:
 		var gained: int = maxi(1, int(round(value * player.stats.ember_gain_mult)))
-		RunState.embers += gained
+		RunState.add_embers(gained)
 	else:
 		player.heal(value)
 	var room := get_parent() as RoomContainer

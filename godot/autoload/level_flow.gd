@@ -635,7 +635,7 @@ func _complete_rite(room: RoomContainer) -> void:
 		VfxPresets.ritual_ignite(room, LevelGenerator.sanctum_candle_position(i))
 	player.heal(player.stats.max_hp * 0.3)
 	VfxPresets.heal_sparkle(room, player.global_position)
-	RunState.embers += 35
+	RunState.add_embers(35)
 	hud.show_phase_banner("THE RITE IS DONE")
 	hud.show_toast("The sanctum yields what it kept: a rare blessing, and 35 Embers.")
 	_grant_room_clear_reward(room)
@@ -646,6 +646,7 @@ func _complete_rite(room: RoomContainer) -> void:
 ## synergies are always announced, wherever the upgrade came from. Mirrors
 ## Game.ts's private grantUpgrade.
 func _grant_upgrade(def: UpgradeDefinition) -> void:
+	RunState.record_upgrade(def.id)
 	var new_synergies: Array[String] = player.add_upgrade(def)
 	# Staggered 0.9s apart (matches the source exactly) rather than all at
 	# once — a single grant can complete more than one synergy (see
@@ -776,7 +777,7 @@ func _apply_event_effect(option: EventOption, room: RoomContainer) -> void:
 		EventOption.EffectKind.NOTHING:
 			pass
 		EventOption.EffectKind.GAIN_EMBERS:
-			RunState.embers += int(option.value)
+			RunState.add_embers(int(option.value))
 		EventOption.EffectKind.GAIN_HP:
 			player.heal(option.value)
 			VfxPresets.heal_sparkle(room, player.global_position)
@@ -797,7 +798,7 @@ func _apply_event_effect(option: EventOption, room: RoomContainer) -> void:
 			RewardPopup.show_reward(ui_root, def2, "The Dying Flame", level2)
 		EventOption.EffectKind.GAMBLE_EMBERS:
 			if randf() < 0.5:
-				RunState.embers += RunState.embers
+				RunState.add_embers(RunState.embers)
 			else:
 				var loss: int = int(floor(RunState.embers * 0.5))
 				RunState.embers = maxi(0, RunState.embers - loss)
@@ -816,7 +817,7 @@ func _apply_event_effect(option: EventOption, room: RoomContainer) -> void:
 			VfxPresets.heal_sparkle(room, player.global_position)
 		EventOption.EffectKind.LOSE_HP_FOR_EMBERS:
 			player.hp = maxf(1.0, player.hp - player.stats.max_hp * 0.15)
-			RunState.embers += int(option.value) if option.value > 0.0 else 50
+			RunState.add_embers(int(option.value) if option.value > 0.0 else 50)
 
 # ---------------------------------------------------------------- Kill rewards
 

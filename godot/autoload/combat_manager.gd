@@ -356,6 +356,7 @@ func damage_player_to_enemy(player: PlayerCharacter, enemy: EnemyCharacter, base
 	dmg = maxf(1.0, dmg)
 
 	enemy.take_damage(dmg)
+	RunState.record_damage_dealt(dmg)
 	hit_landed.emit(player, enemy, dmg, crit)
 
 	# Ports CombatSystem.ts's damagePlayerToEnemy: shield-sparks on a
@@ -396,6 +397,7 @@ func on_enemy_death(_player: PlayerCharacter, enemy: EnemyCharacter) -> void:
 	if enemy.death_handled:
 		return
 	enemy.death_handled = true
+	RunState.record_kill(enemy)
 	var parent := enemy.get_parent()
 	if parent != null:
 		VfxPresets.death_burst(parent, enemy.global_position, enemy.def.accent_color)
@@ -417,6 +419,7 @@ func damage_enemy_to_player(player: PlayerCharacter, base_damage: float, opts: D
 			if dodge_parent != null:
 				VfxPresets.perfect_dodge_burst(dodge_parent, player.global_position)
 		return false
+	RunState.record_damage_taken(result["taken"])
 	var knockback_force: float = opts.get("knockback_force", 0.0)
 	if knockback_force != 0.0:
 		player.velocity += opts.get("knockback_dir", Vector2.ZERO) * knockback_force

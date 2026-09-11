@@ -35,6 +35,22 @@ var layouts: Dictionary = {}
 var embers: int = 0
 var elapsed_time: float = 0.0
 
+## End-of-run stats (Victory/Defeat screens) — ports RunState.ts's own
+## `stats: RunStats` fields, kept flat here rather than nested in a
+## sub-Dictionary/Resource, matching this file's existing convention (see
+## stat_levels above, the one other structured field here, which is also
+## just a plain top-level Dictionary, not wrapped in anything).
+var kills: int = 0
+var elite_kills: int = 0
+var damage_dealt: float = 0.0
+var damage_taken: float = 0.0
+var embers_collected: int = 0
+var upgrades_chosen: Array[String] = []
+## Accumulated by LevelFlow.end_run() — kept here (not computed fresh each
+## read) so a Victory/Defeat screen built after end_run() already ran still
+## sees the final value, matching RunState.ts's own stats.soulAshEarned.
+var soul_ash_earned: int = 0
+
 var player_level: int = 1
 ## Progress toward the NEXT level only — resets to 0 (carrying any
 ## remainder) each time player_level increases, not a cumulative total.
@@ -64,6 +80,13 @@ func reset_for_new_run(new_seed: String) -> void:
 	stat_points = 0
 	stat_levels.clear()
 	used_event_ids.clear()
+	kills = 0
+	elite_kills = 0
+	damage_dealt = 0.0
+	damage_taken = 0.0
+	embers_collected = 0
+	upgrades_chosen.clear()
+	soul_ash_earned = 0
 
 ## XP required to go from (player_level) to (player_level + 1). Level 2
 ## costs XP_BASE_COST; every level after costs XP_GROWTH more.
@@ -138,6 +161,37 @@ func spend_embers(amount: int) -> bool:
 		return false
 	embers -= amount
 	return true
+
+## Ports RunState.ts's addEmbers — every embers GAIN (pickups, room-clear/
+## chest/event rewards, including an event's own "double your embers"
+## effect) should route through this rather than writing `embers` directly,
+## both so embers_collected stays accurate for the end screen and to match
+## the source's own single entry point for a gain (spend_embers above is
+## its own separate, pre-existing entry point for the inverse).
+func add_embers(amount: int) -> void:
+	if amount <= 0:
+		return
+	embers += amount
+	embers_collected += amount
+
+## Ports RunState.ts's recordKill. Every enemy death in this game is
+## necessarily player-caused (nothing else deals damage to enemies), so
+## this is safe to call unconditionally from CombatManager.on_enemy_death
+## rather than needing a "who gets credit" check the source itself doesn't
+## do here either.
+func record_kill(enemy: EnemyCharacter) -> void:
+	kills += 1
+	if (enemy.def != null and enemy.def.is_elite) or enemy.is_elite_instance:
+		elite_kills += 1
+
+func record_damage_dealt(amount: float) -> void:
+	damage_dealt += amount
+
+func record_damage_taken(amount: float) -> void:
+	damage_taken += amount
+
+func record_upgrade(id: String) -> void:
+	upgrades_chosen.append(id)
 
 func current_layout() -> Dictionary:
 	return layouts.get(zone_index, {})
