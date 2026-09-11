@@ -10,6 +10,10 @@ extends Control
 ## - **Fullscreen** (DisplayServer.window_set_mode) is the one control
 ##   with a real, immediate effect — a single engine call, nothing to
 ##   build.
+## - **Master/Music/SFX Volume and Mute All are real** (build-order step
+##   10, autoload/audio_engine.gd): each slider/toggle write reaches
+##   AudioServer live via MetaProgression's own settings_changed signal —
+##   no polling, no "apply on close" step.
 ## - **Language** (en/fr) is stored but inert: this Godot port has NO i18n
 ##   system at all. The French localization work referenced elsewhere in
 ##   this project's history was TS-only (src/i18n/), never ported — every
@@ -17,14 +21,14 @@ extends Control
 ##   hardcoded English. A real language switch needs a full translation
 ##   pass across every screen this project has built, not a Settings-
 ##   screen change; out of scope for this slice.
-## - **Everything else** (volumes, mute, screen shake, particle/graphics
-##   quality, text scale, high contrast, reduced motion) has no audio
-##   system, no quality-tier rendering path, and no accessibility system
-##   to plug into yet — the exact same "camera shake/hit-stop/SFX" kind of
-##   honest, already-documented gap this project's own boss-fight work
-##   carries (combat_manager.gd's header), not a new one invented here.
-##   Storing the value now means the day one of those systems lands, it
-##   reads a real saved preference instead of needing its own migration.
+## - **Everything else** (screen shake, particle/graphics quality, text
+##   scale, high contrast, reduced motion) has no quality-tier rendering
+##   path and no accessibility system to plug into yet — the exact same
+##   "camera shake/hit-stop" kind of honest, already-documented gap this
+##   project's own boss-fight work carries (combat_manager.gd's header),
+##   not a new one invented here. Storing the value now means the day one
+##   of those systems lands, it reads a real saved preference instead of
+##   needing its own migration.
 ##
 ## `embedded` mirrors the source's own SettingsMenu(container, settings,
 ## callbacks, embedded) 4th parameter exactly: false builds its own full

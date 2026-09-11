@@ -736,3 +736,64 @@ underlying systems several of these screens already store real,
 persisted-but-inert preferences for — audio, quality tiers, accessibility,
 and i18n (see Settings' own header comment) — each its own future phase,
 not a UI gap.
+
+### Step 10 — Audio (engine built; gameplay wiring not started)
+
+`GODOT_MIGRATION.md` §4 frames audio as an explicit fork: bake each
+procedural SFX to a `.ogg` once and play it back with a normal
+`AudioStreamPlayer` ("simplest, most reliable"), or port the oscillator/
+envelope/filter math to `AudioStreamGenerator` and synthesize at trigger
+time ("a real rewrite, not a port"). This project has never shipped a
+single binary asset — every wall, icon, particle and piece of UI chrome
+across all nine build-order steps so far is procedurally drawn, precisely
+because there's no editor here to author or preview one against. That
+same reasoning applies to audio: baking would be the first binary asset
+in the whole Godot port, and there's no more ability to *listen* to a
+baked file here than to a synthesized one — so baking's real advantage
+(avoiding runtime DSP bugs) doesn't buy back the thing this environment
+actually lacks. **Chose synthesis.**
+
+| File | Ports | State |
+|---|---|---|
+| `audio/audio_synth.gd` (new) | `audio/SoundFactory.ts`'s `tone()`/`noise()` | Renders a complete buffer per call up front rather than streaming — every SFX in this game is under 2 seconds, so the "ring-buffer refill" cost GODOT_MIGRATION.md warns about doesn't apply; AudioEngine pushes the finished buffer to an `AudioStreamGeneratorPlayback` in one `push_buffer()` call. Frequency/amplitude exponential ramps are one `pow()` call plus a per-sample multiply, not a `pow()` per sample. `noise()`'s sweeping bandpass/highpass/lowpass filter is a textbook RBJ "Audio EQ Cookbook" biquad — the same formulas the Web Audio spec itself cites for `BiquadFilterNode`, recomputed every 64 samples (inaudibly coarse) rather than every sample |
+| `autoload/audio_engine.gd` (new) | `audio/AudioEngine.ts` + all 51 of `audio/SoundFactory.ts`'s `SfxId`s | Master→{Music, SFX} bus graph with a brickwall `AudioEffectLimiter` on Master (the source's own comment already calls its 20:1 `DynamicsCompressor` a "brickwall limiter" — Godot has a purpose-built node for exactly that intent, used instead of hand-chasing a Web-Audio-specific node's parameters). SFX play through a fixed pool of 24 pooled `AudioStreamPlayer` voices (round-robin stealing only once every voice is genuinely busy) rather than Web Audio's unbounded per-call node graphs — every real commercial game caps simultaneous voices for the same reason. Every one of the 51 SFX definitions is a direct, near-literal transcription of the source's own `players` record, one function each, calling shared `_tone()`/`_noise()`/`_sub()` helpers that take a Dictionary of named options (mirroring `ToneOpts`/`NoiseOpts` verbatim) rather than a long positional-argument signature — with 90+ individual `tone`/`noise` call sites to transcribe, a keyword-shaped call that reads like the TS object literal it ports was worth the small extra verbosity to get right the first time |
+| `autoload/meta_progression.gd` | — | New `settings_changed(patch)` signal, emitted from `save_settings()` — AudioEngine (and any future consumer) reacts live to a volume/mute change instead of polling |
+| `ui/settings_ui.gd` | — | Header comment updated: Master/Music/SFX Volume and Mute All move from the "honest gap" list to the "real, immediate effect" list, alongside Fullscreen |
+
+**Verified** via a real headless run (no audio device exists in this
+environment — `AudioServer` falls back to Godot's own dummy driver, same
+as it has every other test this whole session; nothing here can be heard,
+only exercised): bus graph is 3 buses (Master/Music/SFX) with the limiter
+present; default bus volumes match `linear_to_db()` of the settings'
+own defaults to two decimal places; raw `generate_tone()`/`generate_noise()`
+buffers are finite (no NaN/Inf) with peak amplitude in the expected range;
+triggering a single-layer SFX (`uiClick`) occupies exactly one pooled
+voice, a two-layer SFX (`attackSwing`, noise+tone) occupies exactly two;
+a same-ID retrigger inside the 25ms throttle window is correctly dropped
+(confirmed against `Time.get_ticks_msec()`, not scene-tree time — under
+`--quit-after`'s unthrottled frame rate, many seconds of scene-tree time
+can elapse within a handful of real milliseconds, so only a real
+wall-clock delta proves the throttle actually fired rather than just
+having "enough nominal time" pass); voices correctly return to the free
+pool once their sound finishes, with no leak; and a live
+`MetaProgression.save_settings()` call updates the Master bus's mute
+state and dB level immediately, with no restart needed.
+
+**Not built yet**: every real trigger site. The TS source calls
+`playSfx(...)` at 75 call sites outside `SoundFactory.ts` itself — 39 in
+`Game.ts`, 16 in `CombatSystem.ts`, 7 in `BossSystem.ts`, the remaining
+13 spread across `ShopUI.ts`/`InventoryUI.ts`/`MetaProgressionMenu.ts`/
+`UpgradeSelectUI.ts`/`EventUI.ts` — and they're deliberately *not*
+uniform (only 3 of the 9 screens in `src/ui/` play a click sound on a
+button at all; a blanket "every `MenuUiKit.make_button()` press plays
+`uiClick`" shortcut was considered and rejected specifically because it
+would add feedback the source's own design leaves several screens
+without). Wiring this faithfully means walking each of those 8 source
+files and replicating its own actual call sites in the matching Godot
+file, not inferring a pattern — next slice. `MusicEngine.ts`'s generative
+score (drone, chord progression, mood/intensity layers) is a separate
+slice after that; unlike SFX, its continuous drone genuinely needs
+real-time generation (not a one-shot buffer), though its per-voice
+synthesis is simpler than SFX's (no per-voice filtering — the drone's
+one lowpass sweep is bus-wide, which maps directly to a real
+`AudioEffectLowPassFilter`).

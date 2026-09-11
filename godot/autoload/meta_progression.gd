@@ -14,6 +14,7 @@ const SAVE_VERSION: int = 1
 signal soul_ash_changed(new_total: int)
 signal permanent_upgrade_purchased(id: String, new_level: int)
 signal unlock_purchased(id: String)
+signal settings_changed(patch: Dictionary)
 
 var soul_ash: int = 0
 ## permanent-upgrade id (String) -> level purchased (int)
@@ -198,6 +199,7 @@ func save_settings(patch: Dictionary) -> void:
 	for key in patch.keys():
 		settings[key] = patch[key]
 	save()
+	settings_changed.emit(patch)
 
 func save() -> void:
 	var data := {
