@@ -15,6 +15,23 @@ extends Control
 ## convention player.gd/chest_node.gd already use throughout for the same
 ## reason (no cheap gradient-fill primitive on a plain Control here either).
 ##
+## Root cause of the first version's "only top-left renders" bug, for
+## the record: every region here is positioned via anchors set through
+## plain property assignment (`col.anchor_left = 1.0`), which goes through
+## Control.set_anchor()'s default push_opposite_anchor=true. On a freshly
+## created Control (every anchor still at its default 0.0), setting e.g.
+## anchor_left to 1.0 BEFORE anchor_right has been touched makes the new
+## value cross the still-default opposite anchor (1.0 > 0.0) — Godot then
+## silently "pushes" the opposite anchor to resolve the now-invalid rect,
+## corrupting the offsets any later explicit assignment doesn't fully
+## undo. top_left was the one region that happened to need every anchor
+## left at 0.0 (a no-op, never crossing anything), which is exactly why it
+## was the only one that ever rendered. Every region below now goes
+## through set_anchors_preset() instead — the same single atomic call the
+## root Hud control's own PRESET_FULL_RECT already used successfully —
+## then sets custom offsets afterward, which is safe since offsets are
+## plain pixel deltas with no "opposite side" to cross.
+##
 ## Deferred to a follow-up commit — NOT full step 9 yet, see godot/README.md:
 ## the minimap (refreshMinimap's double-resolution grid algorithm), the
 ## toast/phase-banner/synergy-banner system, the boss bar (its data,
@@ -137,10 +154,7 @@ func _build_top_left() -> void:
 	var col := VBoxContainer.new()
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_theme_constant_override("separation", 6)
-	col.anchor_left = 0.0
-	col.anchor_top = 0.0
-	col.anchor_right = 0.0
-	col.anchor_bottom = 0.0
+	col.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	col.offset_left = 14.0
 	col.offset_top = 14.0
 	col.offset_right = 14.0 + 260.0
@@ -173,10 +187,7 @@ func _build_top_right() -> void:
 	var col := VBoxContainer.new()
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_theme_constant_override("separation", 4)
-	col.anchor_left = 1.0
-	col.anchor_top = 0.0
-	col.anchor_right = 1.0
-	col.anchor_bottom = 0.0
+	col.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	col.offset_left = -14.0 - 200.0
 	col.offset_top = 14.0
 	col.offset_right = -14.0
@@ -229,10 +240,7 @@ func _build_bottom_left() -> void:
 	var row := HBoxContainer.new()
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_theme_constant_override("separation", 10)
-	row.anchor_left = 0.0
-	row.anchor_top = 1.0
-	row.anchor_right = 0.0
-	row.anchor_bottom = 1.0
+	row.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	row.offset_left = 14.0
 	row.offset_top = -16.0 - ABILITY_SLOT_SIZE
 	row.offset_right = 14.0 + 260.0
@@ -305,21 +313,16 @@ func _build_bottom_left() -> void:
 	_ability_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ability_row.add_child(_ability_name_label)
 
-## Rebuilt to reuse _make_bar_row (proven working — HP/stamina/energy all
-## confirmed live) instead of the bespoke inline track/fill/label
-## construction this originally had, after that version's XP bar and level
-## label reportedly never appeared at all despite every other bar working.
-## No confirmed root cause without an editor to inspect — this removes the
-## one place step 9's first HUD commit diverged from the shared helper
-## rather than leave that divergence unexplained.
+## Reuses _make_bar_row for the XP track rather than a bespoke inline
+## track/fill/label construction — kept from the anchor-bug investigation
+## (see this file's own header) even after finding the real cause, since
+## it's the same proven code path as HP/stamina/energy and one less
+## variant of the same logic to maintain.
 func _build_bottom_right() -> void:
 	var col := VBoxContainer.new()
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_theme_constant_override("separation", 4)
-	col.anchor_left = 1.0
-	col.anchor_top = 1.0
-	col.anchor_right = 1.0
-	col.anchor_bottom = 1.0
+	col.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	col.offset_left = -14.0 - 220.0
 	col.offset_top = -14.0 - 44.0
 	col.offset_right = -14.0
@@ -347,10 +350,7 @@ func _build_bottom_right() -> void:
 
 func _build_interact_prompt() -> void:
 	_interact_label = Label.new()
-	_interact_label.anchor_left = 0.5
-	_interact_label.anchor_right = 0.5
-	_interact_label.anchor_top = 1.0
-	_interact_label.anchor_bottom = 1.0
+	_interact_label.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	_interact_label.offset_top = -130.0
 	_interact_label.offset_bottom = -108.0
 	_interact_label.offset_left = -220.0
