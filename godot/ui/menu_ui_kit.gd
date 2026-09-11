@@ -35,7 +35,16 @@ static func make_overlay(opaque: bool) -> ColorRect:
 ## built on this kit sits inside. `content` becomes the panel's single
 ## child (a VBoxContainer the caller fills); returns the PanelContainer so
 ## the caller can add_child() it wherever the screen roots itself.
-static func make_panel(content: Control, wide: bool = false) -> PanelContainer:
+##
+## `chrome = false` ports the embedded-mode half of CSS's own
+## `screen-panel${embedded ? '' : ' panel pop-in'}` (SettingsMenu.ts) —
+## centering (`.screen-panel` itself) always applies; only the background/
+## border/shadow (the separate `panel` class) is conditional. A first
+## draft skipped the whole make_panel() call when embedded and lost the
+## centering along with the chrome — caught via a real screenshot showing
+## PauseMenu's embedded Settings pinned to the top-left corner, behind the
+## HUD, instead of centered over the translucent backdrop.
+static func make_panel(content: Control, wide: bool = false, chrome: bool = true) -> PanelContainer:
 	var half_w: float = 450.0 if wide else 310.0
 	var panel := PanelContainer.new()
 	panel.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -50,15 +59,28 @@ static func make_panel(content: Control, wide: bool = false) -> PanelContainer:
 	panel.grow_vertical = Control.GROW_DIRECTION_BOTH
 	panel.anchor_top = 0.5
 	panel.anchor_bottom = 0.5
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(Palette.PANEL_SOLID)
-	style.border_color = Color(Palette.BORDER)
-	style.set_border_width_all(1)
-	style.set_corner_radius_all(16)
-	style.set_content_margin_all(28.0)
-	style.shadow_color = Color(0.0, 0.0, 0.0, 0.5)
-	style.shadow_size = 16
-	panel.add_theme_stylebox_override("panel", style)
+	if chrome:
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color(Palette.PANEL_SOLID)
+		style.border_color = Color(Palette.BORDER)
+		style.set_border_width_all(1)
+		style.set_corner_radius_all(16)
+		style.set_content_margin_all(28.0)
+		style.shadow_color = Color(0.0, 0.0, 0.0, 0.5)
+		style.shadow_size = 16
+		panel.add_theme_stylebox_override("panel", style)
+	else:
+		# No visible chrome, but content still needs the same breathing
+		# room the styled panel's content_margin gives it — an empty
+		# stylebox with matching margins, rather than no override at all
+		# (which would fall back to the default theme's own PanelContainer
+		# margin, likely 0).
+		var empty := StyleBoxEmpty.new()
+		empty.content_margin_left = 28.0
+		empty.content_margin_right = 28.0
+		empty.content_margin_top = 28.0
+		empty.content_margin_bottom = 28.0
+		panel.add_theme_stylebox_override("panel", empty)
 	panel.add_child(content)
 	return panel
 
@@ -167,4 +189,62 @@ static func make_button_row() -> HBoxContainer:
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 12)
+	return row
+
+## Ports .toggle-switch — as a toggle-mode Button (own on/off StyleBoxFlat
+## pair) rather than Godot's built-in CheckButton: this project's whole
+## visual language so far is custom StyleBoxFlat chrome (every button,
+## every bar, every card), and CheckButton's default theme would be the
+## one control on this screen not sharing it. SettingsUI owns wiring
+## `toggled` to whatever the row actually controls.
+static func make_toggle(initial: bool) -> Button:
+	var btn := Button.new()
+	btn.toggle_mode = true
+	btn.button_pressed = initial
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.custom_minimum_size = Vector2(42.0, 22.0)
+	btn.text = ""
+	var off_style := _button_stylebox(Color(Palette.BG3), Color(Palette.BORDER))
+	off_style.set_corner_radius_all(11)
+	var on_style := _button_stylebox(Color(Palette.EMBER3, 0.35), Color(Palette.EMBER4))
+	on_style.set_corner_radius_all(11)
+	btn.add_theme_stylebox_override("normal", off_style)
+	btn.add_theme_stylebox_override("hover", off_style)
+	btn.add_theme_stylebox_override("pressed", on_style)
+	btn.add_theme_stylebox_override("hover_pressed", on_style)
+	return btn
+
+## Ports .segmented — a row of small buttons where exactly one is active;
+## `options` are the raw values (e.g. "low"/"medium"/"high"), `labels` the
+## matching display text. Returns the built HBoxContainer; the caller
+## reads which one is active by checking each child Button's own
+## `button_pressed` (a ButtonGroup guarantees exactly one stays true).
+static func make_segmented(options: Array, labels: Array, selected: String, on_pick: Callable) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_theme_constant_override("separation", 0)
+	var group := ButtonGroup.new()
+	for i in range(options.size()):
+		var value: String = options[i]
+		var btn := Button.new()
+		btn.text = str(labels[i])
+		btn.toggle_mode = true
+		btn.button_group = group
+		btn.button_pressed = value == selected
+		btn.focus_mode = Control.FOCUS_NONE
+		btn.add_theme_font_size_override("font_size", 12)
+		var off_style := _button_stylebox(Color(Palette.BG1), Color(Palette.BORDER))
+		var on_style := _button_stylebox(Color(Palette.EMBER3), Color(Palette.EMBER4))
+		btn.add_theme_stylebox_override("normal", off_style)
+		btn.add_theme_stylebox_override("hover", off_style)
+		btn.add_theme_stylebox_override("pressed", on_style)
+		btn.add_theme_stylebox_override("hover_pressed", on_style)
+		btn.add_theme_color_override("font_color", Color(Palette.TEXT_DIM))
+		btn.add_theme_color_override("font_pressed_color", Color("#180a04"))
+		btn.add_theme_color_override("font_hover_pressed_color", Color("#180a04"))
+		btn.toggled.connect(func(pressed: bool):
+			if pressed and on_pick.is_valid():
+				on_pick.call(value)
+		)
+		row.add_child(btn)
 	return row

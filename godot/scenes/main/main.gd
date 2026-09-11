@@ -47,6 +47,7 @@ var _run_ending: bool = false
 ## deliberately doesn't surface.
 var _debug_visible: bool = false
 var _f1_key_down: bool = false
+var _escape_key_down: bool = false
 
 ## Whichever meta-shell screen is currently on top (MainMenu, Credits,
 ## Victory/Defeat — later PauseMenu/Settings/Armory too), so the next
@@ -74,18 +75,22 @@ func _show_main_menu() -> void:
 	GameState.change_state(GameState.State.MAIN_MENU)
 	_current_screen = MainMenuUI.show_main_menu($UI, {
 		"on_play": func(seed_text: String): _begin_run(seed_text),
-		# TODO(Phase B, next commit): Armory (Upgrades/Armory tabs) and a
-		# standalone Settings screen — both still unbuilt as of this commit;
-		# wired as soon as they land rather than left silently dead.
+		# TODO(Phase B, next slice): the Armory (Upgrades/Armory tabs) —
+		# still unbuilt as of this commit; wired as soon as it lands rather
+		# than left silently dead.
 		"on_upgrades": func(): print("Armory (Upgrades) — not built yet"),
 		"on_armory": func(): print("Armory — not built yet"),
-		"on_settings": func(): print("Settings — not built yet"),
+		"on_settings": _show_settings,
 		"on_credits": _show_credits,
 	})
 
 func _show_credits() -> void:
 	_close_current_screen()
 	_current_screen = CreditsUI.show_credits($UI, _show_main_menu)
+
+func _show_settings() -> void:
+	_close_current_screen()
+	_current_screen = SettingsUI.show_settings($UI, false, _show_main_menu)
 
 ## Ports Game.ts's startNewRun. Frees the PREVIOUS run's room nodes (see
 ## LevelFlow.start_new_run's own new cleanup block) and player instance
@@ -132,6 +137,30 @@ func _end_run(victory: bool) -> void:
 	else:
 		_current_screen = VictoryDefeatUI.show_defeat($UI, RunState.soul_ash_earned, func(): _begin_run(""), _show_main_menu)
 
+## Ports Game.ts's own pauseGame() guard exactly: only while a run is
+## actually live (EXPLORATION/COMBAT/BOSS) AND nothing else is already
+## modal — get_tree().paused doubles as that second check, since every
+## existing modal here (Shop/Event/Inventory/UpgradeSelectUI) already sets
+## it themselves. Split out from the Escape-key handler in _process() so
+## it's callable directly (real Escape-key-state simulation isn't
+## reliable to script under Xvfb; this is what real testing calls instead).
+func _try_open_pause() -> void:
+	if not GameState.is_in([GameState.State.EXPLORATION, GameState.State.COMBAT, GameState.State.BOSS]) or get_tree().paused:
+		return
+	GameState.push_state(GameState.State.PAUSED)
+	var on_resume := func(): GameState.pop_state()
+	var on_open_inventory := func():
+		GameState.pop_state()
+		LevelFlow.open_inventory_ui()
+	var on_abandon := func():
+		GameState.pop_state()
+		_end_run(false)
+	PauseMenuUI.show_pause($UI, {
+		"on_resume": on_resume,
+		"on_open_inventory": on_open_inventory,
+		"on_abandon": on_abandon,
+	})
+
 ## Live readout of input/gating/combat/room state, refreshed every frame.
 func _process(_delta: float) -> void:
 	if player == null:
@@ -145,6 +174,19 @@ func _process(_delta: float) -> void:
 			live_label.visible = _debug_visible
 	else:
 		_f1_key_down = false
+
+	# Ports Game.ts's own pause input handling — polls the physical key
+	# directly (no project.godot input-map action needed), same convention
+	# as F1 above. This whole block simply stops running once paused (this
+	# node's own default PROCESS_MODE_PAUSABLE), so there's no need to
+	# separately guard against Escape re-opening Pause while Pause's own
+	# already-ALWAYS-mode UI is up.
+	if Input.is_physical_key_pressed(KEY_ESCAPE):
+		if not _escape_key_down:
+			_escape_key_down = true
+			_try_open_pause()
+	else:
+		_escape_key_down = false
 
 	var w := player.weapon()
 	var a := player.ability()

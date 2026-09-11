@@ -638,21 +638,59 @@ correctly accumulated across both runs (`runs_started`, `runs_won`,
 `total_deaths`, `best_time_seconds`, `total_soul_ash_earned` all checked
 against the exact expected formula, not just "looked fine").
 
-**Not built yet** (next slices): PauseMenu + Settings (standalone and
-pause-embedded) — MainMenu's Settings/Upgrades/Armory buttons currently
-just print a placeholder rather than doing nothing silently; Escape
-currently has no input-map binding at all. The Armory/permanent-upgrades
-screen (`MetaProgressionMenu.ts`). `LoadoutSelectUI` (weapon/ability
-choice at run start — Q-cycle remains the interim access method). Most
-of Settings' own controls (volumes, mute, particle/graphics quality, text
-scale, high-contrast, reduced-motion, language) will be built as real,
-saved, honestly-inert preferences rather than left out or faked: this
-port has no audio system, no quality-tier system, no accessibility
-system, and — a genuinely new finding this slice — **no i18n system at
-all** (the French localization work referenced elsewhere in this
-project's history was TS-only, never ported; every Godot-side string in
-this whole project is English-only today). Only the fullscreen toggle
-(`DisplayServer`, one call) and language storage-without-effect will do
-anything real; the rest is exactly the same "camera shake/hit-stop/SFX"
-kind of honest, documented gap this project already carries from the
-boss work, not a new one invented here.
+**Slice 3 — PauseMenu + Settings.** Escape now opens a real pause menu
+mid-run, and Settings exists both as MainMenu's own standalone screen and
+embedded inside Pause — matching `SettingsMenu.ts`'s own `embedded`
+constructor parameter exactly, one implementation, not two.
+
+| File | Ports | State |
+|---|---|---|
+| `ui/pause_menu_ui.gd` (new) | `ui/PauseMenu.ts` | True modal like Shop/Event/Inventory/UpgradeSelectUI (`get_tree().paused` + this root's own `process_mode = ALWAYS`). Three views swapped by requeuing `_content_holder`'s children — the same convention already used for HUD's shield pips and the boss bar's phase dots — rather than three separate scenes: main (Resume/Your Build/Settings/Abandon Run), a confirm-abandon step, and Settings rendered inline via `SettingsUI.show_settings(_content_holder, true, _render_main)` |
+| `ui/settings_ui.gd` (new) | `ui/SettingsMenu.ts` | All 12 source rows, built for real: language (segmented), master/music/sfx volume (sliders), mute + screen shake (toggles), particle + graphics quality (segmented), text scale (slider), high contrast + reduced motion (toggles), fullscreen. Every control writes straight to `MetaProgression.settings` and saves immediately — same "each mutation is its own synchronous save" convention the rest of `meta_progression.gd` already uses |
+| `ui/menu_ui_kit.gd` | style.css's `.toggle`/`.segmented-control` | Two new shared primitives: `make_toggle(initial)` and `make_segmented(options, labels, selected, on_pick)`, plus a `chrome: bool` parameter added to the existing `make_panel()` (see bug below) |
+| `scenes/main/main.gd` | `Game.ts`'s pause input handling | Escape polled the same way F1 already is (`Input.is_physical_key_pressed`, no input-map action needed); the triggered logic lives in its own `_try_open_pause()` method rather than inline in `_process()`, both because that's the natural place for the guard logic (`GameState.is_in([...]) and not get_tree().paused`, porting `Game.ts`'s own `pauseGame()` guard) and because it makes the logic directly callable from a test without fighting physical-key-state simulation under headless Xvfb |
+
+Only **fullscreen** (`DisplayServer.window_set_mode()`) and the
+persistence itself do anything real yet. Volumes, mute, screen shake,
+particle/graphics quality, text scale, high contrast, reduced motion, and
+language all store a real, saved value with nothing yet consuming it —
+this port has no audio system, no quality-tier rendering path, no
+accessibility system, and (confirmed via a project-wide grep this slice:
+no `TranslationServer`, no `i18n`, no `locale`) **no i18n system at all**
+— the French localization work referenced elsewhere in this project's
+history was TS-only, never ported; every Godot-side string in every
+screen this project has built, this one included, is English-only today.
+Exactly the same "camera shake/hit-stop/SFX" kind of honest, documented
+gap this project already carries from the boss work, not a new one
+invented here — storing the value now means the day one of those systems
+lands, it reads a real saved preference instead of needing a migration.
+
+One real bug found and fixed by actually running this, not just reading
+the diff: **the embedded Settings panel lost its centering.** The first
+draft branched `if embedded: add_child(content) else:
+add_child(MenuUiKit.make_panel(content, false))` — skipping `make_panel()`
+entirely when embedded, which correctly skipped the panel's own
+background chrome but *also* lost its centering anchors, since both lived
+in the same call. A real screenshot showed the embedded Settings panel
+pinned to the top-left corner, overlapping the HUD, instead of centered
+over Pause's backdrop. Fixed by giving `make_panel()` a `chrome: bool`
+parameter that keeps centering unconditional and only makes the
+background conditional (a `StyleBoxEmpty` with matching content margins
+in place of the `StyleBoxFlat` when `chrome=false`) — ports style.css's
+own `screen-panel${embedded ? '' : ' panel pop-in'}` pattern precisely
+(only the background/pop-in classes are conditional; the base class's own
+centering never is). Reconfirmed via a second screenshot.
+
+**Verified** via a real headless run: Settings opens standalone from
+MainMenu and embedded from Pause (post-fix, correctly centered in both);
+a slider drag and a toggle click both wrote through to
+`MetaProgression.settings` and persisted; Escape mid-run correctly pushes
+`GameState.PAUSED` and pauses the tree while Pause's own UI keeps
+responding to clicks; Pause → Settings → Done correctly returns to
+Pause's main view (not MainMenu); Pause → Abandon Run → confirm → Abandon
+correctly pops back to `GameState.DEFEAT` with the tree unpaused again.
+
+**Not built yet** (next slice): the Armory/permanent-upgrades screen
+(`MetaProgressionMenu.ts`) — MainMenu's Upgrades/Armory buttons still just
+print a placeholder. `LoadoutSelectUI` (weapon/ability choice at run
+start — Q-cycle remains the interim access method).
