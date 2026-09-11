@@ -737,7 +737,7 @@ persisted-but-inert preferences for — audio, quality tiers, accessibility,
 and i18n (see Settings' own header comment) — each its own future phase,
 not a UI gap.
 
-### Step 10 — Audio (SFX engine + every real trigger site wired; music not started)
+### Step 10 — Audio (SFX engine, every real trigger site, and the generative score — complete)
 
 `GODOT_MIGRATION.md` §4 frames audio as an explicit fork: bake each
 procedural SFX to a `.ogg` once and play it back with a normal
@@ -832,9 +832,95 @@ values to the exact TS `chestSoundFor()` output
 (`common`/`uncommon`→`chestOpenCommon`, `rare`→`chestOpenRare`,
 `epic`→`chestOpenEpic`, `legendary`→`chestOpenLegendary`).
 
-**Not built yet**: `MusicEngine.ts`'s generative score (drone, chord
-progression, mood/intensity layers). Unlike SFX, its continuous drone
-genuinely needs real-time generation (not a one-shot buffer), though its
-per-voice synthesis is simpler than SFX's (no per-voice filtering — the
-drone's one lowpass sweep is bus-wide, which maps directly to a real
-`AudioEffectLowPassFilter`).
+**Slice 3 — MusicEngine, the generative score.** `MusicEngine.ts`'s drone
+is the one place in this whole audio port that genuinely can't use the
+"render one buffer up front" trick `AudioSynth` relies on for every SFX —
+it has no fixed duration, so it has to be topped up forever. `autoload/
+music_engine.gd` runs 3 continuous voices (two detuned sawtooths a chord's
+root/fifth, one sine an octave down) through a shared lowpass on a new
+"Drone" bus, each refilled every `_process()` frame from a **persistent,
+never-reset phase accumulator** — the same reason `AudioSynth`'s one-shot
+generation accumulates phase per sample rather than recomputing it from
+`t`: resetting it on every refill would leave an audible phase-discontinuity
+click at every buffer boundary. A sparse tension layer (plucks on a scale,
+a filtered noise pulse at max intensity, mood-1-only water drips) reuses
+the exact pooled-voice/generation-counter pattern `AudioEngine` already
+established in Slice 1, just an 8-voice pool instead of 24. Every
+`setTargetAtTime` glide in the source (filter cutoff, chord frequency,
+tension volume) ports as the same one-line exponential-approach
+recurrence, `_approach()`, computed once per frame rather than modeled as
+a real Web-Audio automation curve.
+
+The one Web Audio idiom with no direct Godot node is `tensionGain` — a
+live `GainNode` every tension-layer one-shot is routed *through*, so it
+gets scaled by whatever that gain happens to be the instant it plays.
+Godot has no per-voice gain automation for a playing `AudioStreamPlayer`,
+but a **bus's own volume** affects every voice currently routed through it
+identically to a live `GainNode` — so the new "Tension" bus's volume is
+continuously animated by the same `_approach()` call the source uses for
+`tensionGain.gain`, and every pluck/pulse voice is simply routed to that
+bus. Same audible result, zero per-voice bookkeeping.
+
+| File | Ports | State |
+|---|---|---|
+| `autoload/music_engine.gd` (new) | `audio/MusicEngine.ts` | 3-oscillator drone (Drone bus + shared `AudioEffectLowPassFilter`) + pooled tension plucks/pulse (Tension bus, its volume standing in for `tensionGain`) + mood-1 water drips (straight to Music bus). `start()`/`stop()` idempotent; `set_intensity()`/`set_mood()` retarget without restarting the drone |
+| `autoload/audio_synth.gd` | — | Added `waveform_sample()`, a public wrapper around the existing `_waveform()` — MusicEngine's per-frame drone refill needs a single raw sample, not a whole enveloped buffer, so it calls straight into the same waveform table `generate_tone()` already uses |
+| `autoload/level_flow.gd` | `Game.ts`'s private `syncCombatState()` | New `_sync_combat_state()` — see below |
+| `scenes/main/main.gd` | `Game.ts`'s `music.start()`/`setMood(0)`/`setIntensity(0)` call sites | `MusicEngine.start()` unconditionally in `_ready()` (the source's own `music.start()` is one-shot-gated behind the *first* pointer/key event purely to satisfy browser autoplay policy — `AudioStreamGenerator` has no such restriction, so starting the score on boot is the faithful port of "plays for the whole session," not of the browser workaround around it); `set_mood(0)` in `_begin_run()`, `set_intensity(0)` in `_confirm_loadout()`, both in `_end_run()` |
+| `project.godot` | — | `MusicEngine` autoload registered after `AudioEngine` |
+
+**A genuine pre-existing gap, found while wiring `setIntensity`.**
+`GameState.State.COMBAT` and `.BOSS` were never set anywhere in this port
+— a project-wide grep turned up zero call sites, the same class of gap
+`GODOT_MIGRATION.md`/this README already flagged once before ("GameState
+fully ported but never called"). The reason it never mattered before now:
+nothing previously *read* `GameState.current` for anything gameplay-
+critical. `music.setIntensity()` is the first thing that does, and the
+source ties it directly to the same function that drives the state
+machine — `syncCombatState()` sets both together, in one place, every
+time. Porting anything less than the whole function (e.g. a Godot-only
+"just call `set_intensity` from wherever" shortcut) would have left
+`GameState` with the same gap it already had; `_sync_combat_state()` is a
+line-for-line port of the source instead, wired into the exact 6 real
+call sites `syncCombatState()` has in `Game.ts` (`enterRoom`,
+`completeDescent`/`completeAscent`'s shared landing helper, `beginRite`,
+`updateRite`, `completeRite`, and the room-clear branch of the main
+update loop) — boss room → `BOSS`/intensity 2; the sanctum rite or an
+uncleared combat/elite/heart room with a live enemy → `COMBAT`/intensity
+1; otherwise → `EXPLORATION`/intensity 0, matching the source's exact
+3-way branch.
+
+**One real bug, found by the first real playback check, not a code
+read.** `_setup_voice_pool()` called `get_stream_playback()` on each
+continuous voice immediately after creating it — before that player had
+ever had `.play()` called on it. Godot logs "Player is inactive. Call
+play() before requesting get_stream_playback()" and hands back `null` in
+that case; `_refill_continuous()` already had a defensive `if playback ==
+null: return phase` guard, so nothing crashed — the drone would have just
+played 3 correctly-`.playing == true` voices of pure silence, forever,
+with no error after boot to point at why. Godot's own docs example for
+`AudioStreamGenerator` fetches playback *after* `play()`; the fix moves
+the 3 `get_stream_playback()` calls out of setup and into `start()`,
+right after its own `play()` calls — and since a fresh `play()` hands back
+a fresh playback object, this also makes a `stop()`-then-`start()` restart
+correct, not just first boot.
+
+**Verified** via a real headless run: bus graph now 5 buses (Master,
+Music, SFX, Drone, Tension) with the lowpass filter attached to Drone;
+after `start()`, all 3 drone voices report `playing == true` *and* — the
+check that actually matters, post-bugfix — a non-null, non-empty playback
+object whose ring buffer sits fully topped up (`get_frames_available() ==
+0`) after 30 frames, with the phase accumulator having advanced into the
+hundreds of radians, proving real samples are continuously being pushed,
+not just that the player looks active; directly driving
+`LevelFlow._sync_combat_state()` against a synthetic room (flipping
+`type`/`cleared`/`ritual_active`/a fake enemy's `alive` by hand) correctly
+produced all 4 branches — `BOSS`/intensity 2, `COMBAT`/intensity 1 for
+both a live-enemy combat room and an active sanctum rite, `EXPLORATION`/
+intensity 0 once the enemy died or the rite went inactive; `set_mood(1)`
+correctly swapped in `RUINS_PLUCK_SCALE`; and a `stop()`/`start()` cycle
+correctly silenced then correctly revived all 3 drone voices.
+
+Every system `GODOT_MIGRATION.md`'s recommended build order calls for
+through Step 10 is now built, wired, and verified. **Not built yet**:
+Step 11 (save-system parity pass) and Step 12 (full playtest/rebalance).

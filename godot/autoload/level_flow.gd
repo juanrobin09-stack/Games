@@ -256,6 +256,39 @@ func _update_ambient(room: RoomContainer) -> void:
 	var dark_tint := Color(4.0 / 255.0, 3.0 / 255.0, 8.0 / 255.0)
 	_ambient.color = Color(1.0, 1.0, 1.0).lerp(dark_tint, darkness)
 
+## Ports Game.ts's private syncCombatState — the only place GameState ever
+## moves between EXPLORATION/COMBAT/BOSS (a real pre-existing gap: neither
+## state was ever set anywhere in this port before this function), and the
+## single source of truth for MusicEngine's intensity layer, exactly
+## mirroring how the source ties both together in one function. A no-op
+## outside those 3 states (e.g. during RUN_START, or while a modal like
+## EVENT/SHOP holds the state machine) — same guard as the source's own
+## `if (!stateMachine.is(EXPLORATION, COMBAT, BOSS)) return`.
+func _sync_combat_state() -> void:
+	if not GameState.is_in([GameState.State.EXPLORATION, GameState.State.COMBAT, GameState.State.BOSS]):
+		return
+	var room := RunState.current_room()
+	if room == null:
+		return
+	if room.type == RoomContainer.Type.BOSS:
+		GameState.change_state(GameState.State.BOSS)
+		MusicEngine.set_intensity(2)
+		return
+	# The sanctum rite stays "in combat" between its waves too — the doors are sealed.
+	var rite_running: bool = room.type == RoomContainer.Type.SANCTUM and room.ritual_active and not room.cleared
+	var any_alive := false
+	for e in room.enemies:
+		if e.alive:
+			any_alive = true
+			break
+	var active: bool = rite_running or (room.requires_clearing() and not room.cleared and any_alive)
+	if active:
+		GameState.change_state(GameState.State.COMBAT)
+		MusicEngine.set_intensity(1)
+	else:
+		GameState.change_state(GameState.State.EXPLORATION)
+		MusicEngine.set_intensity(0)
+
 func enter_room(room: RoomContainer, from_dir) -> void:
 	room.visited = true
 
@@ -290,6 +323,7 @@ func enter_room(room: RoomContainer, from_dir) -> void:
 		open_stairs(room, false)
 
 	_sync_active_room(room)
+	_sync_combat_state()
 	room_changed.emit(room)
 
 func _check_door_crossing() -> void:
@@ -408,6 +442,7 @@ func _update_room_clear(delta: float) -> void:
 	elif room.type != RoomContainer.Type.BOSS and room.requires_clearing() and not room.reward_granted:
 		room.check_cleared()
 		if room.cleared:
+			_sync_combat_state()
 			_grant_room_clear_reward(room)
 
 ## Ports Game.ts's private grantRoomClearReward. An elite den cleared in
@@ -484,6 +519,7 @@ func begin_descent(stairs: ObstacleNode) -> void:
 	if not _transition.is_empty():
 		return
 	AudioEngine.play_sfx("stairsDescend")
+	MusicEngine.set_intensity(0)
 	_start_transition("descend", stairs, player.global_position, LevelGenerator.stairs_mouth_position(stairs))
 
 ## Mirrors begin_descent: walks the player INTO a zone's arrival stairwell
@@ -493,6 +529,7 @@ func begin_ascent(stairs: ObstacleNode) -> void:
 	if not _transition.is_empty():
 		return
 	AudioEngine.play_sfx("stairsDescend")
+	MusicEngine.set_intensity(0)
 	_start_transition("ascend", stairs, player.global_position, LevelGenerator.stairs_mouth_position(stairs))
 
 func _start_transition(kind: String, stairs: ObstacleNode, from: Vector2, to: Vector2) -> void:
@@ -570,6 +607,7 @@ func _complete_descent() -> void:
 	var arrival := _find_obstacle(next_room, ObstacleNode.Visual.STAIRS_UP)
 	_land_after_transition(next_room, arrival, "descend")
 	AudioEngine.play_sfx("zoneArrive")
+	MusicEngine.set_mood(RunState.zone_index)
 	hud.show_phase_banner(zone.name.to_upper())
 	# 1.1s delay matches the source exactly — long enough that the subtitle
 	# toast doesn't visually collide with the phase banner's own entrance.
@@ -586,6 +624,7 @@ func _complete_ascent() -> void:
 	var arrival := _find_obstacle(prev_room, ObstacleNode.Visual.STAIRS_DOWN)
 	_land_after_transition(prev_room, arrival, "ascend")
 	AudioEngine.play_sfx("zoneArrive")
+	MusicEngine.set_mood(RunState.zone_index)
 	# No subtitle toast here (unlike _complete_descent) — matches the
 	# source: re-entering a zone you've already visited doesn't need its
 	# "welcome to X" line again, only the phase banner.
@@ -602,6 +641,7 @@ func _land_after_transition(room: RoomContainer, arrival: ObstacleNode, kind: St
 		"phase": "in", "kind": kind, "t": 0.0, "duration": DESCENT_IN_SECONDS,
 		"from": mouth, "to": foot, "stairs": arrival, "spore_timer": 0.0,
 	}
+	_sync_combat_state()
 	room_changed.emit(room)
 
 # ---------------------------------------------------------------- Sanctum rite
@@ -616,6 +656,7 @@ func begin_rite(room: RoomContainer) -> void:
 	AudioEngine.play_sfx("ritualCandle")
 	AudioEngine.play_sfx("doorOpen")
 	hud.show_phase_banner("THE RITE BEGINS")
+	_sync_combat_state()
 
 func _update_rite(room: RoomContainer, delta: float) -> void:
 	if not room.ritual_active or room.cleared:
@@ -652,6 +693,7 @@ func _update_rite(room: RoomContainer, delta: float) -> void:
 			continue
 		VfxPresets.ritual_ignite(room, LevelGenerator.sanctum_candle_position(idx))
 	AudioEngine.play_sfx("ritualCandle")
+	_sync_combat_state()
 
 func _complete_rite(room: RoomContainer) -> void:
 	room.cleared = true
@@ -665,6 +707,7 @@ func _complete_rite(room: RoomContainer) -> void:
 	RunState.add_embers(35)
 	hud.show_phase_banner("THE RITE IS DONE")
 	hud.show_toast("The sanctum yields what it kept: a rare blessing, and 35 Embers.")
+	_sync_combat_state()
 	_grant_room_clear_reward(room)
 
 # ---------------------------------------------------------------- Upgrade rewards

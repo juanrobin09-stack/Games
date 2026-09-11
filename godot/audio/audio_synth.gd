@@ -52,6 +52,12 @@ static func _waveform(wave_type: String, phase: float) -> float:
 		_:
 			return sin(phase)
 
+## Public entry point for callers (MusicEngine's continuous drone refill)
+## that need a single raw waveform sample without going through
+## generate_tone()'s envelope/buffer machinery.
+static func waveform_sample(wave_type: String, phase: float) -> float:
+	return _waveform(wave_type, phase)
+
 ## Ports tone(). `freq_end`/`decay` are Variant so callers can pass null
 ## for the source's own optional freqEnd/decay (decay defaults to
 ## `duration` exactly like every TS call site that omits it).

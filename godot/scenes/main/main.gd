@@ -70,6 +70,14 @@ func _ready() -> void:
 	CombatManager.boss_defeated.connect(func(_boss): _end_run(true))
 	CombatManager.player_died.connect(func(): _end_run(false))
 	hud.visible = false
+	# Game.ts only calls music.start() lazily, from the FIRST pointerdown/
+	# keydown handler — a one-shot gate that exists purely to satisfy
+	# browser autoplay policy (an AudioContext starts suspended until a
+	# user gesture resumes it). Godot's AudioStreamGenerator has no such
+	# restriction, so the gate itself has no equivalent here; starting the
+	# score unconditionally on boot is the faithful port of "the score
+	# plays for the whole session," not of the workaround around it.
+	MusicEngine.start()
 	_show_main_menu()
 
 func _show_main_menu() -> void:
@@ -109,6 +117,7 @@ func _begin_run(seed_text: String) -> void:
 		player.queue_free()
 	run_seed = seed_text if seed_text != "" else (str(Time.get_unix_time_from_system()) + ":" + str(randi()))
 	MetaProgression.last_seed = run_seed
+	MusicEngine.set_mood(0)
 	player = PLAYER_SCENE.instantiate()
 	# Permanent-upgrade modifiers are baked into base_stats BEFORE this
 	# node enters the tree, so _ready()'s own recompute_stats() (which
@@ -134,6 +143,7 @@ func _confirm_loadout(weapon_id: String, ability_id: String) -> void:
 	player.ability_id = ability_id
 	_close_current_screen()
 	GameState.change_state(GameState.State.EXPLORATION)
+	MusicEngine.set_intensity(0)
 
 ## Ports Game.ts's endRun: banks Soul Ash via the same formula
 ## (kills*0.6 + eliteKills*4 + (victory?70:0) + embers*0.08), records the
@@ -148,6 +158,8 @@ func _end_run(victory: bool) -> void:
 	MetaProgression.record_run_end(RunState.kills, not victory, victory, RunState.elapsed_time, RunState.embers_collected)
 	hud.visible = false
 	GameState.change_state(GameState.State.VICTORY if victory else GameState.State.DEFEAT)
+	MusicEngine.set_intensity(0)
+	MusicEngine.set_mood(0)
 	if victory:
 		_current_screen = VictoryDefeatUI.show_victory($UI, RunState.soul_ash_earned, _show_main_menu)
 	else:
@@ -348,7 +360,7 @@ func _data_registry_summary(counts: Dictionary) -> String:
 func _print_diagnostics() -> void:
 	var state_name: String = GameState.State.keys()[GameState.current]
 	var lines: Array[String] = [
-		"EMBERFALL: LAST LIGHT — Godot scaffold (build-order step 10 of 12)",
+		"EMBERFALL: LAST LIGHT — Godot scaffold (build-order step 11 of 12)",
 		"WASD move, mouse aim, LMB attack, Space dodge, RMB ability, E interact, F1 debug overlay",
 		"GameState: %s (simulating: %s)   Soul Ash: %d   save loaded: %s" % [
 			state_name, GameState.is_simulating(), MetaProgression.soul_ash,

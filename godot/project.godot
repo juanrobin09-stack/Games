@@ -22,6 +22,7 @@ GameState="*res://autoload/game_state.gd"
 RunState="*res://autoload/run_state.gd"
 MetaProgression="*res://autoload/meta_progression.gd"
 AudioEngine="*res://autoload/audio_engine.gd"
+MusicEngine="*res://autoload/music_engine.gd"
 CombatManager="*res://autoload/combat_manager.gd"
 LevelFlow="*res://autoload/level_flow.gd"
 
