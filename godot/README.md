@@ -7,7 +7,7 @@ kept/improved/rebuilt, the recommended architecture, and the complete
 [`GODOT_MIGRATION.md`](../GODOT_MIGRATION.md) at the repo root. Read that
 first; this file only tracks what's actually been built here so far.
 
-## Status: build-order step 7 of 12 — real rendering + lighting
+## Status: build-order step 8 of 12 — particles
 
 **Important caveat:** this project was authored without access to the
 Godot editor or engine binary — this environment doesn't have Godot
@@ -22,9 +22,14 @@ doors unsealing on kill is confirmed working. Chests, resting, the sanctum
 rite, and the bidirectional stairs transition haven't been explicitly
 exercised yet (the sanctum only exists in Zone 2 — Hollow Ruins — not the
 Zone 1 starting zone, so a fresh run won't encounter one immediately).
-**Step 7 below has NOT yet had any live confirmation.** Treat both as
-carrying real risk until run and reported back. If anything fails to parse
-or run, report the exact error.
+**Step 7 is confirmed working** after one live fix: the editor caught a
+parser error (`boss.gd` accidentally overrode a same-named method it
+inherited from `enemy.gd` with an incompatible signature — see git history
+for the fix), and the user confirmed everything renders correctly once
+that was corrected. **Step 8 below has NOT yet had any live confirmation.**
+Treat it as carrying real risk until run and reported back — same as every
+step before it that turned out to need at least one real-engine fix. If
+anything fails to parse or run, report the exact error.
 
 ### Steps 1-5 — scaffold, data, core entities, combat+AI, weapons (confirmed working)
 
@@ -100,7 +105,7 @@ unsealing correctly, walls that seem to block or fail to block movement
 oddly, or an error in the Output panel (parse errors will likely show up
 immediately on load, the same way `combo_step` did last step).
 
-### Step 7 — real rendering: `_draw()` ports + PointLight2D lighting (just added, unverified)
+### Step 7 — real rendering: `_draw()` ports + PointLight2D lighting (confirmed working, after one live parser-error fix)
 
 Per `GODOT_MIGRATION.md` §5 and §4's approach (a): every placeholder flat
 circle/rect is replaced with a real procedural `_draw()` port of the Web
@@ -165,14 +170,76 @@ should flip color when its shield breaks; the boss should glow more
 intensely each phase; an opened chest should glow in its reward's rarity
 color; and the whole scene should visibly darken/brighten between zones
 (Ashen Woods vs. the Hollow Ruins) while the debug text in the corner
-stays readable throughout. None of this has been confirmed working yet —
-report exactly what you see, especially anything about a light that
-doesn't appear at all (likely a `$Glow` node/texture wiring issue) versus
-one that appears but looks visually wrong (likely a color/radius/timing
-tuning issue).
+stays readable throughout. **Confirmed working** — the user ran it after
+one fix (see the status note above).
+
+### Step 8 — particles: `GPUParticles2D` (just added, unverified)
+
+Per `GODOT_MIGRATION.md` §5/§4/§6: "replace every `spawn*Vfx`/
+`ParticlePresets` call with the matching `GPUParticles2D` scene/preset" —
+another rewrite, not a port, same reasoning as lighting: Canvas2D's
+hand-rolled `ParticleSystem.ts` (a fixed-capacity pool with its own
+per-frame update/render) only exists because Canvas2D has no native
+particle system. Godot's `GPUParticles2D` already does everything that
+loop did, so only `ParticlePresets.ts`'s 13 *reachable* visual recipes
+(hit sparks, death bursts, spore bursts, shield sparks, dodge trails,
+heal/level-up/chest-open sparkles, stone chips, ritual candle catches —
+see `vfx/vfx_presets.gd`'s own header for the full list and exactly which
+TS call site each one ports) needed porting, not the engine underneath them.
+
+| File | Ports | State |
+|---|---|---|
+| `vfx/vfx_system.gd` | `rendering/ParticleSystem.ts`'s engine half | `VfxSystem.emit()`: one Dictionary shaped like TS's `ParticleOptions` in, one auto-freeing one-shot `GPUParticles2D` out. Builds its own ring/square shape textures (`GradientTexture2D`, reusing `DrawUtils.glow_texture()` for circle/spark) and per-call `Gradient`/`Curve` resources for color-over-lifetime and size-over-lifetime — every Godot property/enum this touches (`ParticleProcessMaterial`, `GradientTexture1D`, `CurveTexture`, `CanvasItemMaterial.blend_mode`) was cross-checked against the actual Godot 4.3 class docs, not recalled from memory |
+| `vfx/vfx_presets.gd` | `rendering/ParticlePresets.ts` (13 of 18 functions — see below) | Thin wrappers, one `VfxSystem.emit()` call per TS `ps.spawn()`/`ps.burst()`, same order |
+| `autoload/combat_manager.gd` | `CombatSystem.ts`'s VFX calls | Hit impact (normal + blocked/shield-sparks), death burst, perfect-dodge burst (which needed a small, faithful completion of `damage_enemy_to_player` — capturing `was_dodging` before `take_damage()`, mirroring the source's own `wasDodging` local, since `blocked` alone can't tell a dodge from any other invulnerability source), bloat detonation's spore burst, and the champion shield-break's stone chips + each reinforcement's spore burst |
+| `autoload/level_flow.gd` | `Game.ts`'s VFX calls | Rest/sanctum-completion heal sparkles, the stairs-unseal stone chips + scattered spore motes (gated to the true first activation, not on re-entry — ported a `stairs.activated` check the Godot side was missing, matching the source's own `if (stairs.activated) return`), the stairs-transition's continuous spore motes, sanctum wave-spawn spore bursts + per-wave candle-ignite flares, and the player-level-up burst (connected to `RunState.player_leveled_up`, which already existed and had nothing listening to it) |
+| `world/chest_node.gd` | `Game.ts`'s `spawnChestOpenBurst` | Fires on the chest's own OPENING → OPENED transition rather than waiting on a resolved reward (which needs step 9's real UI) — ties it to something that already exists and lines up with when the lid visually finishes anyway |
+| `entities/player.gd` | `Game.ts`'s per-frame dodge-trail spawn | One trail particle every physics tick for the dodge's duration, same density as the source |
+| `world/level_generator.gd` | `drawSanctum.ts`'s `SANCTUM_CANDLE_COUNT`/`sanctumCandlePosition` | Pure geometry, ported on its own so the rite's candle-ignite VFX has real positions to play at — no persistent candle visual/light exists (same gap step 7's lighting pass already noted) |
+
+**Not ported, on purpose** (see `vfx/vfx_presets.gd`'s header for the full
+reasoning on each): 5 of the 18 `ParticlePresets.ts` functions are dead
+code in the TS source itself (never called from anywhere in the Web
+build) and porting them would just be unused surface area. `spawnEmberBurstVfx`
+has no reachable trigger in this port yet — every TS call site is the
+player's Ember Burst ability's damage effect (not implemented —
+`player.gd`'s `start_ability()` is animation-only) or one of the Ashen
+Colossus's phase attacks. **That surfaced a real, previously-undocumented
+gap this pass**: the boss has no attack FSM at all in this port —
+`boss.gd`'s `boss_state`/`Phase` fields exist and drive its rendering, but
+nothing anywhere ever assigns `boss_state`, so a run's boss currently
+fights back only as a generic (very large) enemy via `EnemyAI`, none of
+the slam/combo/shockwave/projectile/summon attacks `GODOT_MIGRATION.md`
+describes. Worth a dedicated pass of its own rather than folding into this
+one. `spawnZoneAmbientParticle` (a continuous per-zone atmosphere effect,
+technically `drawRoom.ts` not `ParticlePresets.ts`) reads `ZoneDefinition`
+fields (`ambientParticle`, `sporeColors`, `palette.ambient`/`accent`) that
+don't exist on this port's `ZoneDefinition` resource yet — left for a
+dedicated atmosphere pass. And a handful of individual call sites of
+otherwise-ported presets stay unwired because they're gated on the
+shop/event UI or the reward-choice system (step 9).
+
+**How to test it:** run the project and trigger the actions above one at a
+time — land a normal hit and a blocked (shield) hit on a Hollow Warden,
+kill a regular enemy, get hit while dodging (should see a violet perfect-
+dodge burst, not damage), pop a Blightbloat, break a champion's shield,
+open a chest, rest at a brazier, clear a sanctum wave and complete the
+rite, walk through a stairwell both directions, and level up. Each should
+show a burst of particles roughly matching its described colors/shape
+above, and every burst should clean itself up a moment later (no particles
+should ever visibly freeze in place or accumulate indefinitely — if one
+does, that's a `finished` signal/auto-free bug). None of this has been
+confirmed working yet — report exactly what you see, especially anything
+about a burst that never appears at all (likely a parent/positioning
+issue) versus one that appears but looks visually wrong (likely a
+color/shape/timing tuning issue in `vfx_presets.gd`).
 
 ### Next steps (not started)
 
-Per `GODOT_MIGRATION.md` §5, step 8: particles — replace every
-`spawn*Vfx`/`ParticlePresets` call with the matching `GPUParticles2D`
-scene/preset.
+Per `GODOT_MIGRATION.md` §5, step 9: UI — rebuild `HUD`, menus, shop/
+event/upgrade screens as `Control` scenes, porting `HUD.ts`'s update-
+only-changed-fields pattern rather than rebuilding trees every frame. The
+minimap's `GridContainer` port belongs here too. This is also the step
+that unblocks several VFX call sites step 8 had to skip (reward-granting,
+the shop/event landmarks) — worth revisiting `vfx_presets.gd`'s "not
+wired yet" list once it lands.

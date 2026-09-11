@@ -14,7 +14,10 @@ extends Node
 ## - Abilities' actual effects (Ember Burst, Warding Sigil) — deferred to
 ##   progression, step 6, alongside synergies (see below); weapon execution
 ##   itself (melee arc + projectile shot) is done, in combat/weapon_behavior.gd.
-## - Damage numbers, particles, camera shake, hit-stop, SFX — step 8/9.
+## - Damage numbers, camera shake, hit-stop, SFX — step 9 (no camera-shake
+##   system exists in this port at all yet). Particles are wired (step 8) —
+##   see VfxPresets for the ones this file's own hits/deaths/dodges/bursts
+##   call, and each call site's own comment for what's still skipped and why.
 ## - Hazards (spore clouds) — Bloat and the Warden champion still deal
 ##   their direct-hit damage below; the lingering cloud they'd normally
 ##   also leave is a self-contained follow-up.
@@ -197,6 +200,9 @@ func detonate_bloat(player: PlayerCharacter, enemy: EnemyCharacter) -> void:
 		return
 	enemy.burst_detonated = true
 	var radius: float = enemy.def.burst_radius if enemy.def.burst_radius > 0.0 else 90.0
+	var parent := enemy.get_parent()
+	if parent != null:
+		VfxPresets.spore_burst_vfx(parent, enemy.global_position, radius)
 	if player != null:
 		var dist: float = enemy.global_position.distance_to(player.global_position)
 		if dist <= radius + player.radius:
@@ -210,18 +216,22 @@ func detonate_bloat(player: PlayerCharacter, enemy: EnemyCharacter) -> void:
 
 ## A champion's shield just shattered (enemy.gd already flipped
 ## shield_broken before calling this). Spawns the 2 Blightbloat
-## reinforcements the Web build grants on this beat; the camera
-## shake/hit-stop/stone-chip VFX are deferred with the rest of feel/particles.
+## reinforcements the Web build grants on this beat, plus the shield-shatter
+## stone chips and each new bloat's own spore-burst VFX. Camera shake/
+## hit-stop/SFX are still deferred (no camera-shake system ported at all).
 func on_champion_shield_break(enemy: EnemyCharacter) -> void:
 	var blightbloat_def: EnemyDefinition = DataRegistry.get_enemy("blightbloat")
 	var parent := enemy.get_parent()
 	if blightbloat_def == null or parent == null:
 		return
+	var shatter_pos: Vector2 = enemy.global_position + Vector2(cos(enemy.facing), sin(enemy.facing)) * enemy.radius
+	VfxPresets.stone_chips(parent, shatter_pos, 26)
 	for side in [-1.0, 1.0]:
 		var spawn_pos: Vector2 = enemy.global_position + Vector2(side * 260.0, side * 40.0)
 		var add: EnemyCharacter = ENEMY_SCENE.instantiate()
 		parent.add_child(add)
 		add.setup(blightbloat_def, spawn_pos, enemy.difficulty_hp_mult * 0.8, enemy.difficulty_damage_mult * 0.8)
+		VfxPresets.spore_burst_vfx(parent, spawn_pos, 30.0)
 
 # ---------------------------------------------------------------- Core damage pipeline
 
@@ -244,6 +254,17 @@ func damage_player_to_enemy(player: PlayerCharacter, enemy: EnemyCharacter, base
 
 	enemy.take_damage(dmg)
 	hit_landed.emit(player, enemy, dmg, crit)
+
+	# Ports CombatSystem.ts's damagePlayerToEnemy: shield-sparks on a
+	# blocked hit, a normal hit-impact burst otherwise. Damage numbers/
+	# camera shake/hit-stop/SFX stay deferred (see this file's header).
+	var parent := enemy.get_parent()
+	if parent != null:
+		if blocked:
+			var spark_pos: Vector2 = enemy.global_position + Vector2(cos(enemy.facing), sin(enemy.facing)) * enemy.radius * 0.9
+			VfxPresets.shield_sparks(parent, spark_pos, enemy.facing)
+		else:
+			VfxPresets.hit_impact(parent, enemy.global_position, enemy.def.accent_color, crit)
 
 	var knockback_force: float = opts.get("knockback_force", 0.0)
 	if knockback_force != 0.0 and not blocked:
@@ -272,17 +293,33 @@ func on_enemy_death(_player: PlayerCharacter, enemy: EnemyCharacter) -> void:
 	if enemy.death_handled:
 		return
 	enemy.death_handled = true
+	var parent := enemy.get_parent()
+	if parent != null:
+		VfxPresets.death_burst(parent, enemy.global_position, enemy.def.accent_color)
 	enemy_died.emit(enemy)
 
 func damage_enemy_to_player(player: PlayerCharacter, base_damage: float, opts: Dictionary = {}) -> bool:
 	if player == null:
 		return false
+	# Ports CombatSystem.ts's damageEnemyToPlayer: captures is_dodging BEFORE
+	# take_damage() resolves the hit, exactly like the source's own
+	# `wasDodging` local — take_damage()'s "blocked" result alone can't
+	# distinguish a dodge from any other invulnerability source (shield,
+	# post-hit i-frames), so this is the one place that still can.
+	var was_dodging: bool = player.is_dodging
 	var result: Dictionary = player.take_damage(base_damage)
 	if result["blocked"]:
+		if was_dodging:
+			var dodge_parent := player.get_parent()
+			if dodge_parent != null:
+				VfxPresets.perfect_dodge_burst(dodge_parent, player.global_position)
 		return false
 	var knockback_force: float = opts.get("knockback_force", 0.0)
 	if knockback_force != 0.0:
 		player.velocity += opts.get("knockback_dir", Vector2.ZERO) * knockback_force
+	var hit_parent := player.get_parent()
+	if hit_parent != null:
+		VfxPresets.hit_impact(hit_parent, player.global_position, Palette.BLOOD_BRIGHT, false)
 	hit_landed.emit(null, player, result["taken"], false)
 	if not player.alive:
 		player_died.emit()

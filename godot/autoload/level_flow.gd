@@ -53,6 +53,19 @@ var _interact_key_down: bool = false
 
 func _ready() -> void:
 	CombatManager.enemy_died.connect(_on_enemy_died)
+	RunState.player_leveled_up.connect(_on_player_leveled_up)
+
+## Ports Game.ts's grantKillXp: "if (levelsGained > 0) { ...
+## spawnLevelUpBurst(...) }" — RunState.grant_xp() (called from
+## _on_enemy_died below) already resolves every level a single XP grant
+## crosses in one synchronous loop and fires this signal once at the end,
+## so one burst per grant here matches the source exactly regardless of
+## how many levels it actually crossed.
+func _on_player_leveled_up(_new_level: int, _stat_points_awarded: int) -> void:
+	if player != null and is_instance_valid(player):
+		var parent := player.get_parent()
+		if parent != null:
+			VfxPresets.level_up_burst(parent, player.global_position)
 
 func _physics_process(delta: float) -> void:
 	if not _transition.is_empty():
@@ -284,11 +297,24 @@ func _grant_room_clear_reward(room: RoomContainer) -> void:
 
 # ---------------------------------------------------------------- Stairs & descent
 
-func open_stairs(room: RoomContainer, _animate: bool) -> void:
+## Ports Game.ts's openStairs: "if (!stairs || stairs.activated) return;
+## ... if (!animate) return; ... spawnStoneChips(...); for (i<10)
+## spawnSporeMote(...)" — the animate=false path (re-entering an
+## already-open heart room) skips the VFX entirely, same as the source.
+## ObstacleNode.activate() already no-ops internally on a second call, but
+## checking `stairs.activated` here too (rather than relying on that alone)
+## is what actually gates the VFX to the true first activation only.
+func open_stairs(room: RoomContainer, animate: bool) -> void:
 	var stairs := _find_obstacle(room, ObstacleNode.Visual.STAIRS_DOWN)
-	if stairs == null:
+	if stairs == null or stairs.activated:
 		return
 	stairs.activate()
+	if not animate:
+		return
+	VfxPresets.stone_chips(room, stairs.global_position, 14)
+	for i in range(10):
+		var jitter := Vector2(randf_range(-30.0, 30.0), randf_range(-20.0, 20.0))
+		VfxPresets.spore_mote(room, stairs.global_position + jitter)
 
 func begin_descent(stairs: ObstacleNode) -> void:
 	if not _transition.is_empty():
@@ -306,7 +332,7 @@ func begin_ascent(stairs: ObstacleNode) -> void:
 func _start_transition(kind: String, stairs: ObstacleNode, from: Vector2, to: Vector2) -> void:
 	_transition = {
 		"phase": "out", "kind": kind, "t": 0.0, "duration": DESCENT_OUT_SECONDS,
-		"from": from, "to": to, "stairs": stairs,
+		"from": from, "to": to, "stairs": stairs, "spore_timer": 0.0,
 	}
 	player.is_transitioning = true
 	player.velocity = Vector2.ZERO
@@ -330,6 +356,17 @@ func _update_transition(delta: float) -> void:
 	player.global_position = from.lerp(to, walk)
 	if from.distance_squared_to(to) > 0.0001:
 		player.facing = (to - from).angle()
+
+	# Ports Game.ts's updateTransition: "tr.sporeTimer -= dt; if (<= 0) {
+	# sporeTimer = phase==='out' ? 0.05 : 0.12; spawnSporeMote(...) }" — the
+	# well breathes spore motes the whole time the player is walking through it.
+	var stairs_for_motes: ObstacleNode = _transition.get("stairs")
+	if stairs_for_motes != null and is_instance_valid(stairs_for_motes):
+		_transition["spore_timer"] = (_transition["spore_timer"] as float) - delta
+		if (_transition["spore_timer"] as float) <= 0.0:
+			_transition["spore_timer"] = 0.05 if out_phase else 0.12
+			var jitter := Vector2(randf_range(-35.0, 35.0), randf_range(-25.0, 25.0))
+			VfxPresets.spore_mote(_active_room, stairs_for_motes.global_position + jitter)
 
 	# Ports Game.ts's registerLights(): "lighting.add(tr.stairs.x,
 	# tr.stairs.y, 170*strength + 40, phase==='out' ? fungal : ember3,
@@ -387,7 +424,7 @@ func _land_after_transition(room: RoomContainer, arrival: ObstacleNode, kind: St
 	_sync_active_room(room)
 	_transition = {
 		"phase": "in", "kind": kind, "t": 0.0, "duration": DESCENT_IN_SECONDS,
-		"from": mouth, "to": foot, "stairs": arrival,
+		"from": mouth, "to": foot, "stairs": arrival, "spore_timer": 0.0,
 	}
 	room_changed.emit(room)
 
@@ -413,15 +450,26 @@ func _update_rite(room: RoomContainer, delta: float) -> void:
 	if room.ritual_wave >= LevelGenerator.SANCTUM_WAVE_COUNT:
 		_complete_rite(room)
 		return
-	LevelGenerator.spawn_sanctum_wave(room, RunState.current_layout()["zone"], room.ritual_wave, _spawn_options())
+	var spawned: Array[EnemyCharacter] = LevelGenerator.spawn_sanctum_wave(room, RunState.current_layout()["zone"], room.ritual_wave, _spawn_options())
+	for e in spawned:
+		VfxPresets.spore_burst_vfx(room, e.global_position, 26.0)
 	room.ritual_wave += 1
 	room.ritual_wave_timer = 1.6
+	# Ports Game.ts's updateRite: two more candles catch per wave survived
+	# (indices (wave-1)*2 and (wave-1)*2+1, using the just-incremented wave).
+	for idx in [(room.ritual_wave - 1) * 2, (room.ritual_wave - 1) * 2 + 1]:
+		if idx >= LevelGenerator.SANCTUM_CANDLE_COUNT:
+			continue
+		VfxPresets.ritual_ignite(room, LevelGenerator.sanctum_candle_position(idx))
 
 func _complete_rite(room: RoomContainer) -> void:
 	room.cleared = true
 	room.ritual_active = false
 	room.refresh_walls()
+	for i in range(LevelGenerator.SANCTUM_CANDLE_COUNT):
+		VfxPresets.ritual_ignite(room, LevelGenerator.sanctum_candle_position(i))
 	player.heal(player.stats.max_hp * 0.3)
+	VfxPresets.heal_sparkle(room, player.global_position)
 	RunState.embers += 35
 	print("LevelFlow: sanctum rite complete at %s — 35 embers + 30%% heal granted" % room.key)
 	_grant_room_clear_reward(room)
@@ -435,6 +483,7 @@ func use_rest(room: RoomContainer) -> void:
 	room.cleared = true
 	var heal_amount: float = (player.stats.max_hp - player.hp) * 0.55
 	player.heal(heal_amount)
+	VfxPresets.heal_sparkle(room, player.global_position)
 
 func open_chest(room: RoomContainer) -> void:
 	var chest := room.chest

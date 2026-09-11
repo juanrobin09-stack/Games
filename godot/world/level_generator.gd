@@ -478,6 +478,22 @@ const SANCTUM_RING_RADIUS := 150.0
 const SANCTUM_HP_MULT := 1.12
 const SANCTUM_DAMAGE_MULT := 1.18
 
+## Ports drawSanctum.ts's SANCTUM_CANDLE_COUNT/sanctumCandlePosition. Only
+## the geometry is ported — the source's own candle _draw()/lighting isn't
+## (no persistent candle visual/light exists on this port yet, build-order
+## step 7's lighting pass noted the same gap) — but LevelFlow's rite still
+## needs this position for the ritual-ignite VFX at each wave/completion
+## beat (step 8), so it's ported here on its own, as pure geometry.
+const SANCTUM_CANDLE_COUNT := 6
+const _CANDLE_RADIUS := SANCTUM_RING_RADIUS * 0.82
+
+static func sanctum_candle_position(i: int) -> Vector2:
+	var angle: float = -PI / 2.0 + (float(i) / float(SANCTUM_CANDLE_COUNT)) * TAU
+	return Vector2(
+		RoomContainer.ROOM_WIDTH / 2.0 + cos(angle) * _CANDLE_RADIUS,
+		RoomContainer.ROOM_HEIGHT / 2.0 + sin(angle) * _CANDLE_RADIUS * 0.72
+	)
+
 const SANCTUM_WAVES: Array = [
 	["hollow", "hollow", "ashCrawler", "ashCrawler", "ashCrawler"],
 	["blightbloat", "blightbloat", "hollowWarden", "ashCrawler"],

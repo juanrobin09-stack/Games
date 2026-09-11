@@ -327,6 +327,12 @@ func _update_state(dt: float) -> void:
 		var t: float = dodge_timer / DODGE_DURATION
 		var speed: float = stats.move_speed * 3.1 * (1.0 - t * 0.3)
 		velocity = dodge_dir * speed
+		# Ports Game.ts's per-frame "if (player.isDodging)
+		# spawnDodgeTrail(...)" — one trail particle every physics tick for
+		# the dodge's whole (short) duration, same density as the source.
+		var vfx_parent := get_parent()
+		if vfx_parent != null:
+			VfxPresets.dodge_trail(vfx_parent, global_position, facing, Palette.EMBER4)
 		if dodge_timer >= DODGE_DURATION:
 			is_dodging = false
 			last_dodge_end_time = run_time

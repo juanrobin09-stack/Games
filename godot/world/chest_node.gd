@@ -48,6 +48,14 @@ func _process(dt: float) -> void:
 	if state == State.OPENING and state_timer > OPEN_DURATION:
 		state = State.OPENED
 		state_timer = 0.0
+		# Ports Game.ts's spawnChestOpenBurst — fired there once a resolved
+		# reward is shown, which needs the upgrade-ownership system (step 9,
+		# not built yet). Firing on the chest's own OPENING -> OPENED
+		# transition instead ties it to something that already exists and
+		# happens right when the lid visually finishes opening anyway.
+		var parent := get_parent()
+		if parent != null:
+			VfxPresets.chest_open_burst(parent, global_position, _tier_color())
 	queue_redraw()
 	_update_light()
 
