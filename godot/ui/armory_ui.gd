@@ -120,6 +120,7 @@ func _switch_mode(mode: Mode) -> void:
 	if _mode == mode:
 		return
 	_mode = mode
+	AudioEngine.play_sfx("uiClick")
 	_title_label.text = _title_text()
 	_subtitle_label.text = _subtitle_text()
 	_render_tabs()
@@ -187,7 +188,10 @@ func _make_upgrade_row(def: PermanentUpgradeDefinition) -> Control:
 	buy_btn.disabled = not can_buy
 	buy_btn.pressed.connect(func():
 		if MetaProgression.purchase_permanent(def.id):
+			AudioEngine.play_sfx("shopBuy")
 			_render_list()
+		else:
+			AudioEngine.play_sfx("shopError")
 	)
 
 	return _make_row(def.icon, def.name, desc, pips, buy_btn, locked)
@@ -210,7 +214,10 @@ func _make_unlock_row(def: UnlockDefinition) -> Control:
 	buy_btn.disabled = unlocked or not can_buy
 	buy_btn.pressed.connect(func():
 		if MetaProgression.purchase_unlock(def.id):
+			AudioEngine.play_sfx("shopBuy")
 			_render_list()
+		else:
+			AudioEngine.play_sfx("shopError")
 	)
 
 	return _make_row(UNLOCK_ICON.get(def.kind, "blade"), def.name, detail, null, buy_btn, false)

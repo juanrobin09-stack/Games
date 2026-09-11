@@ -163,6 +163,7 @@ func _end_run(victory: bool) -> void:
 func _try_open_pause() -> void:
 	if not GameState.is_in([GameState.State.EXPLORATION, GameState.State.COMBAT, GameState.State.BOSS]) or get_tree().paused:
 		return
+	AudioEngine.play_sfx("uiClick")
 	GameState.push_state(GameState.State.PAUSED)
 	var on_resume := func(): GameState.pop_state()
 	var on_open_inventory := func():
@@ -347,7 +348,7 @@ func _data_registry_summary(counts: Dictionary) -> String:
 func _print_diagnostics() -> void:
 	var state_name: String = GameState.State.keys()[GameState.current]
 	var lines: Array[String] = [
-		"EMBERFALL: LAST LIGHT — Godot scaffold (build-order step 9 of 12)",
+		"EMBERFALL: LAST LIGHT — Godot scaffold (build-order step 10 of 12)",
 		"WASD move, mouse aim, LMB attack, Space dodge, RMB ability, E interact, F1 debug overlay",
 		"GameState: %s (simulating: %s)   Soul Ash: %d   save loaded: %s" % [
 			state_name, GameState.is_simulating(), MetaProgression.soul_ash,

@@ -72,8 +72,10 @@ func _collect(player: PlayerCharacter) -> void:
 	if kind == Kind.EMBER:
 		var gained: int = maxi(1, int(round(value * player.stats.ember_gain_mult)))
 		RunState.add_embers(gained)
+		AudioEngine.play_sfx("pickupEmber", 40.0)
 	else:
 		player.heal(value)
+		AudioEngine.play_sfx("pickupHeart", 100.0)
 	var room := get_parent() as RoomContainer
 	if room != null:
 		room.pickups.erase(self)

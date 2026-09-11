@@ -27,6 +27,7 @@ static func show_event(parent: Node, def: WorldEventDefinition, on_choose: Calla
 	ui.process_mode = Node.PROCESS_MODE_ALWAYS
 	parent.add_child(ui)
 	ui.chosen.connect(func(option: EventOption):
+		AudioEngine.play_sfx("eventChoice")
 		ui.get_tree().paused = false
 		ui.queue_free()
 		on_choose.call(option)

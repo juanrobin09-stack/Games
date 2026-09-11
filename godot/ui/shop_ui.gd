@@ -225,13 +225,18 @@ func _buy(offer: ShopOffer) -> void:
 	var success: bool = _on_buy_upgrade.call(offer) if offer.kind == ShopOffer.Kind.UPGRADE else _on_buy_heal.call(offer)
 	if success:
 		offer.purchased = true
+		AudioEngine.play_sfx("shopBuy")
+	else:
+		AudioEngine.play_sfx("shopError")
 	_render_list()
 
 func _on_reroll_pressed() -> void:
 	var fresh: Array[ShopOffer] = _on_reroll.call()
 	if fresh.is_empty():
+		AudioEngine.play_sfx("shopError")
 		return
 	offers = fresh
+	AudioEngine.play_sfx("uiClick")
 	_render_list()
 
 func _button_stylebox(bg: Color, border: Color, small: bool) -> StyleBoxFlat:

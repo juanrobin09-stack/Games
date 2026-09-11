@@ -358,6 +358,7 @@ func _read_input() -> void:
 		else:
 			dir = dir.normalized()
 		start_dodge(dir)
+		AudioEngine.play_sfx("dodge")
 	if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and can_use_ability():
 		start_ability()
 

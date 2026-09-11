@@ -112,6 +112,7 @@ func _on_room_changed(_room: RoomContainer) -> void:
 ## so one burst per grant here matches the source exactly regardless of
 ## how many levels it actually crossed.
 func _on_player_leveled_up(new_level: int, _stat_points_awarded: int) -> void:
+	AudioEngine.play_sfx("levelUp")
 	if player != null and is_instance_valid(player):
 		var parent := player.get_parent()
 		if parent != null:
@@ -309,6 +310,7 @@ func _check_door_crossing() -> void:
 		return
 	var neighbor := RunState.move_through_door(dir)
 	if neighbor != null:
+		AudioEngine.play_sfx("doorOpen")
 		enter_room(neighbor, dir)
 	else:
 		# Shouldn't happen (has_door(dir) implies a neighbor was generated
@@ -373,6 +375,7 @@ func _check_interact_key() -> void:
 	_interact_key_down = true
 	var interaction = get_interaction()
 	if interaction != null:
+		AudioEngine.play_sfx("interact")
 		(interaction["action"] as Callable).call()
 
 ## Ports Game.ts's own `else if (this.input.wasPressed('inventory'))
@@ -423,6 +426,7 @@ func _grant_room_clear_reward(room: RoomContainer) -> void:
 	if room.type == RoomContainer.Type.ELITE and RunState.zone_index == 2 and not player.unlocked_weapons.has("bow"):
 		player.unlocked_weapons.append("bow")
 		player.weapon_id = "bow"
+		AudioEngine.play_sfx("chestOpenLegendary")
 		VfxPresets.level_up_burst(room, player.global_position)
 		hud.show_phase_banner("THE WARDEN'S BOW")
 		hud.show_toast("A weapon fast where the blade is slow. Attack speed now has something to sharpen.")
@@ -436,6 +440,7 @@ func _grant_room_clear_reward(room: RoomContainer) -> void:
 	var luck: float = clampf(player.stats.rarity_luck + bonus_luck, 0.0, 1.0)
 	var rng := LevelGenerator.rng_from("%s:reward:%s" % [RunState.seed_value, room.key])
 	var choices: Array[UpgradeDefinition] = UpgradePool.roll_upgrade_choices(rng, 3, luck, current_gate_ids(), player.upgrades, RunState.zone_index, min_rarity)
+	AudioEngine.play_sfx("roomCleared")
 	if choices.is_empty():
 		if room.type == RoomContainer.Type.HEART:
 			open_stairs(room, true)
@@ -446,6 +451,7 @@ func _grant_room_clear_reward(room: RoomContainer) -> void:
 		levels.append(UpgradePool.upcoming_upgrade_level(c.id, player.upgrades))
 	UpgradeSelectUI.show_choices(ui_root, choices, levels, func(def: UpgradeDefinition):
 		_grant_upgrade(def)
+		AudioEngine.play_sfx("levelUp")
 		VfxPresets.level_up_burst(room, player.global_position)
 		if room.type == RoomContainer.Type.HEART:
 			open_stairs(room, true)
@@ -467,6 +473,7 @@ func open_stairs(room: RoomContainer, animate: bool) -> void:
 	stairs.activate()
 	if not animate:
 		return
+	AudioEngine.play_sfx("sealBreak")
 	VfxPresets.stone_chips(room, stairs.global_position, 14)
 	for i in range(10):
 		var jitter := Vector2(randf_range(-30.0, 30.0), randf_range(-20.0, 20.0))
@@ -476,6 +483,7 @@ func open_stairs(room: RoomContainer, animate: bool) -> void:
 func begin_descent(stairs: ObstacleNode) -> void:
 	if not _transition.is_empty():
 		return
+	AudioEngine.play_sfx("stairsDescend")
 	_start_transition("descend", stairs, player.global_position, LevelGenerator.stairs_mouth_position(stairs))
 
 ## Mirrors begin_descent: walks the player INTO a zone's arrival stairwell
@@ -484,6 +492,7 @@ func begin_descent(stairs: ObstacleNode) -> void:
 func begin_ascent(stairs: ObstacleNode) -> void:
 	if not _transition.is_empty():
 		return
+	AudioEngine.play_sfx("stairsDescend")
 	_start_transition("ascend", stairs, player.global_position, LevelGenerator.stairs_mouth_position(stairs))
 
 func _start_transition(kind: String, stairs: ObstacleNode, from: Vector2, to: Vector2) -> void:
@@ -560,6 +569,7 @@ func _complete_descent() -> void:
 		LevelGenerator.populate_room_content(next_room, zone, _spawn_options())
 	var arrival := _find_obstacle(next_room, ObstacleNode.Visual.STAIRS_UP)
 	_land_after_transition(next_room, arrival, "descend")
+	AudioEngine.play_sfx("zoneArrive")
 	hud.show_phase_banner(zone.name.to_upper())
 	# 1.1s delay matches the source exactly — long enough that the subtitle
 	# toast doesn't visually collide with the phase banner's own entrance.
@@ -575,6 +585,7 @@ func _complete_ascent() -> void:
 		LevelGenerator.populate_room_content(prev_room, zone, _spawn_options())
 	var arrival := _find_obstacle(prev_room, ObstacleNode.Visual.STAIRS_DOWN)
 	_land_after_transition(prev_room, arrival, "ascend")
+	AudioEngine.play_sfx("zoneArrive")
 	# No subtitle toast here (unlike _complete_descent) — matches the
 	# source: re-entering a zone you've already visited doesn't need its
 	# "welcome to X" line again, only the phase banner.
@@ -602,6 +613,8 @@ func begin_rite(room: RoomContainer) -> void:
 	room.ritual_wave = 0
 	room.ritual_wave_timer = 1.1
 	room.refresh_walls()
+	AudioEngine.play_sfx("ritualCandle")
+	AudioEngine.play_sfx("doorOpen")
 	hud.show_phase_banner("THE RITE BEGINS")
 
 func _update_rite(room: RoomContainer, delta: float) -> void:
@@ -638,11 +651,13 @@ func _update_rite(room: RoomContainer, delta: float) -> void:
 		if idx >= LevelGenerator.SANCTUM_CANDLE_COUNT:
 			continue
 		VfxPresets.ritual_ignite(room, LevelGenerator.sanctum_candle_position(idx))
+	AudioEngine.play_sfx("ritualCandle")
 
 func _complete_rite(room: RoomContainer) -> void:
 	room.cleared = true
 	room.ritual_active = false
 	room.refresh_walls()
+	AudioEngine.play_sfx("ritualComplete")
 	for i in range(LevelGenerator.SANCTUM_CANDLE_COUNT):
 		VfxPresets.ritual_ignite(room, LevelGenerator.sanctum_candle_position(i))
 	player.heal(player.stats.max_hp * 0.3)
@@ -671,6 +686,7 @@ func _grant_upgrade(def: UpgradeDefinition) -> void:
 			continue
 		get_tree().create_timer(i * 0.9).timeout.connect(func():
 			hud.show_synergy_banner(syn.name, syn.description)
+			AudioEngine.play_sfx("synergyFormed")
 		)
 
 # ---------------------------------------------------------------- Rest / Chest
@@ -683,6 +699,7 @@ func use_rest(room: RoomContainer) -> void:
 	var heal_amount: float = (player.stats.max_hp - player.hp) * 0.55
 	player.heal(heal_amount)
 	VfxPresets.heal_sparkle(room, player.global_position)
+	AudioEngine.play_sfx("pickupHeart")
 	hud.show_toast("The brazier's warmth mends your wounds.")
 
 ## Ports Game.ts's private openChest: a chest grants exactly one upgrade, at
@@ -690,11 +707,24 @@ func use_rest(room: RoomContainer) -> void:
 ## reward or a shop offer, so (unlike those) this needed no new UI to wire
 ## for real. The RNG seed string matches the source exactly so the same run
 ## seed always rolls the same chest reward.
+## Ports Game.ts's module-level chestSoundFor(tier).
+static func _chest_sound_for(tier: UpgradeDefinition.Rarity) -> String:
+	match tier:
+		UpgradeDefinition.Rarity.LEGENDARY:
+			return "chestOpenLegendary"
+		UpgradeDefinition.Rarity.EPIC:
+			return "chestOpenEpic"
+		UpgradeDefinition.Rarity.RARE:
+			return "chestOpenRare"
+		_:
+			return "chestOpenCommon"
+
 func open_chest(room: RoomContainer) -> void:
 	var chest := room.chest
 	if chest == null or not chest.can_interact():
 		return
 	chest.open()
+	AudioEngine.play_sfx(_chest_sound_for(chest.tier))
 	var rng := LevelGenerator.rng_from("%s:chestreward:%s" % [RunState.seed_value, room.key])
 	var def := UpgradePool.pick_upgrade_at_least_rarity(rng, chest.tier, current_gate_ids(), player.upgrades, RunState.zone_index)
 	if def == null:
@@ -784,15 +814,18 @@ func open_event_room(room: RoomContainer) -> void:
 ## effect, so the two cases were never distinguishable in practice either.
 func _apply_event_effect(option: EventOption, room: RoomContainer) -> void:
 	if option.cost > 0.0 and not RunState.spend_embers(int(option.cost)):
+		AudioEngine.play_sfx("shopError")
 		return
 	match option.apply:
 		EventOption.EffectKind.NOTHING:
 			pass
 		EventOption.EffectKind.GAIN_EMBERS:
 			RunState.add_embers(int(option.value))
+			AudioEngine.play_sfx("pickupEmber")
 		EventOption.EffectKind.GAIN_HP:
 			player.heal(option.value)
 			VfxPresets.heal_sparkle(room, player.global_position)
+			AudioEngine.play_sfx("pickupHeart")
 		EventOption.EffectKind.GAIN_RANDOM_UPGRADE:
 			var min_rarity: UpgradeDefinition.Rarity = int(option.value)
 			var rng := LevelGenerator.rng_from("%s:eventupgrade:%s:%s" % [RunState.seed_value, room.key, option.id])
@@ -811,13 +844,17 @@ func _apply_event_effect(option: EventOption, room: RoomContainer) -> void:
 		EventOption.EffectKind.GAMBLE_EMBERS:
 			if randf() < 0.5:
 				RunState.add_embers(RunState.embers)
+				AudioEngine.play_sfx("levelUp")
 			else:
 				var loss: int = int(floor(RunState.embers * 0.5))
 				RunState.embers = maxi(0, RunState.embers - loss)
+				AudioEngine.play_sfx("shopError")
 		EventOption.EffectKind.GAIN_SOUL_ASH_NOW:
 			MetaProgression.add_soul_ash(int(option.value))
+			AudioEngine.play_sfx("pickupSoulAsh")
 		EventOption.EffectKind.GAIN_SHIELD_CHARGE:
 			player.shield_charges += int(option.value) if option.value > 0.0 else 1
+			AudioEngine.play_sfx("shieldUp")
 		EventOption.EffectKind.GAIN_MAX_HP:
 			var amount: float = option.value if option.value > 0.0 else 15.0
 			var mod := StatModifier.new()
@@ -827,9 +864,12 @@ func _apply_event_effect(option: EventOption, room: RoomContainer) -> void:
 			player.add_bonus_modifier(mod)
 			player.heal(amount)
 			VfxPresets.heal_sparkle(room, player.global_position)
+			AudioEngine.play_sfx("pickupHeart")
 		EventOption.EffectKind.LOSE_HP_FOR_EMBERS:
 			player.hp = maxf(1.0, player.hp - player.stats.max_hp * 0.15)
 			RunState.add_embers(int(option.value) if option.value > 0.0 else 50)
+			AudioEngine.play_sfx("playerHurt")
+			AudioEngine.play_sfx("pickupEmber")
 
 # ---------------------------------------------------------------- Kill rewards
 
@@ -884,6 +924,7 @@ func spend_stat_point(stat_id: String) -> bool:
 	mod.mode = def.mode
 	mod.value = def.value_per_level
 	player.add_bonus_modifier(mod)
+	AudioEngine.play_sfx("uiClick")
 	return true
 
 ## Ports Game.ts's private openInventory. Called from the global I-key

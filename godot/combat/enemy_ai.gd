@@ -57,6 +57,8 @@ static func update(enemy: EnemyCharacter, player: PlayerCharacter, dt: float) ->
 
 	if enemy.state == EnemyCharacter.State.ATTACK and previous_state != EnemyCharacter.State.ATTACK:
 		_resolve_attack_trigger(enemy, player)
+	if def.behavior == EnemyDefinition.Behavior.BLOAT and enemy.state == EnemyCharacter.State.WINDUP and previous_state != EnemyCharacter.State.WINDUP:
+		AudioEngine.play_sfx("bloatSwell", 120.0)
 
 # ---------------------------------------------------------------- helpers
 
@@ -357,6 +359,7 @@ static func _resolve_attack_trigger(enemy: EnemyCharacter, player: PlayerCharact
 	if def.behavior == EnemyDefinition.Behavior.WARDEN:
 		enemy.bash_timer = def.bash_duration if def.bash_duration > 0.0 else 0.27
 		enemy.bash_hit_landed = false
+		AudioEngine.play_sfx("wardenBash", 60.0)
 		return
 	var d := _dist_to(enemy, player)
 	if def.behavior == EnemyDefinition.Behavior.RANGED:

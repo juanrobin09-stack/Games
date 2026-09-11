@@ -133,6 +133,7 @@ func _make_tab_button(label_text: String, tab: Tab) -> Button:
 		if _tab == tab:
 			return
 		_tab = tab
+		AudioEngine.play_sfx("uiClick")
 		_update_tab_button_styles()
 		_render_tab()
 	)
@@ -253,6 +254,7 @@ func _build_character_tab(container: VBoxContainer) -> void:
 
 func _on_spend_pressed(stat_id: String) -> void:
 	if _on_spend.call(stat_id):
+		AudioEngine.play_sfx("shopBuy")
 		_render_tab()
 
 static func _format_num(value: float) -> String:

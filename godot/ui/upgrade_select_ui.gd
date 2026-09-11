@@ -27,6 +27,7 @@ static func show_choices(parent: Node, choices: Array[UpgradeDefinition], levels
 	ui.process_mode = Node.PROCESS_MODE_ALWAYS
 	parent.add_child(ui)
 	ui.chosen.connect(func(def: UpgradeDefinition):
+		AudioEngine.play_sfx("upgradeChoose")
 		ui.get_tree().paused = false
 		ui.queue_free()
 		on_choose.call(def)

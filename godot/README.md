@@ -7,7 +7,7 @@ kept/improved/rebuilt, the recommended architecture, and the complete
 [`GODOT_MIGRATION.md`](../GODOT_MIGRATION.md) at the repo root. Read that
 first; this file only tracks what's actually been built here so far.
 
-## Status: build-order step 9 of 12 — UI (complete, including the Phase B meta-shell)
+## Status: build-order step 10 of 12 — Audio (SFX complete; step 9/UI complete, including the Phase B meta-shell)
 
 **Important caveat:** this project was authored without access to the
 Godot editor or engine binary — this environment doesn't have Godot
@@ -737,7 +737,7 @@ persisted-but-inert preferences for — audio, quality tiers, accessibility,
 and i18n (see Settings' own header comment) — each its own future phase,
 not a UI gap.
 
-### Step 10 — Audio (engine built; gameplay wiring not started)
+### Step 10 — Audio (SFX engine + every real trigger site wired; music not started)
 
 `GODOT_MIGRATION.md` §4 frames audio as an explicit fork: bake each
 procedural SFX to a `.ogg` once and play it back with a normal
@@ -779,21 +779,62 @@ pool once their sound finishes, with no leak; and a live
 `MetaProgression.save_settings()` call updates the Master bus's mute
 state and dB level immediately, with no restart needed.
 
-**Not built yet**: every real trigger site. The TS source calls
-`playSfx(...)` at 75 call sites outside `SoundFactory.ts` itself — 39 in
-`Game.ts`, 16 in `CombatSystem.ts`, 7 in `BossSystem.ts`, the remaining
-13 spread across `ShopUI.ts`/`InventoryUI.ts`/`MetaProgressionMenu.ts`/
-`UpgradeSelectUI.ts`/`EventUI.ts` — and they're deliberately *not*
-uniform (only 3 of the 9 screens in `src/ui/` play a click sound on a
-button at all; a blanket "every `MenuUiKit.make_button()` press plays
-`uiClick`" shortcut was considered and rejected specifically because it
-would add feedback the source's own design leaves several screens
-without). Wiring this faithfully means walking each of those 8 source
-files and replicating its own actual call sites in the matching Godot
-file, not inferring a pattern — next slice. `MusicEngine.ts`'s generative
-score (drone, chord progression, mood/intensity layers) is a separate
-slice after that; unlike SFX, its continuous drone genuinely needs
-real-time generation (not a one-shot buffer), though its per-voice
-synthesis is simpler than SFX's (no per-voice filtering — the drone's
-one lowpass sweep is bus-wide, which maps directly to a real
+**Slice 2 — every real trigger site.** The TS source calls `playSfx(...)`
+at 75 call sites outside `SoundFactory.ts` itself — 39 in `Game.ts`, 16 in
+`CombatSystem.ts`, 7 in `BossSystem.ts`, the remaining 13 spread across
+`ShopUI.ts`/`InventoryUI.ts`/`MetaProgressionMenu.ts`/`UpgradeSelectUI.ts`/
+`EventUI.ts` — and they're deliberately *not* uniform (only 3 of the 9
+screens in `src/ui/` play a click sound on a button at all; a blanket
+"every `MenuUiKit.make_button()` press plays `uiClick`" shortcut was
+considered and rejected specifically because it would add feedback the
+source's own design leaves several screens without). Wired faithfully by
+walking each of those 8 source files and replicating its own actual call
+sites — not inferring a pattern — in the matching Godot file:
+`combat_manager.gd` (melee/ranged attacks, every branch of the
+player↔enemy damage pipeline, bloat/warden combat beats, the champion's
+shield-shatter, boss pending-action resolution), `level_flow.gd` (doors,
+stairs, zone arrival, the sanctum rite, chest/rest/event interactions,
+room-clear rewards, synergy formation, level-ups, stat-point spends,
+E-interact), `enemy_ai.gd` (a warden's bash windup, a bloat's swell —
+the latter needed the same before/after `state` comparison the existing
+attack-trigger check already made, not a new mechanism), `pickup_node.gd`
+(ember/heart collection), `player.gd` (dodge), `main.gd` (pause), and
+five UI screens (`shop_ui.gd`, `inventory_ui.gd`, `upgrade_select_ui.gd`,
+`event_ui.gd`, `armory_ui.gd`) — 71 of the 75 wired, the remaining 4
+correctly left silent because the system they'd trigger from doesn't
+exist yet in this port: 2 of Game.ts's own ability-effect calls
+(Warding Sigil, Stormstep — no ability-execution system exists, only the
+animation-only `start_ability()` stub main.gd's own header already
+documents), a synergy-triggered chain-detonation SFX (synergy *effects*,
+not just synergy *ownership*, aren't wired into the damage pipeline
+yet), and one legacy no-stairwell `advanceZone()` fallback path Godot's
+own `get_interaction()` never offers to begin with (already noted in
+that function's own comment before this slice).
+One genuine two-layer case, replicated rather than "simplified" away:
+spending a stat point plays `uiClick` from inside
+`LevelFlow.spend_stat_point()` (the core-logic level, matching
+`Game.ts`'s own `spendStatPoint`) *and* `shopBuy` from
+`InventoryUI.ts`'s own click handler on top of it — two sounds
+layered on one click in the source, not a bug to collapse into one.
+
+**Verified** via a real headless run exercising the actual call sites,
+not just a code read: every one of the 44 distinct SfxId strings used
+across this slice checked against `AudioEngine`'s own `_players`
+dictionary (0 unknown — no typos); a real melee attack occupied exactly
+2 voices (`attackSwing`'s noise+tone layers); a real (forced, non-dodging,
+unshielded) hit correctly took the `playerHurt` branch; a forced kill
+correctly resolved through `on_enemy_death`; a real door crossing
+(teleporting the player to a door-bearing wall and letting
+`_check_door_crossing()`'s own physics-process pick it up) actually
+changed rooms; Pause correctly paused/unpaused; and
+`LevelFlow._chest_sound_for()` mapped all 5 `UpgradeDefinition.Rarity`
+values to the exact TS `chestSoundFor()` output
+(`common`/`uncommon`→`chestOpenCommon`, `rare`→`chestOpenRare`,
+`epic`→`chestOpenEpic`, `legendary`→`chestOpenLegendary`).
+
+**Not built yet**: `MusicEngine.ts`'s generative score (drone, chord
+progression, mood/intensity layers). Unlike SFX, its continuous drone
+genuinely needs real-time generation (not a one-shot buffer), though its
+per-voice synthesis is simpler than SFX's (no per-voice filtering — the
+drone's one lowpass sweep is bus-wide, which maps directly to a real
 `AudioEffectLowPassFilter`).

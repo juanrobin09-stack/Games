@@ -14,10 +14,13 @@ extends Node
 ## - Abilities' actual effects (Ember Burst, Warding Sigil) — deferred to
 ##   progression, step 6, alongside synergies (see below); weapon execution
 ##   itself (melee arc + projectile shot) is done, in combat/weapon_behavior.gd.
-## - Damage numbers, camera shake, hit-stop, SFX — step 9 (no camera-shake
-##   system exists in this port at all yet). Particles are wired (step 8) —
-##   see VfxPresets for the ones this file's own hits/deaths/dodges/bursts
-##   call, and each call site's own comment for what's still skipped and why.
+## - Damage numbers, camera shake, hit-stop — still deferred (no such
+##   system exists in this port at all yet). Particles (step 8) and SFX
+##   (step 10, autoload/audio_engine.gd) are both wired now — but only
+##   for the code paths that exist above; the source's own SFX calls for
+##   hazards/synergy-chain-detonation/ability effects have nothing to
+##   attach to yet (still deferred, same as the systems themselves) and
+##   are not wired here for exactly that reason, not an oversight.
 ## - Hazards (spore clouds) — Bloat and the Warden champion still deal
 ##   their direct-hit damage below; the lingering cloud they'd normally
 ##   also leave is a self-contained follow-up.
@@ -109,6 +112,7 @@ func perform_melee_attack(player: PlayerCharacter) -> void:
 			"knockback_dir": dir,
 			"knockback_force": weapon.knockback,
 		})
+	AudioEngine.play_sfx("attackSwingHeavy" if weapon.id == "voidScythe" else "attackSwing")
 
 func spawn_enemy_projectile(enemy: EnemyCharacter, angle: float) -> void:
 	var parent := enemy.get_parent()
@@ -120,6 +124,7 @@ func spawn_enemy_projectile(enemy: EnemyCharacter, angle: float) -> void:
 	var speed: float = enemy.def.projectile_speed if enemy.def.projectile_speed > 0.0 else 220.0
 	proj.from_player = false
 	proj.setup(spawn_pos, angle, speed, enemy.attack_damage(), 7.0)
+	AudioEngine.play_sfx("attackRanged", 90.0)
 
 ## Ports fireProjectileWeapon: ProjectileShotBehavior's own entry point
 ## (build-order step 5). Shot count is 1 + floor(stats.projectile_count),
@@ -152,6 +157,7 @@ func fire_player_projectile(player: PlayerCharacter, weapon: WeaponDefinition) -
 		proj.lifesteal = player.stats.lifesteal
 		proj.source_player = player
 		proj.max_lifetime = range_val / speed + 0.3
+	AudioEngine.play_sfx("attackRanged")
 
 ## The Web build's exact onMeleeLand callback body wasn't in the portion of
 ## Game.ts read this session — implemented here from the same "did you stay
@@ -213,6 +219,7 @@ func detonate_bloat(player: PlayerCharacter, enemy: EnemyCharacter) -> void:
 	var parent := enemy.get_parent()
 	if parent != null:
 		VfxPresets.spore_burst_vfx(parent, enemy.global_position, radius)
+	AudioEngine.play_sfx("sporeBurst", 40.0)
 	if player != null:
 		var dist: float = enemy.global_position.distance_to(player.global_position)
 		if dist <= radius + player.radius:
@@ -230,6 +237,7 @@ func detonate_bloat(player: PlayerCharacter, enemy: EnemyCharacter) -> void:
 ## stone chips and each new bloat's own spore-burst VFX. Camera shake/
 ## hit-stop/SFX are still deferred (no camera-shake system ported at all).
 func on_champion_shield_break(enemy: EnemyCharacter) -> void:
+	AudioEngine.play_sfx("shieldShatter")
 	champion_shield_broken.emit(enemy)
 	var blightbloat_def: EnemyDefinition = DataRegistry.get_enemy("blightbloat")
 	var parent := enemy.get_parent()
@@ -250,14 +258,20 @@ func on_champion_shield_break(enemy: EnemyCharacter) -> void:
 ## right after tick() itself, mirroring the source's own per-frame
 ## tick()-then-resolveBossPendingActions() order.
 ##
-## Camera shake, hit-stop, and SFX are deliberately not ported here — see
-## this file's own header and boss.gd's own header for why (no such system
-## exists anywhere in this port yet, predating the boss).
+## Camera shake and hit-stop are deliberately not ported here — no such
+## system exists anywhere in this port yet (see this file's own header).
+## SFX is (step 10, audio_engine.gd), matching every pending-flag branch
+## below the source's own resolveBossPendingActions() plays one for.
 func resolve_boss_pending_actions(boss: BossCharacter, player: PlayerCharacter) -> void:
 	var parent := boss.get_parent()
 
+	if boss.intro_just_started:
+		boss.intro_just_started = false
+		AudioEngine.play_sfx("bossRoar")
+
 	if boss.boss_phase_just_changed:
 		boss.boss_phase_just_changed = false
+		AudioEngine.play_sfx("bossPhase")
 		boss_phase_changed.emit(boss)
 
 	if boss.pending_melee_slam:
@@ -265,6 +279,7 @@ func resolve_boss_pending_actions(boss: BossCharacter, player: PlayerCharacter) 
 		var slam_pos: Vector2 = boss.global_position + Vector2(cos(boss.facing), sin(boss.facing)) * 60.0
 		if parent != null:
 			VfxPresets.ember_burst_vfx(parent, slam_pos, 90.0)
+		AudioEngine.play_sfx("bossHit")
 		var slam_dist: float = boss.global_position.distance_to(player.global_position)
 		if slam_dist <= 130.0 + player.radius:
 			var dir: Vector2 = player.global_position - boss.global_position
@@ -278,6 +293,7 @@ func resolve_boss_pending_actions(boss: BossCharacter, player: PlayerCharacter) 
 		boss.pending_shockwave = false
 		if parent != null:
 			VfxPresets.ember_burst_vfx(parent, boss.global_position, 230.0 * 0.9)
+		AudioEngine.play_sfx("bossHit")
 		var shock_dist: float = boss.global_position.distance_to(player.global_position)
 		if shock_dist <= 230.0 + player.radius:
 			var dir: Vector2 = player.global_position - boss.global_position
@@ -308,11 +324,13 @@ func resolve_boss_pending_actions(boss: BossCharacter, player: PlayerCharacter) 
 				var add: EnemyCharacter = ENEMY_SCENE.instantiate()
 				room.add_enemy(add)
 				add.setup(summon_def, Vector2(x, y), factors["hp_mult"] * 0.8, factors["damage_mult"] * 0.8)
+		AudioEngine.play_sfx("bossRoar")
 
 	if boss.pending_meteor_impacts.size() > 0:
 		for impact in boss.pending_meteor_impacts:
 			if parent != null:
 				VfxPresets.ember_burst_vfx(parent, impact, 65.0)
+			AudioEngine.play_sfx("impactCrit", 0.0)
 			var impact_dist: float = impact.distance_to(player.global_position)
 			if impact_dist <= 70.0 + player.radius:
 				var dir: Vector2 = player.global_position - impact
@@ -334,6 +352,7 @@ func resolve_boss_pending_actions(boss: BossCharacter, player: PlayerCharacter) 
 		if parent != null:
 			VfxPresets.death_burst(parent, boss.global_position, Palette.EMBER4)
 			VfxPresets.death_burst(parent, boss.global_position, Palette.EMBER6)
+		AudioEngine.play_sfx("bossDeath")
 		boss_defeated.emit(boss)
 
 # ---------------------------------------------------------------- Core damage pipeline
@@ -367,8 +386,10 @@ func damage_player_to_enemy(player: PlayerCharacter, enemy: EnemyCharacter, base
 		if blocked:
 			var spark_pos: Vector2 = enemy.global_position + Vector2(cos(enemy.facing), sin(enemy.facing)) * enemy.radius * 0.9
 			VfxPresets.shield_sparks(parent, spark_pos, enemy.facing)
+			AudioEngine.play_sfx("shieldClang", 50.0)
 		else:
 			VfxPresets.hit_impact(parent, enemy.global_position, enemy.def.accent_color, crit)
+			AudioEngine.play_sfx("impactCrit" if crit else "impactLight", 20.0)
 
 	var knockback_force: float = opts.get("knockback_force", 0.0)
 	if knockback_force != 0.0 and not blocked:
@@ -401,6 +422,7 @@ func on_enemy_death(_player: PlayerCharacter, enemy: EnemyCharacter) -> void:
 	var parent := enemy.get_parent()
 	if parent != null:
 		VfxPresets.death_burst(parent, enemy.global_position, enemy.def.accent_color)
+	AudioEngine.play_sfx("eliteDeath" if enemy.def.is_elite else "enemyDeath")
 	enemy_died.emit(enemy)
 
 func damage_enemy_to_player(player: PlayerCharacter, base_damage: float, opts: Dictionary = {}) -> bool:
@@ -418,6 +440,9 @@ func damage_enemy_to_player(player: PlayerCharacter, base_damage: float, opts: D
 			var dodge_parent := player.get_parent()
 			if dodge_parent != null:
 				VfxPresets.perfect_dodge_burst(dodge_parent, player.global_position)
+			AudioEngine.play_sfx("perfectDodge")
+		elif result["shield_consumed"]:
+			AudioEngine.play_sfx("shieldBreak")
 		return false
 	RunState.record_damage_taken(result["taken"])
 	var knockback_force: float = opts.get("knockback_force", 0.0)
@@ -426,8 +451,10 @@ func damage_enemy_to_player(player: PlayerCharacter, base_damage: float, opts: D
 	var hit_parent := player.get_parent()
 	if hit_parent != null:
 		VfxPresets.hit_impact(hit_parent, player.global_position, Palette.BLOOD_BRIGHT, false)
+	AudioEngine.play_sfx("playerHurt")
 	hit_landed.emit(null, player, result["taken"], false)
 	if not player.alive:
+		AudioEngine.play_sfx("playerDeath")
 		player_died.emit()
 	return true
 
