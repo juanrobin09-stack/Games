@@ -7,7 +7,7 @@ kept/improved/rebuilt, the recommended architecture, and the complete
 [`GODOT_MIGRATION.md`](../GODOT_MIGRATION.md) at the repo root. Read that
 first; this file only tracks what's actually been built here so far.
 
-## Status: build-order step 8 of 12 — particles
+## Status: build-order step 9 of 12 — UI (in progress)
 
 **Important caveat:** this project was authored without access to the
 Godot editor or engine binary — this environment doesn't have Godot
@@ -234,12 +234,69 @@ about a burst that never appears at all (likely a parent/positioning
 issue) versus one that appears but looks visually wrong (likely a
 color/shape/timing tuning issue in `vfx_presets.gd`).
 
+### Step 9 — UI (in progress: upgrade-ownership system + core HUD landed; NOT yet live-tested)
+
+Per `GODOT_MIGRATION.md` §5. Split into two pieces so far, both real (no
+stubs) as far as they go, neither confirmed against the actual editor yet.
+
+**1. The upgrade-ownership system** — the prerequisite step 8's README
+flagged as missing (no owned-upgrades list on Player, no `UpgradePool`/
+`Shop` port). Now built:
+
+| File | Ports | State |
+|---|---|---|
+| `entities/player.gd` | `Player.ts`'s `recomputeStats`/`addUpgrade`/`addBonusModifier`/synergies | `upgrades`/`active_synergies`/`bonus_modifiers` fields + the 5 methods, ported verbatim against the TS source (including the "wrath" synergy's same-tag-twice exception, see `synergy_definition.gd`) |
+| `godot/progression/` (new folder) | `data/playerProgression.ts`, `progression/UpgradePool.ts`, `world/Shop.ts` | `player_progression.gd`/`upgrade_pool.gd`/`shop.gd` — grouped as one domain rather than mirroring the TS split across `data/`/`progression/`/`world/`. `OwnedUpgrade`/`ShopOffer`/`PlayerStatDef` are small RefCounted data holders |
+| `autoload/level_flow.gd` | `Game.ts`'s `openChest`/`grantUpgrade`/`currentGateIds`/`spendStatPoint` | `open_chest()` now rolls and grants a real upgrade (a chest has no player-choice step, so it needed no new UI to wire for real); `spend_stat_point()` is the real entry point (checks the Bow/Zone-1 lock `RunState.spend_stat_point` deliberately never did) |
+
+Room-clear and shop/event rewards still print their old "deferred to step
+9" stub messages — those genuinely need a 3-choice/multi-offer `Control`
+screen to show the player, unlike a chest's single guaranteed grant.
+
+**2. The core HUD** (`ui/hud.gd` + `ui/hud_icon.gd` + `scenes/ui/hud.tscn`,
+instanced under `main.tscn`'s `UI` CanvasLayer) — HP/stamina/energy bars
+with shield pips and buff icons, the ability slot with its cooldown sweep,
+weapon/ability name + icon, embers/timer/zone-room label, the corruption
+bar, the level/XP bar + stat-point hint, and the interact prompt. Built
+entirely in GDScript (`_ready()` constructs the whole Control tree) rather
+than hand-authored as `.tscn` node data — with no editor to lay out and
+verify ~25 nested Controls visually, straight-line code was the safer bet
+than cross-referencing a hand-typed node tree. Every color/pixel size was
+read off `style.css`'s own `.hud-*` rules, not guessed; every non-obvious
+Control/BoxContainer/Label/ColorRect API surface (anchors, `LayoutPreset`,
+theme overrides, `ceili`/`floori`) was checked against the real Godot 4.3
+class docs before use, same discipline step 8's VFX pass established.
+
+**Deliberately deferred, not forgotten:** the minimap (`refreshMinimap`'s
+double-resolution grid algorithm), the toast/phase-banner/synergy-banner
+system, the boss bar (its data needs the boss attack-FSM gap closed
+first — see step 8's README section), and both vignettes (danger/
+corruption — Godot has no cheap radial-gradient-on-a-flat-Control
+primitive, and a botched full-screen overlay could make the game
+unreadable with no way to catch it before it ships). The debug/diagnostic
+panel (`DebugLabel`/`LiveLabel`) still exists — it starts hidden now that
+Hud covers the same core info for players, toggle it back with **F1** for
+the fuller picture (data registry counts, room/enemy internals, owned
+upgrades/synergies) when something needs closer inspection.
+
+**How to test it:** confirm the HUD appears (HP/stamina/energy bars top-
+left, embers/timer/zone top-right, ability slot bottom-left, level/XP
+bottom-right) and updates live as you play — take damage, swing until
+stamina empties, use the ability, kill something for XP, walk near an
+interactable for the E-prompt to appear. Open a chest and confirm a real
+upgrade is granted (its stats should visibly change — e.g. an armor
+upgrade should reduce damage taken) rather than the old "deferred" print.
+Press **F1** to confirm the old debug panel still works underneath.
+**Nothing above has been run in the actual editor yet** — report the
+first parse/runtime error verbatim, same as every step before this one.
+
 ### Next steps (not started)
 
-Per `GODOT_MIGRATION.md` §5, step 9: UI — rebuild `HUD`, menus, shop/
-event/upgrade screens as `Control` scenes, porting `HUD.ts`'s update-
-only-changed-fields pattern rather than rebuilding trees every frame. The
-minimap's `GridContainer` port belongs here too. This is also the step
-that unblocks several VFX call sites step 8 had to skip (reward-granting,
-the shop/event landmarks) — worth revisiting `vfx_presets.gd`'s "not
-wired yet" list once it lands.
+Room-clear's 3-choice upgrade picker (`UpgradeSelectUI`), `ShopUI`,
+`EventUI`, `RewardPopup`, and `InventoryUI` (Character tab for spending
+stat points via the now-real `LevelFlow.spend_stat_point`, Build tab for
+owned upgrades/synergies) — these are what the upgrade-ownership system
+above was built to unblock. Then the minimap/toasts/banners/vignettes
+deferred above. `GODOT_MIGRATION.md`'s own Phase-A/Phase-B split (gameplay-
+critical screens first, the MainMenu/PauseMenu/Settings/Victory/Credits
+meta-shell after) is the intended order.

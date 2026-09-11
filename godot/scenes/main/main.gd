@@ -29,9 +29,18 @@ const PLAYER_SCENE := preload("res://entities/player.tscn")
 ## darkness, and debug/diagnostic text should stay legible regardless.
 @onready var debug_label: Label = $UI/DebugLabel
 @onready var live_label: Label = $UI/LiveLabel
+@onready var hud: HudLayer = $UI/Hud
 
 var player: PlayerCharacter
 var run_seed: String = ""
+
+## The debug/diagnostic panel (DebugLabel + LiveLabel) starts hidden now
+## that Hud carries the player-facing version of the same core info —
+## toggle back on with F1 when something needs the fuller picture (data
+## registry counts, room/enemy internals, upgrades/synergies) the real HUD
+## deliberately doesn't surface.
+var _debug_visible: bool = false
+var _f1_key_down: bool = false
 
 func _ready() -> void:
 	_print_diagnostics()
@@ -51,10 +60,43 @@ func _start_run() -> void:
 func _process(_delta: float) -> void:
 	if player == null:
 		return
+
+	if Input.is_physical_key_pressed(KEY_F1):
+		if not _f1_key_down:
+			_f1_key_down = true
+			_debug_visible = not _debug_visible
+			debug_label.visible = _debug_visible
+			live_label.visible = _debug_visible
+	else:
+		_f1_key_down = false
+
 	var w := player.weapon()
 	var a := player.ability()
 	var room := RunState.current_room()
 	var interaction = LevelFlow.get_interaction()
+
+	hud.update({
+		"player": player,
+		"embers": RunState.embers,
+		"zone_name": room.zone.name if room != null and room.zone != null else "?",
+		"room_label": HudLayer.room_type_label(room.type) if room != null else "?",
+		"corruption": RunState.corruption_ratio(),
+		"weapon_name": w.name if w != null else "?",
+		"ability_name": a.name if a != null else "?",
+		"weapon_icon": HudLayer.icon_for_weapon(player.weapon_id),
+		"ability_icon": HudLayer.icon_for_ability(player.ability_id),
+		"interact_prompt": interaction["label"] if interaction != null else "",
+		"elapsed_seconds": RunState.elapsed_time,
+		"stamina_denied": Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and player.attack_cooldown_timer <= 0.0 and not player.has_enough_stamina(),
+		"player_level": RunState.player_level,
+		"xp": RunState.xp,
+		"xp_to_next": RunState.xp_required_for_next_level(),
+		"stat_points": RunState.stat_points,
+		"is_max_level": RunState.player_level >= RunState.LEVEL_CAP,
+	})
+
+	if not _debug_visible:
+		return
 	live_label.text = "\n".join([
 		"LIVE (updates every frame):",
 		"LMB down: %s   RMB down: %s   Space down: %s" % [
@@ -149,7 +191,7 @@ func _print_diagnostics() -> void:
 	var state_name: String = GameState.State.keys()[GameState.current]
 	var lines: Array[String] = [
 		"EMBERFALL: LAST LIGHT — Godot scaffold (build-order step 8 of 12)",
-		"WASD move, mouse aim, LMB attack, Space dodge, RMB ability, Q cycle weapon, E interact",
+		"WASD move, mouse aim, LMB attack, Space dodge, RMB ability, Q cycle weapon, E interact, F1 debug overlay",
 		"GameState: %s (simulating: %s)   Soul Ash: %d   save loaded: %s" % [
 			state_name, GameState.is_simulating(), MetaProgression.soul_ash,
 			str(FileAccess.file_exists(MetaProgression.SAVE_PATH)),

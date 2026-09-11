@@ -68,6 +68,14 @@ func _on_player_leveled_up(_new_level: int, _stat_points_awarded: int) -> void:
 			VfxPresets.level_up_burst(parent, player.global_position)
 
 func _physics_process(delta: float) -> void:
+	# RunState.elapsed_time backs both corruption_ratio() and the HUD timer,
+	# but nothing ever incremented it before now — corruption_ratio() has
+	# been silently returning 0 for the whole run since build-order step 6
+	# wired it in. A real, if minor, pre-existing gap, not something this
+	# pass introduced; fixed here since the HUD timer needed it wired
+	# anyway. Ticks through a stairs transition too (a monotonic run clock,
+	# not gameplay-time — matches elapsedSeconds()'s own semantics).
+	RunState.elapsed_time += delta
 	if not _transition.is_empty():
 		_update_transition(delta)
 		return
