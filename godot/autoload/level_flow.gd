@@ -55,6 +55,10 @@ var player: PlayerCharacter = null
 ## Control parented under a Node2D like a room would render in WORLD
 ## space, following the camera, instead of as a screen overlay.
 var ui_root: Node = null
+## Set by main.gd alongside ui_root — the toast/phase-banner/synergy-
+## banner feedback calls throughout this file (room clears, rite waves,
+## zone transitions, level-ups, synergies) all go through it.
+var hud: HudLayer = null
 var _active_room: RoomContainer = null
 var _transition: Dictionary = {}
 var _interact_key_down: bool = false
@@ -63,6 +67,14 @@ var _inventory_key_down: bool = false
 func _ready() -> void:
 	CombatManager.enemy_died.connect(_on_enemy_died)
 	RunState.player_leveled_up.connect(_on_player_leveled_up)
+	CombatManager.champion_shield_broken.connect(_on_champion_shield_broken)
+
+## Ports Game.ts's private onChampionShieldBreak's own showPhaseBanner call
+## — the bloat-spawn/VFX half of that method already lives on CombatManager
+## itself (see its own on_champion_shield_break), which emits this signal
+## first specifically so the banner isn't coupled to that logic succeeding.
+func _on_champion_shield_broken(_enemy: Node) -> void:
+	hud.show_phase_banner("THE SHIELD SHATTERS")
 
 ## Ports Game.ts's grantKillXp: "if (levelsGained > 0) { ...
 ## spawnLevelUpBurst(...) }" — RunState.grant_xp() (called from
@@ -70,11 +82,16 @@ func _ready() -> void:
 ## crosses in one synchronous loop and fires this signal once at the end,
 ## so one burst per grant here matches the source exactly regardless of
 ## how many levels it actually crossed.
-func _on_player_leveled_up(_new_level: int, _stat_points_awarded: int) -> void:
+func _on_player_leveled_up(new_level: int, _stat_points_awarded: int) -> void:
 	if player != null and is_instance_valid(player):
 		var parent := player.get_parent()
 		if parent != null:
 			VfxPresets.level_up_burst(parent, player.global_position)
+	hud.show_phase_banner("LEVEL %d" % new_level)
+	hud.show_toast(
+		"A new stat point is ready to spend — press I to open your character." if RunState.stat_points == 1
+		else "%d stat points are ready to spend — press I to open your character." % RunState.stat_points
+	)
 
 func _physics_process(delta: float) -> void:
 	# RunState.elapsed_time backs both corruption_ratio() and the HUD timer,
@@ -355,7 +372,8 @@ func _grant_room_clear_reward(room: RoomContainer) -> void:
 		player.unlocked_weapons.append("bow")
 		player.weapon_id = "bow"
 		VfxPresets.level_up_burst(room, player.global_position)
-		print("LevelFlow: elite den cleared in the Ember Citadel — the Warden's Bow is yours")
+		hud.show_phase_banner("THE WARDEN'S BOW")
+		hud.show_toast("A weapon fast where the blade is slow. Attack speed now has something to sharpen.")
 
 	var bonus_luck: float = 0.0
 	if room.type == RoomContainer.Type.ELITE or room.type == RoomContainer.Type.HEART:
@@ -401,6 +419,7 @@ func open_stairs(room: RoomContainer, animate: bool) -> void:
 	for i in range(10):
 		var jitter := Vector2(randf_range(-30.0, 30.0), randf_range(-20.0, 20.0))
 		VfxPresets.spore_mote(room, stairs.global_position + jitter)
+	hud.show_toast("The seal grinds open. The stairs lead down.")
 
 func begin_descent(stairs: ObstacleNode) -> void:
 	if not _transition.is_empty():
@@ -489,6 +508,10 @@ func _complete_descent() -> void:
 		LevelGenerator.populate_room_content(next_room, zone, _spawn_options())
 	var arrival := _find_obstacle(next_room, ObstacleNode.Visual.STAIRS_UP)
 	_land_after_transition(next_room, arrival, "descend")
+	hud.show_phase_banner(zone.name.to_upper())
+	# 1.1s delay matches the source exactly — long enough that the subtitle
+	# toast doesn't visually collide with the phase banner's own entrance.
+	get_tree().create_timer(1.1).timeout.connect(func(): hud.show_toast(zone.subtitle))
 
 ## Mirrors _complete_descent: lands the player back in the previous zone's
 ## heart/boss room, at the mouth of ITS stairsDown, then walks them out to
@@ -500,6 +523,10 @@ func _complete_ascent() -> void:
 		LevelGenerator.populate_room_content(prev_room, zone, _spawn_options())
 	var arrival := _find_obstacle(prev_room, ObstacleNode.Visual.STAIRS_DOWN)
 	_land_after_transition(prev_room, arrival, "ascend")
+	# No subtitle toast here (unlike _complete_descent) — matches the
+	# source: re-entering a zone you've already visited doesn't need its
+	# "welcome to X" line again, only the phase banner.
+	hud.show_phase_banner(zone.name.to_upper())
 
 func _land_after_transition(room: RoomContainer, arrival: ObstacleNode, kind: String) -> void:
 	var fallback_mouth := Vector2(RoomContainer.ROOM_WIDTH / 2.0, RoomContainer.ROOM_HEIGHT / 2.0)
@@ -523,6 +550,7 @@ func begin_rite(room: RoomContainer) -> void:
 	room.ritual_wave = 0
 	room.ritual_wave_timer = 1.1
 	room.refresh_walls()
+	hud.show_phase_banner("THE RITE BEGINS")
 
 func _update_rite(room: RoomContainer, delta: float) -> void:
 	if not room.ritual_active or room.cleared:
@@ -551,6 +579,7 @@ func _update_rite(room: RoomContainer, delta: float) -> void:
 		VfxPresets.spore_burst_vfx(room, e.global_position, 26.0)
 	room.ritual_wave += 1
 	room.ritual_wave_timer = 1.6
+	hud.show_phase_banner("WAVE %d" % room.ritual_wave)
 	# Ports Game.ts's updateRite: two more candles catch per wave survived
 	# (indices (wave-1)*2 and (wave-1)*2+1, using the just-incremented wave).
 	for idx in [(room.ritual_wave - 1) * 2, (room.ritual_wave - 1) * 2 + 1]:
@@ -567,24 +596,29 @@ func _complete_rite(room: RoomContainer) -> void:
 	player.heal(player.stats.max_hp * 0.3)
 	VfxPresets.heal_sparkle(room, player.global_position)
 	RunState.embers += 35
-	print("LevelFlow: sanctum rite complete at %s — 35 embers + 30%% heal granted" % room.key)
+	hud.show_phase_banner("THE RITE IS DONE")
+	hud.show_toast("The sanctum yields what it kept: a rare blessing, and 35 Embers.")
 	_grant_room_clear_reward(room)
 
 # ---------------------------------------------------------------- Upgrade rewards
 
 ## Single funnel for granting an upgrade to the player so newly-formed
 ## synergies are always announced, wherever the upgrade came from. Mirrors
-## Game.ts's private grantUpgrade — the HUD synergy banner it stages via
-## setTimeout (staggered 900ms apart, for when several form from one grant)
-## doesn't exist yet, so a print stands in for each, same convention as
-## every other reward-feedback gap this build documents until step 9's UI
-## proper lands.
+## Game.ts's private grantUpgrade.
 func _grant_upgrade(def: UpgradeDefinition) -> void:
 	var new_synergies: Array[String] = player.add_upgrade(def)
-	for syn_id in new_synergies:
-		var syn: SynergyDefinition = DataRegistry.get_synergy(syn_id)
-		if syn != null:
-			print("LevelFlow: synergy formed -> %s (%s)" % [syn.name, syn.description])
+	# Staggered 0.9s apart (matches the source exactly) rather than all at
+	# once — a single grant can complete more than one synergy (see
+	# synergy_definition.gd's own "wrath" same-tag-twice case), and showing
+	# them simultaneously would either overlap or force show_synergy_banner
+	# to kill one mid-animation to show the next.
+	for i in range(new_synergies.size()):
+		var syn: SynergyDefinition = DataRegistry.get_synergy(new_synergies[i])
+		if syn == null:
+			continue
+		get_tree().create_timer(i * 0.9).timeout.connect(func():
+			hud.show_synergy_banner(syn.name, syn.description)
+		)
 
 # ---------------------------------------------------------------- Rest / Chest
 
@@ -596,6 +630,7 @@ func use_rest(room: RoomContainer) -> void:
 	var heal_amount: float = (player.stats.max_hp - player.hp) * 0.55
 	player.heal(heal_amount)
 	VfxPresets.heal_sparkle(room, player.global_position)
+	hud.show_toast("The brazier's warmth mends your wounds.")
 
 ## Ports Game.ts's private openChest: a chest grants exactly one upgrade, at
 ## or above its own tier — no player choice involved, unlike a room-clear

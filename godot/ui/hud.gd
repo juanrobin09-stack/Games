@@ -38,17 +38,30 @@ extends Control
 ##
 ## Deferred to a follow-up commit — NOT full step 9 yet, see godot/README.md:
 ## the minimap (refreshMinimap's double-resolution grid algorithm), the
-## toast/phase-banner/synergy-banner system, the boss bar (its data,
-## BossHudInfo, needs the boss attack-FSM gap closed first), and both
-## vignettes (danger/corruption) — Godot has no cheap radial-gradient-on-a-
-## flat-Control primitive, and a botched full-screen overlay risks making
-## the game unreadable with no way for me to catch it before it ships, so
-## that waits for its own carefully-tested pass instead of a guess.
+## boss bar (its data, BossHudInfo, needs the boss attack-FSM gap closed
+## first), and both vignettes (danger/corruption) — Godot has no cheap
+## radial-gradient-on-a-flat-Control primitive, and a botched full-screen
+## overlay risks making the game unreadable with no way for me to catch it
+## before it ships, so that waits for its own carefully-tested pass instead
+## of a guess.
+##
+## The toast/phase-banner/synergy-banner system (below) uses Tween, not
+## this file's usual _process()-driven manual interpolation
+## (FloatingText's own pattern) — CSS's multi-keyframe opacity+transform
+## animations (see show_phase_banner/show_synergy_banner below) chain much
+## more directly onto Tween.tween_property()/tween_interval() than onto
+## hand-rolled per-frame easing math for two different animations at once.
+## Every Tween here is pinned to TWEEN_PAUSE_PROCESS: a modal (Shop, say)
+## pausing the tree shouldn't also freeze a banner triggered by something
+## that happened to fire while it was open (buying an upgrade that
+## completes a synergy, mid-shop) — these are non-interactive feedback
+## overlays with nothing for get_tree().paused to protect.
 
 const BAR_TRACK_BG := Color(8.0 / 255.0, 6.0 / 255.0, 10.0 / 255.0, 0.65)
 const ABILITY_SLOT_SIZE := 46.0
 const BAR_ICON_SIZE := 26.0
 const SMALL_ICON_SIZE := 14.0
+const SYNERGY_BANNER_REST_TOP := 18.0
 
 var _hp_fill: ColorRect
 var _hp_label: Label
@@ -74,6 +87,13 @@ var _level_label: Label
 var _xp_fill: ColorRect
 var _xp_label: Label
 var _points_hint: Label
+var _toast_area: VBoxContainer
+var _phase_banner: Label
+var _phase_banner_tween: Tween
+var _synergy_banner: PanelContainer
+var _synergy_name_label: Label
+var _synergy_desc_label: Label
+var _synergy_banner_tween: Tween
 
 var _weapon_icon_id: String = ""
 var _ability_icon_id: String = ""
@@ -92,6 +112,7 @@ func _ready() -> void:
 	_build_bottom_left()
 	_build_bottom_right()
 	_build_interact_prompt()
+	_build_banners()
 
 # ---------------------------------------------------------------- Bar helper
 
@@ -372,6 +393,215 @@ func _build_interact_prompt() -> void:
 	_interact_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_interact_label.visible = false
 	add_child(_interact_label)
+
+func _build_banners() -> void:
+	_toast_area = VBoxContainer.new()
+	_toast_area.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_toast_area.alignment = BoxContainer.ALIGNMENT_CENTER
+	_toast_area.add_theme_constant_override("separation", 6)
+	_toast_area.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_toast_area.offset_top = 90.0
+	_toast_area.offset_left = -210.0
+	_toast_area.offset_right = 210.0
+	add_child(_toast_area)
+
+	# CSS positions this at top:38% (then transforms -50%/-50% to center ON
+	# that point) — a fixed anchor FRACTION, not a fixed pixel offset, so it
+	# lands at the same relative spot regardless of viewport size. Godot has
+	# no single named preset for "horizontal-center, vertical-at-a-custom-
+	# fraction," so anchor_top/anchor_bottom are set directly instead of via
+	# set_anchors_preset(); offsets then add a fixed-size box around that
+	# anchor point, same as every other region in this file.
+	_phase_banner = Label.new()
+	_phase_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_phase_banner.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_phase_banner.add_theme_font_size_override("font_size", 32)
+	_phase_banner.add_theme_color_override("font_color", Color(Palette.EMBER5))
+	_phase_banner.anchor_left = 0.5
+	_phase_banner.anchor_right = 0.5
+	_phase_banner.anchor_top = 0.38
+	_phase_banner.anchor_bottom = 0.38
+	_phase_banner.offset_left = -300.0
+	_phase_banner.offset_right = 300.0
+	_phase_banner.offset_top = -22.0
+	_phase_banner.offset_bottom = 22.0
+	_phase_banner.pivot_offset = Vector2(300.0, 22.0)
+	_phase_banner.modulate.a = 0.0
+	_phase_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_phase_banner)
+
+	_synergy_banner = PanelContainer.new()
+	_synergy_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_synergy_banner.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_synergy_banner.offset_top = SYNERGY_BANNER_REST_TOP
+	_synergy_banner.offset_bottom = SYNERGY_BANNER_REST_TOP + 90.0
+	_synergy_banner.offset_left = -170.0
+	_synergy_banner.offset_right = 170.0
+	var synergy_style := StyleBoxFlat.new()
+	synergy_style.bg_color = Color(Palette.PANEL_SOLID)
+	synergy_style.border_color = Color(Palette.SOUL)
+	synergy_style.set_border_width_all(1)
+	synergy_style.set_corner_radius_all(10)
+	synergy_style.content_margin_left = 26.0
+	synergy_style.content_margin_right = 26.0
+	synergy_style.content_margin_top = 10.0
+	synergy_style.content_margin_bottom = 10.0
+	synergy_style.shadow_color = Color(Palette.SOUL_DIM)
+	synergy_style.shadow_color.a = 0.35
+	synergy_style.shadow_size = 14
+	_synergy_banner.add_theme_stylebox_override("panel", synergy_style)
+	_synergy_banner.modulate.a = 0.0
+	add_child(_synergy_banner)
+
+	var synergy_col := VBoxContainer.new()
+	synergy_col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	synergy_col.alignment = BoxContainer.ALIGNMENT_CENTER
+	synergy_col.add_theme_constant_override("separation", 2)
+	_synergy_banner.add_child(synergy_col)
+	var synergy_label := Label.new()
+	synergy_label.text = "Synergy Formed"
+	synergy_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	synergy_label.add_theme_font_size_override("font_size", 10)
+	synergy_label.add_theme_color_override("font_color", Color(Palette.SOUL_BRIGHT))
+	synergy_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	synergy_col.add_child(synergy_label)
+	_synergy_name_label = Label.new()
+	_synergy_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_synergy_name_label.add_theme_font_size_override("font_size", 17)
+	_synergy_name_label.add_theme_color_override("font_color", Color(Palette.SOUL_BRIGHT))
+	_synergy_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	synergy_col.add_child(_synergy_name_label)
+	_synergy_desc_label = Label.new()
+	_synergy_desc_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_synergy_desc_label.add_theme_font_size_override("font_size", 11)
+	_synergy_desc_label.add_theme_color_override("font_color", Color(Palette.TEXT_DIM))
+	_synergy_desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD
+	_synergy_desc_label.custom_minimum_size = Vector2(280.0, 0.0)
+	_synergy_desc_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	synergy_col.add_child(_synergy_desc_label)
+
+# ---------------------------------------------------------------- Toasts / banners
+
+## Ports HUD.ts's showToast — appends a new toast (unlike the banners
+## below, several can be stacked/visible at once) that holds for
+## `duration` seconds then fades over 0.4s and frees itself. No entrance
+## animation, matching the source (a toast just appears — only its exit is
+## animated there too).
+func show_toast(text: String, duration: float = 4.2) -> void:
+	var toast := PanelContainer.new()
+	toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(Palette.PANEL_SOLID)
+	style.border_color = Color(Palette.BORDER_LIT)
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(10)
+	style.content_margin_left = 16.0
+	style.content_margin_right = 16.0
+	style.content_margin_top = 8.0
+	style.content_margin_bottom = 8.0
+	toast.add_theme_stylebox_override("panel", style)
+	var label := Label.new()
+	label.text = text
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD
+	label.add_theme_font_size_override("font_size", 13)
+	label.add_theme_color_override("font_color", Color(Palette.TEXT_DIM))
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	toast.add_child(label)
+	_toast_area.add_child(toast)
+
+	var tween := create_tween()
+	tween.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	tween.tween_interval(duration)
+	tween.tween_property(toast, "modulate:a", 0.0, 0.4).set_trans(Tween.TRANS_LINEAR)
+	tween.tween_callback(func():
+		_toast_area.remove_child(toast)
+		toast.queue_free()
+	)
+
+## Ports HUD.ts's showPhaseBanner — one reused element (not stacked); a
+## call while a previous banner is still animating kills that tween and
+## restarts fresh with the new text, mirroring the source's own remove/
+## reflow/re-add-'showing'-class restart trick. Timing/keyframes read off
+## style.css's own `phaseBanner` animation (2.6s: 0-15% fade+scale in,
+## 15-80% hold, 80-100% fade+drift out) — Tween chaining maps onto CSS
+## keyframe percentages directly, which is the whole reason this uses
+## Tween rather than this file's usual manual _process() interpolation
+## (see this file's own header).
+func show_phase_banner(text: String) -> void:
+	if _phase_banner_tween != null and _phase_banner_tween.is_valid():
+		_phase_banner_tween.kill()
+	_phase_banner.text = text
+	_phase_banner.modulate.a = 0.0
+	_phase_banner.scale = Vector2(0.9, 0.9)
+	_phase_banner.offset_top = -22.0
+	_phase_banner.offset_bottom = 22.0
+
+	# Animates offset_top/offset_bottom together (not .position) for the
+	# exit drift — .position is the Control's ABSOLUTE placement in its
+	# parent, computed ONCE from anchors+offsets; overwriting it directly
+	# discards that computed (horizontally-centered) placement entirely
+	# rather than nudging it, which is what actually happened the first
+	# time this was tried (confirmed via a real screenshot: the banner
+	# jumped to the parent's literal top-left corner). offset_top/bottom
+	# stay relative to the anchor the whole time, so moving both by the
+	# same delta shifts the box without fighting the anchor system.
+	# `.parallel()` called as its own statement right before a tweener marks
+	# ONLY that one tweener as starting alongside the PREVIOUS one — unlike
+	# the stickier set_parallel(true)/chain() combination, which turned out
+	# NOT to behave as documented here (verified empirically: a tweener
+	# added after chain().tween_interval(...) fired at the same time as the
+	# FIRST parallel tweener several steps earlier, not after the interval
+	# — the "hold" collapsed to ~0s and the banner vanished almost as soon
+	# as it appeared). Every entry below with no `.parallel()` before it
+	# waits for everything before it, same as plain sequential Tween use.
+	_phase_banner_tween = create_tween()
+	_phase_banner_tween.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	_phase_banner_tween.tween_property(_phase_banner, "modulate:a", 1.0, 0.39).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	_phase_banner_tween.parallel()
+	_phase_banner_tween.tween_property(_phase_banner, "scale", Vector2.ONE, 0.39).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	_phase_banner_tween.tween_interval(1.69)
+	_phase_banner_tween.tween_property(_phase_banner, "modulate:a", 0.0, 0.52).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	_phase_banner_tween.parallel()
+	_phase_banner_tween.tween_property(_phase_banner, "scale", Vector2(1.05, 1.05), 0.52).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	_phase_banner_tween.parallel()
+	_phase_banner_tween.tween_property(_phase_banner, "offset_top", -32.0, 0.52).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	_phase_banner_tween.parallel()
+	_phase_banner_tween.tween_property(_phase_banner, "offset_bottom", 12.0, 0.52).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+
+## Ports HUD.ts's showSynergyBanner — same single-reused-element restart
+## pattern as show_phase_banner, timing read off style.css's own
+## `synergyBanner` animation (4.2s: 0-10% fade+slide in, 10-85% hold,
+## 85-100% fade+slide out further).
+func show_synergy_banner(synergy_name: String, description: String) -> void:
+	if _synergy_banner_tween != null and _synergy_banner_tween.is_valid():
+		_synergy_banner_tween.kill()
+	_synergy_name_label.text = synergy_name
+	_synergy_desc_label.text = description
+	_synergy_banner.modulate.a = 0.0
+	_synergy_banner.offset_top = SYNERGY_BANNER_REST_TOP - 20.0
+	_synergy_banner.offset_bottom = SYNERGY_BANNER_REST_TOP - 20.0 + 90.0
+
+	# offset_top/offset_bottom animate together (not .position — see
+	# show_phase_banner's own comment on why) so the 90px box height stays
+	# fixed while the whole thing slides.
+	# See show_phase_banner's own comment: .parallel() called as its own
+	# statement before each tweener (not the sticky set_parallel(true)/
+	# chain() pair) is what actually gives correct sequential/parallel
+	# timing here.
+	_synergy_banner_tween = create_tween()
+	_synergy_banner_tween.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	_synergy_banner_tween.tween_property(_synergy_banner, "modulate:a", 1.0, 0.42).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
+	_synergy_banner_tween.parallel()
+	_synergy_banner_tween.tween_property(_synergy_banner, "offset_top", SYNERGY_BANNER_REST_TOP, 0.42).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
+	_synergy_banner_tween.parallel()
+	_synergy_banner_tween.tween_property(_synergy_banner, "offset_bottom", SYNERGY_BANNER_REST_TOP + 90.0, 0.42).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
+	_synergy_banner_tween.tween_interval(3.15)
+	_synergy_banner_tween.tween_property(_synergy_banner, "modulate:a", 0.0, 0.63).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_IN)
+	_synergy_banner_tween.parallel()
+	_synergy_banner_tween.tween_property(_synergy_banner, "offset_top", SYNERGY_BANNER_REST_TOP - 12.0, 0.63).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_IN)
+	_synergy_banner_tween.parallel()
+	_synergy_banner_tween.tween_property(_synergy_banner, "offset_bottom", SYNERGY_BANNER_REST_TOP - 12.0 + 90.0, 0.63).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_IN)
 
 # ---------------------------------------------------------------- Update
 

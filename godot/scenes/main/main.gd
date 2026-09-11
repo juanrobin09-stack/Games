@@ -55,6 +55,7 @@ func _start_run() -> void:
 	# the ranged weapons at all before that screen exists.
 	player.unlocked_weapons = ["emberBlade", "voidScythe", "solarSpear", "bow"]
 	LevelFlow.ui_root = $UI
+	LevelFlow.hud = hud
 	LevelFlow.start_new_run(run_seed, player, self)
 
 ## Live readout of input/gating/combat/room state, refreshed every frame.

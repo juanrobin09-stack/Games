@@ -234,7 +234,7 @@ about a burst that never appears at all (likely a parent/positioning
 issue) versus one that appears but looks visually wrong (likely a
 color/shape/timing tuning issue in `vfx_presets.gd`).
 
-### Step 9 — UI (in progress: every Phase-A gameplay-critical screen — upgrade-ownership system, core HUD, room-clear/chest rewards, the shop, the event/shrine screen, and the character sheet — landed and confirmed against a real running build; only the minimap/toasts/banners/vignettes remain before Phase B)
+### Step 9 — UI (in progress: every Phase-A gameplay-critical screen AND the toast/banner feedback system — upgrade-ownership, core HUD, room-clear/chest rewards, the shop, the event/shrine screen, the character sheet, toasts/phase-banners/synergy-banners — landed and confirmed against a real running build; only the minimap/boss-bar/vignettes remain before Phase B)
 
 Per `GODOT_MIGRATION.md` §5.
 
@@ -390,28 +390,76 @@ Two things worth flagging about this screen specifically:
   — that menu doesn't exist yet (Phase B), so `open_inventory_ui`'s
   `initial_tab` parameter has no second caller yet, kept for when it does.
 
-**Deliberately deferred, not forgotten:** the minimap, the toast/phase-
-banner/synergy-banner system, the boss bar (needs the boss attack-FSM gap
-closed first), and both vignettes. The debug/diagnostic panel
-(`DebugLabel`/`LiveLabel`) still exists, hidden by default — toggle with
-**F1**.
+**7. The toast/phase-banner/synergy-banner feedback system** — the first
+step-9 work item that isn't a screen: three small, reusable pieces of HUD
+feedback, wired into every existing gameplay moment that wants one, all
+newly real this pass.
+
+| File | Ports | State |
+|---|---|---|
+| `ui/hud.gd` | `HUD.ts`'s `showToast`/`showPhaseBanner`/`showSynergyBanner` | New `_build_banners()` (toast area, one reused phase-banner Label, one reused synergy-banner panel) plus the 3 public methods. First HUD feedback to use `Tween` instead of this file's usual manual `_process()` interpolation — CSS's multi-keyframe opacity+transform animations chain directly onto `tween_property()`/`tween_interval()`, which manual per-frame easing math doesn't buy anything over |
+| `autoload/combat_manager.gd` | (new) | New `champion_shield_broken` signal, emitted from the existing `on_champion_shield_break` (which already did the bloat-spawn/VFX half of `Game.ts`'s `onChampionShieldBreak` — only the banner call was missing) |
+| `autoload/level_flow.gd` | every `showToast`/`showPhaseBanner`/`showSynergyBanner` call site in `Game.ts` | New `hud` field (set by `main.gd`, same pattern as `ui_root`) plus calls added at: level-up, the elite-den Bow find, synergy formation (staggered 0.9s apart, matching the source — a single grant can complete more than one), resting at a brazier, a heart room's stairs unsealing, both halves of a zone transition (only the descent half also shows the delayed zone subtitle toast, matching the source), all three sanctum-rite beats (begins/wave N/done, the last with its reward toast), and the champion shield-break |
+
+Two real Tween gotchas hit and fixed while building this — both confirmed
+via small standalone scenes run through the same Godot+Xvfb setup (a
+`print` timing log is a faster way to nail down animation-sequencing
+questions than a screenshot is):
+- **A Tween's `.position` is an absolute placement, not an animatable
+  offset from wherever anchors put a Control.** Both banners' entrance/
+  exit animations first tried animating `.position` for the CSS
+  `transform: translateY(...)` slide effect — which instead teleported
+  each banner to its parent's literal top-left corner the moment the
+  animation started (confirmed via a real screenshot: the synergy banner
+  landed on top of the HP bar). `.position` is a Control's fully-resolved
+  placement, computed once from anchors+offsets; writing to it directly
+  discards that computed placement rather than nudging it, and nothing
+  re-triggers anchor resolution afterward to put it back. Fixed by
+  animating `offset_top`/`offset_bottom` together instead (by the same
+  delta, to preserve box height) — offsets stay anchor-relative the whole
+  time, which is what a slide effect actually needs.
+- **`set_parallel(true)` + `chain()` did not behave as documented.**
+  The plan was: mark a block of tweeners parallel, `chain()` back to
+  sequential for a hold `tween_interval()`, then `set_parallel(true)`
+  again for the exit block. In practice the tweener added right after
+  `chain().tween_interval(...)` fired at the same time as the FIRST
+  tweener in an EARLIER parallel block, not after the interval — the
+  "hold" collapsed to ~0s and every banner faded back out almost as soon
+  as it finished fading in (confirmed both via a screenshot taken mid-
+  animation, where the phase banner had already vanished, and via a
+  standalone timing-log scene). The fix, verified the same way: never use
+  `set_parallel(true)`/`chain()` at all — call the single-shot `.parallel()`
+  as its own statement immediately before each tweener that should start
+  alongside the one before it. `.parallel()` transitively chains (marking
+  C parallel with B, itself parallel with A, correctly starts A/B/C all
+  together), which is exactly what multi-property keyframes need.
+
+**Deliberately deferred, not forgotten:** the minimap, the boss bar (needs
+the boss attack-FSM gap closed first), and both vignettes. The debug/
+diagnostic panel (`DebugLabel`/`LiveLabel`) still exists, hidden by
+default — toggle with **F1**.
 
 **How to test it:** same as before (HUD live-updating, F1 toggle, opening
 a chest, clearing a room for the 3-card picker, browsing the shop, an
-event's shrine) — all confirmed working via real screenshots, not just
-believed to. New this pass: press **I** from anywhere during a run,
-confirm the Character tab shows real Level/XP/stat rows (a locked one —
-Ability Damage before Zone 1 — should read differently from a spendable
-one), spend a point and confirm the row/XP bar/available-points count all
-update immediately, switch to the Build tab and confirm every owned
-upgrade appears as a card and any active synergies appear above them, and
-confirm **Back** closes the screen and unpauses.
+event's shrine, the character sheet) — all confirmed working via real
+screenshots, not just believed to. New this pass: level up and confirm a
+"LEVEL N" banner plus a stat-point toast appear; rest at a brazier and
+confirm its toast; clear the Ember Citadel's elite den and confirm the
+Bow banner+toast; pick up a synergy-completing upgrade (from any source —
+chest, room-clear, shop, event) and confirm the synergy banner appears
+(and, picking one that completes two at once, that they stack 0.9s
+apart rather than overlapping); descend or ascend a zone's stairs and
+confirm the zone-name banner (descend only: the delayed subtitle toast
+too); in the Hollow Ruins' sanctum, begin the rite and confirm "THE RITE
+BEGINS", each wave's banner, and "THE RITE IS DONE" plus its reward toast
+in sequence; in the Ember Citadel, break the Sunken Warden's shield and
+confirm "THE SHIELD SHATTERS".
 
 ### Next steps (not started)
 
 Every gameplay-critical (Phase-A) screen `GODOT_MIGRATION.md` calls for is
-now landed. What's left before Phase B: the minimap, the toast/phase-
-banner/synergy-banner system, the boss bar (blocked on the boss attack-FSM
-gap), and both vignettes — all deferred above. Then Phase B itself: the
-MainMenu/PauseMenu/Settings/Victory/Credits meta-shell, per
-`GODOT_MIGRATION.md`'s own Phase-A/Phase-B split.
+now landed, and so is its toast/banner feedback layer. What's left before
+Phase B: the minimap, the boss bar (blocked on the boss attack-FSM gap),
+and both vignettes. Then Phase B itself: the MainMenu/PauseMenu/Settings/
+Victory/Credits meta-shell, per `GODOT_MIGRATION.md`'s own Phase-A/Phase-B
+split.

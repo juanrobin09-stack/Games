@@ -31,6 +31,7 @@ signal dodge_perfected(character: Node)
 signal ability_cast(character: Node, ability_id: String)
 signal enemy_died(enemy: Node)
 signal player_died()
+signal champion_shield_broken(enemy: Node)
 
 const PROJECTILE_SCENE := preload("res://entities/projectile.tscn")
 const ENEMY_SCENE := preload("res://entities/enemy.tscn")
@@ -220,6 +221,7 @@ func detonate_bloat(player: PlayerCharacter, enemy: EnemyCharacter) -> void:
 ## stone chips and each new bloat's own spore-burst VFX. Camera shake/
 ## hit-stop/SFX are still deferred (no camera-shake system ported at all).
 func on_champion_shield_break(enemy: EnemyCharacter) -> void:
+	champion_shield_broken.emit(enemy)
 	var blightbloat_def: EnemyDefinition = DataRegistry.get_enemy("blightbloat")
 	var parent := enemy.get_parent()
 	if blightbloat_def == null or parent == null:
