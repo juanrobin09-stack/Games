@@ -12,10 +12,12 @@ extends Node2D
 ## attacks (melee or ranged depending on the equipped weapon), space
 ## dodges, right click channels the ability (still no damage/radius effect
 ## resolved — the player's actual ability effects are progression-system
-## work, not done yet), Q cycles the equipped weapon (debug stand-in for
-## the real loadout screen — LoadoutSelectUI, still not built; see
-## godot/README.md), **E interacts** (chests, the sanctum circle, resting
-## at a brazier, stairs, shop/event landmarks).
+## work, not done yet), **E interacts** (chests, the sanctum circle,
+## resting at a brazier, stairs, shop/event landmarks). Which weapon/
+## ability a run starts with is chosen once, before EXPLORATION begins —
+## LoadoutSelectUI when there's a real choice (more than the single
+## starting kit unlocked), an automatic start otherwise; there's no
+## in-run switching, matching the source (Game.ts has none either).
 ##
 ## A run seed is generated fresh each Play unless the MainMenu's seed field
 ## is filled in — same seed always regenerates the same 3 zone layouts in
@@ -75,11 +77,8 @@ func _show_main_menu() -> void:
 	GameState.change_state(GameState.State.MAIN_MENU)
 	_current_screen = MainMenuUI.show_main_menu($UI, {
 		"on_play": func(seed_text: String): _begin_run(seed_text),
-		# TODO(Phase B, next slice): the Armory (Upgrades/Armory tabs) —
-		# still unbuilt as of this commit; wired as soon as it lands rather
-		# than left silently dead.
-		"on_upgrades": func(): print("Armory (Upgrades) — not built yet"),
-		"on_armory": func(): print("Armory — not built yet"),
+		"on_upgrades": func(): _show_armory(ArmoryUI.Mode.UPGRADES),
+		"on_armory": func(): _show_armory(ArmoryUI.Mode.ARMORY),
 		"on_settings": _show_settings,
 		"on_credits": _show_credits,
 	})
@@ -91,6 +90,10 @@ func _show_credits() -> void:
 func _show_settings() -> void:
 	_close_current_screen()
 	_current_screen = SettingsUI.show_settings($UI, false, _show_main_menu)
+
+func _show_armory(mode: ArmoryUI.Mode) -> void:
+	_close_current_screen()
+	_current_screen = ArmoryUI.show_armory($UI, mode, _show_main_menu)
 
 ## Ports Game.ts's startNewRun. Frees the PREVIOUS run's room nodes (see
 ## LevelFlow.start_new_run's own new cleanup block) and player instance
@@ -117,6 +120,19 @@ func _begin_run(seed_text: String) -> void:
 	add_child(player)
 	hud.visible = true
 	LevelFlow.start_new_run(run_seed, player, self)
+
+	# Ports Game.ts's own startNewRun gate exactly (`weapons.length > 1 ||
+	# abilities.length > 1`): only ask when there's an actual choice,
+	# otherwise begin immediately with the single starting kit.
+	if player.unlocked_weapons.size() > 1 or player.unlocked_abilities.size() > 1:
+		_current_screen = LoadoutSelectUI.show_loadout($UI, player.unlocked_weapons, player.unlocked_abilities, _confirm_loadout)
+	else:
+		_confirm_loadout(player.unlocked_weapons[0], player.unlocked_abilities[0])
+
+func _confirm_loadout(weapon_id: String, ability_id: String) -> void:
+	player.weapon_id = weapon_id
+	player.ability_id = ability_id
+	_close_current_screen()
 	GameState.change_state(GameState.State.EXPLORATION)
 
 ## Ports Game.ts's endRun: banks Soul Ash via the same formula
@@ -332,7 +348,7 @@ func _print_diagnostics() -> void:
 	var state_name: String = GameState.State.keys()[GameState.current]
 	var lines: Array[String] = [
 		"EMBERFALL: LAST LIGHT — Godot scaffold (build-order step 9 of 12)",
-		"WASD move, mouse aim, LMB attack, Space dodge, RMB ability, Q cycle weapon, E interact, F1 debug overlay",
+		"WASD move, mouse aim, LMB attack, Space dodge, RMB ability, E interact, F1 debug overlay",
 		"GameState: %s (simulating: %s)   Soul Ash: %d   save loaded: %s" % [
 			state_name, GameState.is_simulating(), MetaProgression.soul_ash,
 			str(FileAccess.file_exists(MetaProgression.SAVE_PATH)),

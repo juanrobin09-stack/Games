@@ -7,7 +7,7 @@ kept/improved/rebuilt, the recommended architecture, and the complete
 [`GODOT_MIGRATION.md`](../GODOT_MIGRATION.md) at the repo root. Read that
 first; this file only tracks what's actually been built here so far.
 
-## Status: build-order step 9 of 12 — UI (complete; Phase B meta-shell in progress)
+## Status: build-order step 9 of 12 — UI (complete, including the Phase B meta-shell)
 
 **Important caveat:** this project was authored without access to the
 Godot editor or engine binary — this environment doesn't have Godot
@@ -690,7 +690,49 @@ responding to clicks; Pause → Settings → Done correctly returns to
 Pause's main view (not MainMenu); Pause → Abandon Run → confirm → Abandon
 correctly pops back to `GameState.DEFEAT` with the tree unpaused again.
 
-**Not built yet** (next slice): the Armory/permanent-upgrades screen
-(`MetaProgressionMenu.ts`) — MainMenu's Upgrades/Armory buttons still just
-print a placeholder. `LoadoutSelectUI` (weapon/ability choice at run
-start — Q-cycle remains the interim access method).
+**Slice 4 — the Armory + the real loadout picker (Phase B complete).**
+MainMenu's Upgrades/Armory buttons now open a real screen, and a run's
+starting weapon/ability is chosen through an actual UI instead of the
+Q-cycle debug stand-in from build-order step 5 — which this slice
+removes outright (`player.gd`'s `cycle_weapon()` and its Q-key poll),
+since the real flow now exists everywhere Q-cycle stood in for it.
+
+| File | Ports | State |
+|---|---|---|
+| `ui/armory_ui.gd` (new) | `ui/MetaProgressionMenu.ts` | One panel, two tabs (Upgrades/Armory) sharing one Soul Ash balance and one scrolling row list — switching tabs swaps both the row list AND the title/subtitle/active-tab styling, matching the source's own single `render()` rebuilding everything on `switchMode`. Upgrade rows show the real `requires`-gated lock state (dimmed, "Locked", the blocking upgrade's own name in the description) and a level-pips row; Armory rows resolve a weapon/ability unlock's description from the real `WeaponDefinition`/`AbilityDefinition` it points to (`ref_id`), exactly like `MetaProgressionMenu.ts`'s own `detail` lookup |
+| `ui/loadout_select_ui.gd` (new) | `ui/LoadoutSelectUI.ts` | Weapon/ability cards the player can click to change selection before confirming; reuses `MetaProgression`'s own already-built `get_unlocked_weapon_ids()`/`get_unlocked_ability_ids()` (slice 1) rather than adding a second lookup path |
+| `scenes/main/main.gd` | `Game.ts`'s own `startNewRun` gate | `_begin_run()` now builds the room and player first (unchanged order), then only shows `LoadoutSelectUI` when `unlocked_weapons.size() > 1 or unlocked_abilities.size() > 1` — ports the source's `weapons.length > 1 \|\| abilities.length > 1` check exactly; with nothing purchased yet, a run still begins immediately with no screen in the way, same as today. `_confirm_loadout()` (mirrors the source's own `begin()` closure) applies the chosen ids and only then flips `GameState` to `EXPLORATION` |
+| `entities/player.gd` | — | `cycle_weapon()` and its Q-key edge-detect state removed — it was always documented as "debug-only... the real equip flow is LoadoutSelectUI.ts's own screen", and that screen now exists, so the stand-in doesn't linger as a second, undocumented way to change weapons the source has no equivalent for |
+
+One real bug found and fixed via a real screenshot, a new variant of a
+bug this project has already hit once before: a card's icon badge,
+built exactly like every other icon badge in this project (a plain
+`Control` sized 36×36 holding a full-rect background + an absolutely
+positioned icon), rendered as a full-width bar with the icon stranded in
+its corner instead of a clean square. Every *working* badge in this
+project sits inside an `HBoxContainer` row; `LoadoutSelectUI`'s card is
+the first to build one inside a `VBoxContainer` column — and a
+`VBoxContainer` stretches a plain child across its own full width by
+default, the exact same gotcha that hit MainMenu's button column in
+slice 2, just on a new element. Fixed with the same fix:
+`size_flags_horizontal = SIZE_SHRINK_BEGIN` on the badge. Caught by
+zooming into the actual screenshot rather than trusting a full-window
+thumbnail — at normal scale the misplaced badge was small enough to miss.
+
+**Verified** via a real headless run: bought a real Armory weapon unlock
+(Soul Ash deducted, `get_unlocked_weapon_ids()` picked it up immediately)
+and a real permanent upgrade (level 0→1, cost deducted, a `requires`-locked
+row correctly refused the same click and left both level and balance
+unchanged); Back correctly returns to MainMenu; Play then correctly opened
+the loadout picker (two unlocked weapons now), reselecting a card updated
+the highlighted choice, and Begin carried that exact choice through
+`_confirm_loadout` into the live HUD — the run's weapon readout showed the
+picked weapon, not the default.
+
+Every screen `GODOT_MIGRATION.md`'s Phase A/Phase B split calls for is now
+built and wired: MainMenu, PauseMenu, Settings, Victory/Defeat, Credits,
+and the Armory. **Not built yet, and out of scope for Phase B**: the
+underlying systems several of these screens already store real,
+persisted-but-inert preferences for — audio, quality tiers, accessibility,
+and i18n (see Settings' own header comment) — each its own future phase,
+not a UI gap.

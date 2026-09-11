@@ -48,10 +48,6 @@ var ability_id: String = "emberBurst"
 var unlocked_weapons: Array[String] = ["emberBlade"]
 var unlocked_abilities: Array[String] = ["emberBurst"]
 
-## Debug-only: edge-detect state for the Q weapon-cycle key (see
-## cycle_weapon()) so a held key advances once per press, not once per frame.
-var _cycle_weapon_key_down: bool = false
-
 var radius: float = 15.0
 var hp: float = 100.0
 var shield_charges: int = 0
@@ -180,18 +176,6 @@ func start_attack() -> void:
 	var behavior := WeaponBehavior.for_kind(w.kind)
 	if behavior != null:
 		behavior.execute(self, w)
-
-## Debug-only weapon switching, added for build-order step 5 so the
-## Bow/Solar Spear are actually testable — the real equip flow is
-## LoadoutSelectUI.ts's own screen, still build-order step 9. Cycles
-## unlocked_weapons the same way that screen sets weaponId directly (a
-## plain field write there too, nothing more). The playground scene seeds
-## unlocked_weapons with all 4 weapons for exactly this reason.
-func cycle_weapon() -> void:
-	if unlocked_weapons.is_empty():
-		return
-	var idx: int = unlocked_weapons.find(weapon_id)
-	weapon_id = unlocked_weapons[(idx + 1) % unlocked_weapons.size()]
 
 func start_dodge(dir: Vector2) -> void:
 	is_dodging = true
@@ -376,13 +360,6 @@ func _read_input() -> void:
 		start_dodge(dir)
 	if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and can_use_ability():
 		start_ability()
-
-	if Input.is_physical_key_pressed(KEY_Q):
-		if not _cycle_weapon_key_down:
-			_cycle_weapon_key_down = true
-			cycle_weapon()
-	else:
-		_cycle_weapon_key_down = false
 
 func _update_state(dt: float) -> void:
 	run_time += dt
