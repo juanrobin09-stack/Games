@@ -234,7 +234,7 @@ about a burst that never appears at all (likely a parent/positioning
 issue) versus one that appears but looks visually wrong (likely a
 color/shape/timing tuning issue in `vfx_presets.gd`).
 
-### Step 9 — UI (in progress: every Phase-A gameplay-critical screen, the toast/banner feedback system, AND the minimap — the only pieces of `hud.gd` itself left unbuilt are now the boss bar and the two vignettes — landed and confirmed against a real running build)
+### Step 9 — UI (in progress: every Phase-A gameplay-critical screen, the toast/banner feedback system, the minimap, AND both vignettes — the only piece of `hud.gd` itself left unbuilt is now the boss bar — landed and confirmed against a real running build)
 
 Per `GODOT_MIGRATION.md` §5.
 
@@ -454,10 +454,47 @@ bar-fill-ratio code has reassigned `anchor_right` every frame for 3 steps
 now with no issue); only `set_anchors_preset()` itself has the "discards
 the current rect" gotcha this step's HUD investigation first turned up.
 
+**9. The vignettes** — `dangerVignette`/`corruptionVignette`, the last
+pieces of `hud.gd` itself this step was waiting on besides the boss bar.
+
+| File | Ports | State |
+|---|---|---|
+| `ui/hud.gd` | `HUD.ts`'s `dangerVignette`/`corruptionVignette` + their `.hud-*-vignette` CSS | New `_build_vignettes()` (called first in `_ready()`, ahead of every other region, matching the source's own "these two are the earliest children of `.hud`" stacking — corruption before danger, so danger paints on top where they'd overlap) builds both as a `GradientTexture2D`-backed `TextureRect` stretched full-screen: danger red (opacity climbs as HP drops below 35%, capped at 0.55; below 15% HP it pulses instead via a raised-cosine wave standing in for the source's own keyframes) and corruption purple (opacity = `RunState.corruption_ratio() * 0.4`, reusing the already-exact `Palette.SHADOW` token for its color instead of re-typing the same hex) |
+
+**A real gap in this project's own toolbox, closed here.** Every earlier
+gradient in this codebase (HP/stamina/energy/XP bar fills, chest tier
+glows) simplified to a single flat color — this file's own header calls
+that out as "no cheap gradient-fill primitive on a plain Control." A
+radial vignette can't take that shortcut; the falloff *is* the whole
+effect. `GradientTexture2D`'s `FILL_RADIAL` mode turned out to be exactly
+the missing primitive: it treats `fill_from`/`fill_to` as a circle in the
+texture's own square UV space, and stretching that square non-uniformly
+onto a `TextureRect` (`stretch_mode = STRETCH_SCALE`) is exactly what
+turns the circle into an ellipse matching the target box's own aspect
+ratio — the same shape CSS's `radial-gradient(ellipse at 50% 50%, ...)`
+draws. The one number worked out on paper rather than guessed: sizing
+that circle's radius to `1/sqrt(2)` in UV space reproduces the source's
+default `farthest-corner` sizing keyword exactly (both reduce to "an
+ellipse scaled by `sqrt(2)` so it passes through the box's own corner") —
+the gap between that and a naive radius-0.5 guess is the gap between the
+color reaching full strength only at the four literal corners (correct)
+versus already maxing out at the edge midpoints (a visibly harsher,
+wrong-shaped vignette).
+
+Verified carefully given this file's own explicit risk flag ("a botched
+full-screen overlay risks making the game unreadable") — a real headless
+run forced HP down to 21% (danger, non-pulsing) then 6% (critical,
+pulsing — two screenshots ~0.55s apart confirmed via a PIL pixel-average
+diff that opacity actually oscillates, not just a static guess that the
+code *should*), then forced `corruption_ratio()` to its max, each checked
+against a full-HP/no-corruption baseline. All four states stay readable —
+only the screen's outer edges darken; the player, HUD, and minimap stay
+legible throughout.
+
 **Deliberately deferred, not forgotten:** the boss bar (needs the boss
-attack-FSM gap closed first) and both vignettes. The debug/diagnostic
-panel (`DebugLabel`/`LiveLabel`) still exists, hidden by default — toggle
-with **F1**.
+attack-FSM gap closed first). The debug/diagnostic panel
+(`DebugLabel`/`LiveLabel`) still exists, hidden by default — toggle with
+**F1**.
 
 **How to test it:** same as before (HUD live-updating, F1 toggle, opening
 a chest, clearing a room for the 3-card picker, browsing the shop, an
@@ -471,13 +508,19 @@ a faint outline, the heart/boss room shows as a gold diamond from the
 start (never hidden), connectors between discovered rooms light up ember
 only where they touch the room you're standing in, and — in a zone with
 enough rooms to exceed the "mini" footprint — the whole thing shrinks
-down rather than growing past its corner.
+down rather than growing past its corner. Also new: at low HP the screen
+edges should darken red (stronger as HP drops further, pulsing once
+below ~15%), and as a run drags on past the corruption soft cap the edges
+should also pick up a purple tint — both stay a background read, never
+cover the actual play area.
 
 ### Next steps (not started)
 
 Every gameplay-critical (Phase-A) screen `GODOT_MIGRATION.md` calls for is
-now landed, and so is its toast/banner feedback layer and the minimap.
-What's left before Phase B: the boss bar (blocked on the boss attack-FSM
-gap) and both vignettes. Then Phase B itself: the MainMenu/PauseMenu/
+now landed, and so is its toast/banner feedback layer, the minimap, and
+both vignettes. What's left before Phase B: only the boss bar (blocked on
+the boss attack-FSM gap — the boss currently fights as a generic enemy,
+with no slam/combo/shockwave/projectile/summon attacks for a health bar
+to telegraph against). Then Phase B itself: the MainMenu/PauseMenu/
 Settings/Victory/Credits meta-shell, per `GODOT_MIGRATION.md`'s own
 Phase-A/Phase-B split.

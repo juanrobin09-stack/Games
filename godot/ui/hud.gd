@@ -37,13 +37,9 @@ extends Control
 ## exactly why that fix alone didn't resolve the symptom.
 ##
 ## Deferred to a follow-up commit — NOT full step 9 yet, see godot/README.md:
-## the minimap (refreshMinimap's double-resolution grid algorithm), the
-## boss bar (its data, BossHudInfo, needs the boss attack-FSM gap closed
-## first), and both vignettes (danger/corruption) — Godot has no cheap
-## radial-gradient-on-a-flat-Control primitive, and a botched full-screen
-## overlay risks making the game unreadable with no way for me to catch it
-## before it ships, so that waits for its own carefully-tested pass instead
-## of a guess.
+## the boss bar — its data, BossHudInfo, needs the boss attack-FSM gap
+## closed first (the boss currently fights as a generic enemy with no
+## boss-specific attacks for a health bar to telegraph against).
 ##
 ## The toast/phase-banner/synergy-banner system (below) uses Tween, not
 ## this file's usual _process()-driven manual interpolation
@@ -62,7 +58,24 @@ const ABILITY_SLOT_SIZE := 46.0
 const BAR_ICON_SIZE := 26.0
 const SMALL_ICON_SIZE := 14.0
 const SYNERGY_BANNER_REST_TOP := 18.0
+## rgb(150,15,10) — the danger vignette's own edge color. No exact Palette
+## match (checked); the corruption vignette's rgb(74,61,99) IS an exact
+## match for Palette.SHADOW, reused directly in _build_vignettes() instead.
+const DANGER_VIGNETTE_COLOR := Color(150.0 / 255.0, 15.0 / 255.0, 10.0 / 255.0, 0.9)
+const DANGER_VIGNETTE_STOP := 0.55
+const CORRUPTION_VIGNETTE_STOP := 0.45
+const CORRUPTION_VIGNETTE_MAX_OPACITY := 0.4
+const DANGER_START := 0.35
+const CRITICAL_START := 0.15
+const DANGER_MAX_OPACITY := 0.55
+const DANGER_PULSE_PERIOD := 1.05
+const DANGER_PULSE_HIGH := 0.6
+const DANGER_PULSE_LOW := 0.32
+## 1/sqrt(2) — see _make_vignette()'s own comment for what this reproduces.
+const VIGNETTE_RADIUS := 0.70710678
 
+var _danger_vignette: TextureRect
+var _corruption_vignette: TextureRect
 var _hp_fill: ColorRect
 var _hp_label: Label
 var _shield_row: HBoxContainer
@@ -108,6 +121,7 @@ func _ready() -> void:
 	offset_top = 0.0
 	offset_right = 0.0
 	offset_bottom = 0.0
+	_build_vignettes()
 	_build_top_left()
 	_build_top_right()
 	_build_bottom_left()
@@ -181,6 +195,67 @@ func _make_small_icon(icon_id: String, color: Color) -> HudIcon:
 	return icon
 
 # ---------------------------------------------------------------- Regions
+
+## Ports HUD.ts's dangerVignette/corruptionVignette — both are `position:
+## absolute; inset: 0` full-screen radial gradients (transparent center,
+## opaque-colored edge; style.css lines ~796-817), appended to the source's
+## own .hud root BEFORE every other element there, so both are built here
+## first too — ahead of every other _build_*() call in _ready() — to match
+## that same "paints below everything else" stacking. Corruption is added
+## before danger (matching the source's own append order: corruption then
+## danger) so danger paints on top where the two would ever overlap.
+func _build_vignettes() -> void:
+	_corruption_vignette = _make_vignette(CORRUPTION_VIGNETTE_STOP, Color(Palette.SHADOW, 0.85))
+	add_child(_corruption_vignette)
+	_danger_vignette = _make_vignette(DANGER_VIGNETTE_STOP, DANGER_VIGNETTE_COLOR)
+	add_child(_danger_vignette)
+
+## Builds one full-rect TextureRect showing a radial gradient from fully
+## transparent (out to `stop_offset`, a 0..1 fraction of the ellipse's own
+## radius) to `end_color` (opaque) at the ellipse's edge — a real Gradient/
+## GradientTexture2D pair rather than a _draw() call: this file's usual
+## hand-drawn approach elsewhere in this project has no radial-gradient-
+## fill primitive of its own either, so _draw() would buy nothing here that
+## GradientTexture2D doesn't already do more directly (this project's own
+## header flagged "no cheap radial-gradient-on-a-flat-Control primitive" as
+## the very reason this was deferred — GradientTexture2D turned out to BE
+## that primitive, just not a flat-Control one).
+##
+## GradientTexture2D.FILL_RADIAL treats fill_from/fill_to as a CIRCLE in the
+## texture's own square UV space (0..1 on both axes); stretching that
+## square non-uniformly to fill this control's actual (non-square) box —
+## via stretch_mode = STRETCH_SCALE below — is exactly what turns that
+## circle into an ELLIPSE matching the box's own aspect ratio, same as the
+## source's `ellipse` gradients. VIGNETTE_RADIUS (1/sqrt(2)) is chosen so
+## that circle-in-UV-space passes exactly through the UV square's own
+## corner, which — worked out on paper, not guessed, since a wrong radius
+## here is a full-screen visual bug with no easy tell other than comparing
+## very carefully against the source — reproduces the source's own default
+## `farthest-corner` sizing keyword exactly: both reduce to the same
+## "ellipse scaled by sqrt(2) so it passes through the box's corner" shape.
+func _make_vignette(stop_offset: float, end_color: Color) -> TextureRect:
+	var gradient := Gradient.new()
+	gradient.offsets = PackedFloat32Array([stop_offset, 1.0])
+	gradient.colors = PackedColorArray([
+		Color(end_color.r, end_color.g, end_color.b, 0.0), end_color,
+	])
+
+	var texture := GradientTexture2D.new()
+	texture.gradient = gradient
+	texture.width = 128
+	texture.height = 128
+	texture.fill = GradientTexture2D.FILL_RADIAL
+	texture.fill_from = Vector2(0.5, 0.5)
+	texture.fill_to = Vector2(0.5 + VIGNETTE_RADIUS, 0.5)
+
+	var rect := TextureRect.new()
+	rect.texture = texture
+	rect.stretch_mode = TextureRect.STRETCH_SCALE
+	rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rect.modulate.a = 0.0
+	return rect
 
 func _build_top_left() -> void:
 	var col := VBoxContainer.new()
@@ -647,6 +722,27 @@ func update(data: Dictionary) -> void:
 	var hp_ratio: float = clampf(player.hp / maxf(1.0, player.stats.max_hp), 0.0, 1.0)
 	_set_bar_ratio(_hp_fill, hp_ratio)
 	_hp_label.text = "%d / %d" % [ceili(player.hp), ceili(player.stats.max_hp)]
+
+	# Danger vignette: opacity climbs as hp_ratio drops below DANGER_START,
+	# capped at DANGER_MAX_OPACITY; below CRITICAL_START it pulses instead —
+	# a raised cosine standing in for the source's own dangerPulse keyframes
+	# (high at 0%/100%, low at 50%, which a raised cosine already is exactly,
+	# so there's no real fidelity gap versus porting the keyframes property-
+	# by-property) and, matching a CSS animation overriding its element's
+	# inline opacity while playing, ignores the plain HP-driven value
+	# entirely rather than blending with it. No smoothing on either branch,
+	# same as every other bar in this file (_set_bar_ratio has none either)
+	# — skips the source's own `transition: opacity` easing as a deliberate,
+	# consistent simplification rather than an oversight.
+	var danger_opacity: float = 0.0
+	if player.alive:
+		danger_opacity = clampf((DANGER_START - hp_ratio) / DANGER_START, 0.0, 1.0) * DANGER_MAX_OPACITY
+	if player.alive and hp_ratio > 0.0 and hp_ratio <= CRITICAL_START:
+		var pulse_t: float = fmod(float(data["elapsed_seconds"]), DANGER_PULSE_PERIOD) / DANGER_PULSE_PERIOD
+		var pulse_wave: float = (cos(pulse_t * TAU) + 1.0) / 2.0
+		danger_opacity = DANGER_PULSE_LOW + (DANGER_PULSE_HIGH - DANGER_PULSE_LOW) * pulse_wave
+	_danger_vignette.modulate.a = danger_opacity
+	_corruption_vignette.modulate.a = clampf(float(data["corruption"]), 0.0, 1.0) * CORRUPTION_VIGNETTE_MAX_OPACITY
 
 	for child in _shield_row.get_children():
 		child.queue_free()
