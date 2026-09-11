@@ -6,12 +6,11 @@ extends Node2D
 ## getRoomInteraction). Reuses UpgradeDefinition.Rarity for `tier` rather
 ## than a parallel enum, since it's the exact same rarity scale.
 ##
-## Reward-granting (rolling and applying the actual upgrade) needs the
-## upgrade-ownership system, which doesn't exist yet (see GODOT_MIGRATION.md
-## §5 — that's UI, step 9). Opening a chest here plays out the same
-## closed -> opening -> opened state machine as the source, just without a
-## real reward at the end yet — LevelFlow.open_chest() logs what tier would
-## have been rolled so the gap is visible, not silent.
+## Reward-granting itself (rolling and applying the actual upgrade) lives in
+## LevelFlow.open_chest() — this node only plays out the closed -> opening
+## -> opened state machine and its own visuals; a chest has no player-choice
+## step (unlike a room-clear reward or a shop offer), so it needed no real
+## UI to wire for real (see GODOT_MIGRATION.md §5, build-order step 9).
 
 enum State { CLOSED, OPENING, OPENED }
 

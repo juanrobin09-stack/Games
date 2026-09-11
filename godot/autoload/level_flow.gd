@@ -131,6 +131,23 @@ func _spawn_options() -> Dictionary:
 		"run_seed": RunState.seed_value,
 	}
 
+## Mirrors Game.ts's private currentGateIds(): every id that can satisfy an
+## UpgradeDefinition's own requires_unlock gate — permanent Soul Ash
+## unlocks, every weapon the player has ever picked up this run, plus a
+## "zone1"/"zone2" id once the run has reached that depth. Used set-like
+## (id -> true), same convention as MetaProgression.unlocks itself.
+func current_gate_ids() -> Dictionary:
+	var ids: Dictionary = {}
+	for id in MetaProgression.get_unlocked_gate_ids():
+		ids[id] = true
+	for id in player.unlocked_weapons:
+		ids[id] = true
+	if RunState.zone_index >= 1:
+		ids["zone1"] = true
+	if RunState.zone_index >= 2:
+		ids["zone2"] = true
+	return ids
+
 # ---------------------------------------------------------------- Room flow
 
 ## Only ever the room the player is actually standing in is visible or
@@ -484,6 +501,22 @@ func _complete_rite(room: RoomContainer) -> void:
 	print("LevelFlow: sanctum rite complete at %s — 35 embers + 30%% heal granted" % room.key)
 	_grant_room_clear_reward(room)
 
+# ---------------------------------------------------------------- Upgrade rewards
+
+## Single funnel for granting an upgrade to the player so newly-formed
+## synergies are always announced, wherever the upgrade came from. Mirrors
+## Game.ts's private grantUpgrade — the HUD synergy banner it stages via
+## setTimeout (staggered 900ms apart, for when several form from one grant)
+## doesn't exist yet, so a print stands in for each, same convention as
+## every other reward-feedback gap this build documents until step 9's UI
+## proper lands.
+func _grant_upgrade(def: UpgradeDefinition) -> void:
+	var new_synergies: Array[String] = player.add_upgrade(def)
+	for syn_id in new_synergies:
+		var syn: SynergyDefinition = DataRegistry.get_synergy(syn_id)
+		if syn != null:
+			print("LevelFlow: synergy formed -> %s (%s)" % [syn.name, syn.description])
+
 # ---------------------------------------------------------------- Rest / Chest
 
 func use_rest(room: RoomContainer) -> void:
@@ -495,12 +528,23 @@ func use_rest(room: RoomContainer) -> void:
 	player.heal(heal_amount)
 	VfxPresets.heal_sparkle(room, player.global_position)
 
+## Ports Game.ts's private openChest: a chest grants exactly one upgrade, at
+## or above its own tier — no player choice involved, unlike a room-clear
+## reward or a shop offer, so (unlike those) this needed no new UI to wire
+## for real. The RNG seed string matches the source exactly so the same run
+## seed always rolls the same chest reward.
 func open_chest(room: RoomContainer) -> void:
 	var chest := room.chest
 	if chest == null or not chest.can_interact():
 		return
 	chest.open()
-	print("LevelFlow: chest opened at %s (tier %s) — upgrade grant deferred to step 9 (real UI)" % [room.key, UpgradeDefinition.Rarity.keys()[chest.tier]])
+	var rng := LevelGenerator.rng_from("%s:chestreward:%s" % [RunState.seed_value, room.key])
+	var def := UpgradePool.pick_upgrade_at_least_rarity(rng, chest.tier, current_gate_ids(), player.upgrades, RunState.zone_index)
+	if def == null:
+		return
+	var level: int = UpgradePool.upcoming_upgrade_level(def.id, player.upgrades)
+	_grant_upgrade(def)
+	print("LevelFlow: chest opened at %s (tier %s) — granted %s (Lv.%d)" % [room.key, UpgradeDefinition.Rarity.keys()[chest.tier], def.name, level])
 
 # ---------------------------------------------------------------- Kill rewards
 
@@ -525,3 +569,29 @@ func _on_enemy_died(enemy: Node) -> void:
 		var pickup: PickupNode = PICKUP_SCENE.instantiate()
 		room.add_pickup(pickup)
 		pickup.setup(PickupNode.Kind.EMBER, e.global_position, float(per))
+
+# ---------------------------------------------------------------- Stat points
+
+## Ports Game.ts's spendStatPoint — the real gate on spending a stat point;
+## RunState.spend_stat_point stays pure bookkeeping (no lock check, exactly
+## like the TS source keeps run.statPoints/statLevels as plain data) and
+## this is the actual entry point UI should call once InventoryUI's
+## Character tab exists. Looks up the stat def and checks the lock BEFORE
+## touching RunState, so an unknown or locked stat_id never leaves a point
+## spent with nothing applied.
+func spend_stat_point(stat_id: String) -> bool:
+	if player == null or not is_instance_valid(player):
+		return false
+	var def := PlayerProgression.get_player_stat_def(stat_id)
+	if def == null:
+		return false
+	if PlayerProgression.is_player_stat_locked(stat_id, player.unlocked_weapons.has("bow"), RunState.zone_index):
+		return false
+	if not RunState.spend_stat_point(stat_id):
+		return false
+	var mod := StatModifier.new()
+	mod.stat = def.stat
+	mod.mode = def.mode
+	mod.value = def.value_per_level
+	player.add_bonus_modifier(mod)
+	return true

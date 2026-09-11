@@ -13,12 +13,12 @@ extends CharacterBody2D
 ## which generates that format correctly itself) is a safe, easy follow-up,
 ## not a redo — nothing here depends on the raw-key approach specifically.
 ##
-## Not ported yet, on purpose (see build-order step 6, Progression):
-## recomputeStats()/addUpgrade()/addBonusModifier()/synergies. `stats` sits
-## at StatBlock.fresh() — no owned upgrades exist yet, so there is nothing
-## to recompute from. cloakPhase WAS deferred here the same way, until real
-## rendering (step 7) needed it for the cape's idle sway — see cloak_phase's
-## own doc-comment below.
+## recomputeStats()/addUpgrade()/addBonusModifier()/synergies were deferred
+## here until the upgrade-ownership system existed to drive them (see
+## build-order step 9's own progression/ additions) — ported below, in the
+## same cluster as take_damage()/heal(). cloakPhase was deferred the same
+## way until real rendering (step 7) needed it for the cape's idle sway —
+## see cloak_phase's own doc-comment below.
 
 signal died
 signal hp_changed(current: float, max: float)
@@ -32,7 +32,17 @@ const MOVE_ACCEL := 14.0
 
 enum AnimState { IDLE, RUN, ATTACK, HIT, DEAD, DODGE, ABILITY }
 
+## The player's own unmodified stat floor (createBaseStats() in the TS
+## source). recompute_stats() always re-derives `stats` from THIS, never
+## from the previous `stats` — assign to `stats` directly nowhere else.
+var base_stats: StatBlock = StatBlock.fresh()
 var stats: StatBlock = StatBlock.fresh()
+var upgrades: Array[OwnedUpgrade] = []
+var active_synergies: Array[String] = []
+## Run-scoped stat bonuses that aren't upgrades (stat-point spends via
+## LevelFlow.spend_stat_point, world events like the Spore Mother once
+## ported). Folded into every stat recompute alongside owned upgrades.
+var bonus_modifiers: Array[StatModifier] = []
 var weapon_id: String = "emberBlade"
 var ability_id: String = "emberBurst"
 var unlocked_weapons: Array[String] = ["emberBlade"]
@@ -230,8 +240,91 @@ func heal(amount: float) -> void:
 	hp = clampf(hp + amount, 0.0, stats.max_hp)
 	hp_changed.emit(hp, stats.max_hp)
 
+## Ports Player.ts's private recomputeStats(): re-derives `stats` from
+## base_stats plus every owned upgrade's modifiers (each repeated once per
+## stack) and every bonus_modifier, then re-evaluates which synergies are
+## active from the same upgrade list.
+func recompute_stats() -> void:
+	var all_modifiers: Array[StatModifier] = []
+	for owned in upgrades:
+		for i in range(owned.stacks):
+			for mod in owned.def.modifiers:
+				all_modifiers.append(mod)
+	for mod in bonus_modifiers:
+		all_modifiers.append(mod)
+	stats = base_stats.apply_modifiers(all_modifiers)
+	recompute_synergies()
+
+## Grants a run-long stat bonus outside the upgrade system (stat-point
+## spends, future world events) — keeps current HP/stamina proportional so a
+## max-HP/stamina bonus never leaves the bar looking emptier.
+func add_bonus_modifier(mod: StatModifier) -> void:
+	var hp_ratio: float = hp / maxf(1.0, stats.max_hp)
+	var stamina_ratio: float = stamina / maxf(1.0, stats.stamina_max)
+	bonus_modifiers.append(mod)
+	recompute_stats()
+	hp = minf(stats.max_hp, maxf(hp, stats.max_hp * hp_ratio))
+	stamina = minf(stats.stamina_max, maxf(stamina, stats.stamina_max * stamina_ratio))
+
+## Ports Player.ts's private recomputeSynergies(): a SynergyDefinition
+## activates once its `requires` tags are covered by owned upgrades — two
+## distinct tags need one owned upgrade each, but synergy_definition.gd's
+## own doc-comment documents the "wrath" synergy's deliberate exception (the
+## same tag listed twice means "own 2 upgrades carrying that tag" instead).
+func recompute_synergies() -> void:
+	var tag_counts: Dictionary = {}
+	for owned in upgrades:
+		for tag in owned.def.tags:
+			tag_counts[tag] = tag_counts.get(tag, 0) + owned.stacks
+	active_synergies.clear()
+	for syn in DataRegistry.all("synergies"):
+		var synergy := syn as SynergyDefinition
+		var a: String = synergy.requires[0]
+		var b: String = synergy.requires[1]
+		var count_a: int = tag_counts.get(a, 0)
+		var count_b: int = tag_counts.get(b, 0)
+		var active: bool = (count_a >= 2) if a == b else (count_a >= 1 and count_b >= 1)
+		if active:
+			active_synergies.append(synergy.id)
+
+func has_synergy(id: String) -> bool:
+	return active_synergies.has(id)
+
+## Applies the upgrade (stacking it if already owned, up to its own
+## max_stacks — 0 means uncapped here; the zone-based offer cap that
+## actually gates what gets OFFERED lives in UpgradePool.is_upgrade_available,
+## not here) and returns the ids of any synergy that just became active for
+## the first time, so the caller (LevelFlow._grant_upgrade) knows what to
+## announce.
+func add_upgrade(def: UpgradeDefinition) -> Array[String]:
+	var existing: OwnedUpgrade = null
+	for owned in upgrades:
+		if owned.def.id == def.id:
+			existing = owned
+			break
+	if existing != null:
+		if def.max_stacks == 0 or existing.stacks < def.max_stacks:
+			existing.stacks += 1
+	else:
+		var new_owned := OwnedUpgrade.new()
+		new_owned.def = def
+		new_owned.stacks = 1
+		upgrades.append(new_owned)
+	var hp_ratio: float = hp / maxf(1.0, stats.max_hp)
+	var stamina_ratio: float = stamina / maxf(1.0, stats.stamina_max)
+	var before: Array[String] = active_synergies.duplicate()
+	recompute_stats()
+	hp = minf(stats.max_hp, maxf(hp, stats.max_hp * hp_ratio))
+	stamina = minf(stats.stamina_max, maxf(stamina, stats.stamina_max * stamina_ratio))
+	var newly_active: Array[String] = []
+	for id in active_synergies:
+		if not before.has(id):
+			newly_active.append(id)
+	return newly_active
+
 func _ready() -> void:
 	add_to_group("player")
+	recompute_stats()
 	hp = stats.max_hp
 	energy = stats.energy_max
 	stamina = stats.stamina_max

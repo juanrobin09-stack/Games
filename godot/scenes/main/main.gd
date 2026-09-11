@@ -79,6 +79,10 @@ func _process(_delta: float) -> void:
 			RunState.zone_index + 1, RunState.embers, RunState.player_level,
 			RunState.xp, RunState.xp_required_for_next_level(),
 		],
+		"upgrades: %d owned   synergies: %s" % [
+			player.upgrades.size(),
+			", ".join(player.active_synergies) if not player.active_synergies.is_empty() else "-",
+		],
 		_room_line(room),
 		"interact [E]: %s" % (interaction["label"] if interaction != null else "-"),
 		_nearest_enemy_line(),

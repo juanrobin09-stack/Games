@@ -108,10 +108,13 @@ func move_through_door(dir: int) -> RoomContainer:
 	neighbor.visited = true
 	return neighbor
 
-## TODO (build-order step 3+, once weapon/zone-unlock state exists): mirror
-## data/playerProgression.ts's isPlayerStatLocked and refuse server-side even
-## if a caller bypasses the UI lock — attackSpeed needs the Bow, abilityDamage
-## needs Zone 2+. Left unchecked here deliberately rather than half-implemented.
+## Pure bookkeeping only — no isPlayerStatLocked check here, deliberately:
+## RunState has no reference to the Player node the lock check needs
+## (player.unlockedWeapons.has('bow')). LevelFlow.spend_stat_point (step 9)
+## is the real entry point UI should call — it checks the lock, calls this
+## for the bookkeeping, then applies the resulting StatModifier to the
+## player. Calling this directly bypasses the lock, same as calling the TS
+## source's own run.statLevels[id]++ directly would.
 func spend_stat_point(stat_id: String) -> bool:
 	if stat_points <= 0:
 		return false

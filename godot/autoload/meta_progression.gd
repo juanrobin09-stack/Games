@@ -60,6 +60,14 @@ func purchase_unlock(id: String, cost: int) -> bool:
 func has_unlock(id: String) -> bool:
 	return unlocks.get(id, false)
 
+## Mirrors MetaProgression.ts's getUnlockedGateIds() — every UnlockDefinition
+## id currently purchased. `unlocks` only ever holds true purchased ids (see
+## purchase_unlock), so this is just its own keys; kept as a named method
+## matching the TS source's own naming rather than inlining
+## `MetaProgression.unlocks.keys()` at call sites (LevelFlow.current_gate_ids).
+func get_unlocked_gate_ids() -> Array:
+	return unlocks.keys()
+
 func save() -> void:
 	var data := {
 		"version": SAVE_VERSION,
