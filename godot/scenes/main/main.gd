@@ -360,7 +360,7 @@ func _data_registry_summary(counts: Dictionary) -> String:
 func _print_diagnostics() -> void:
 	var state_name: String = GameState.State.keys()[GameState.current]
 	var lines: Array[String] = [
-		"EMBERFALL: LAST LIGHT — Godot scaffold (build-order step 11 of 12)",
+		"EMBERFALL: LAST LIGHT — Godot scaffold (build-order step 12 of 12)",
 		"WASD move, mouse aim, LMB attack, Space dodge, RMB ability, E interact, F1 debug overlay",
 		"GameState: %s (simulating: %s)   Soul Ash: %d   save loaded: %s" % [
 			state_name, GameState.is_simulating(), MetaProgression.soul_ash,

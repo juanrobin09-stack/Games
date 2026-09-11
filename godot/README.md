@@ -1008,4 +1008,112 @@ save with every field populated loaded back byte-for-byte correctly,
 confirming none of the hardening changed behavior on the actual common
 case of a save file nothing has ever corrupted.
 
-**Not built yet**: Step 12 (full playtest/rebalance pass).
+### Step 12 — Full integration playtest + final audit
+
+`GODOT_MIGRATION.md`'s own framing for this step is "full playtest &
+rebalance pass," with an explicit warning that physics/frame-pacing
+differences mean identical numbers can *feel* different. That half of the
+step — does a dodge feel responsive, does a hit land with weight, is a
+zone's difficulty curve fun — genuinely needs a human actually playing
+the build; this environment has no display or audio output and has run
+every verification this whole migration through printed state, not
+perception. What real, non-perceptual work remained after step 11 was:
+(1) confirm nothing across 12 build-order steps' worth of separately-
+tested systems is silently broken when they all run together in one
+continuous session, and (2) a documentation audit for anything still
+describing itself as "not built yet" that later work had quietly closed
+without updating the note.
+
+**Documentation audit.** Two header comments still described real gaps
+that no longer existed: `vfx/vfx_presets.gd` claimed `spawnHealSparkle`'s
+3 call sites, `spawnChestOpenBurst`'s reward-gate, `spawnLevelUpBurst`'s
+bow-unlock variant, and `spawnDeathBurst`'s boss two-tone flourish were
+all blocked on "step 9, not built yet" — false since Phase B; a grep
+confirmed all 4 are wired (5 `heal_sparkle` call sites now, if anything
+more than the source). Checking the one specific claim worth verifying
+rather than assuming the whole comment was stale — chestOpenBurst firing
+without `rewardDef` set, unlike the source's own gate — led one level
+deeper: `LevelFlow.open_chest()`'s `if def == null: return` guards
+against `UpgradePool.pick_upgrade_at_least_rarity()` ever returning null,
+which its own 3-tier fallback (matching the TS picker's own non-nullable
+return type) makes structurally unreachable — so the concern doesn't
+apply; the chest can't open without a reward to trigger the burst. Fixed
+the comment to record that, not just delete it, so a future reader
+doesn't have to redo the same check. `autoload/combat_manager.gd`
+similarly still cited "build-order step 6" for synergy/ability effects —
+a numbering that never matched `GODOT_MIGRATION.md`'s own order (step 6
+is level generation) — while ALSO still being correct that neither
+system has a real combat-pipeline hook: synergy *formation* is fully
+wired (ownership, banner, SFX) but synergy *effects* (ashFire spreading
+burn, wrath's damage boost, etc.) and ability effects (Ember Burst,
+Warding Sigil) are still genuinely unimplemented, confirmed by grep, not
+assumed from the stale comment. Both are real, disclosed, substantial
+features — not integration glue — so left deferred, with the comment
+corrected to say so accurately as of this audit rather than pointing at
+a step number that was never right.
+
+**Full integration playtest.** A single continuous run driven through
+`LevelFlow`/`CombatManager` directly (this environment can't reliably
+script WASD/mouse input under headless Xvfb, and the goal here is
+cross-system integration, not re-proving any one system's own click
+handling already covered by its own build-order step): every room in a
+real zone-0 layout visited via `enter_room()`, combat/elite/heart rooms
+force-cleared through the actual damage pipeline
+(`CombatManager.damage_player_to_enemy` with a lethal hit, not `alive`
+flipped by hand, so `on_enemy_death`'s full fallout — rewards, VFX, SFX,
+XP, GameState sync — genuinely runs), the sanctum rite triggered and
+completed, a chest opened, a rest used; the same sweep repeated for
+zone 1 (adding a shielded `sunkenWarden` heart guardian to the mix);
+`_complete_descent()` called directly into zone 2; the real boss found,
+fought, and killed through the same real damage pipeline; and a second,
+independent run driven straight to a lethal player hit for the defeat
+path.
+
+Three bugs surfaced, all three in the *test harness itself* — none were
+findings about the actual game:
+
+- A copy-paste field-path error (`player.stats.hp` instead of `player.hp`
+  — current HP lives on the entity, `max_hp` lives on its `StatBlock`)
+  that aborted the harness's own print statement with a script error.
+  Unremarkable on its own, except that error silently truncated the rest
+  of that zone's room sweep — GDScript unwinds the whole calling function
+  on an uncaught script error, it doesn't just skip the offending
+  statement — which hid the real finding below entirely on the first run.
+- A room-clear reward opens `UpgradeSelectUI`, a real tree-pausing modal
+  exactly like a live player would see. The harness never drove it to a
+  choice (that click path is already covered by step 9's own slice), so
+  it sat open, `get_tree().paused` stuck `true`, silently freezing
+  `LevelFlow._physics_process` (not `PROCESS_MODE_ALWAYS`) for every room
+  visited afterward — enemies could still be force-killed directly, but
+  `check_cleared()` never got called automatically to notice. Fixed with
+  a general "find any `PROCESS_MODE_ALWAYS` Control under `ui_root` and
+  force it closed" helper rather than one-off handling per modal type,
+  since every modal in this codebase already shares that exact shape.
+- Calling `LevelFlow._complete_descent()` directly (to skip simulating
+  the walk-*into*-the-stairwell animation, already proven when the
+  transition was first built) still leaves it starting the *other* half
+  of the same transition — the walk *off* the arrival stairwell,
+  `_transition` held non-empty for `DESCENT_IN_SECONDS`. `_physics_process`
+  early-returns to just `_update_transition()` for as long as
+  `_transition` is non-empty, so `_update_room_clear()` doesn't run
+  *at all* until it clears — confirmed by calling `check_cleared()`
+  directly (worked correctly every time) versus waiting on the automatic
+  per-frame path (didn't, until this was fixed) on the exact same room.
+  Fixed by waiting on `_transition.is_empty()` after every direct
+  `_complete_descent()` call rather than a fixed, too-short frame count.
+
+With all three fixed, the full run — 2 zones swept exhaustively/lightly,
+a shielded heart guardian, a sanctum rite, chests, rest, 5 level-ups, a
+zone-2 boss kill, victory, and an independent defeat path — completed
+with zero script errors and every room, reward, and state transition
+resolving exactly as designed. Debug harness fully reverted (verified via
+`git diff`) after confirming; none of it ships.
+
+Every system `GODOT_MIGRATION.md`'s recommended build order calls for now
+has at least one working, tested pass — all 12 steps. **What's genuinely
+left, and needs a human, not this environment**: actually playing it —
+does combat feel weighty, is the pacing across 3 zones right, do the
+numbers this session tuned on the Web build still feel the same once
+movement is real physics instead of a fixed timestep loop — plus the two
+disclosed feature gaps above (synergy/ability effects) and the smaller
+honest gaps each earlier step's own README section already named.

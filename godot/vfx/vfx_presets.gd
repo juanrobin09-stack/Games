@@ -17,12 +17,23 @@ extends RefCounted
 ##   sporeColors, palette.ambient/accent) that don't exist on this port's
 ##   ZoneDefinition resource. A genuine atmosphere addition, not a
 ##   feedback effect tied to an existing action — left for a dedicated pass.
-## - The 3 spawnHealSparkle call sites and spawnChestOpenBurst's reward-shown
-##   gate, spawnLevelUpBurst's bow-unlock variant, and spawnDeathBurst's
-##   boss-specific two-tone flourish: each depends on the shop/event UI or
-##   reward-granting system, which is step 9, not built yet. The other call
-##   site(s) of each of those same presets — the ones that don't depend on
-##   unbuilt UI — are still wired below.
+## - (Resolved as of step 9/Phase B — kept here as history, not a current
+##   gap.) spawnHealSparkle's 3 TS call sites, spawnChestOpenBurst's
+##   reward-shown gate, spawnLevelUpBurst's bow-unlock variant, and
+##   spawnDeathBurst's boss-specific two-tone flourish all depended on the
+##   shop/event UI or reward-granting system, which didn't exist at step 8.
+##   All 4 are wired now: heal_sparkle from the sanctum rite, shop heals,
+##   and rest brazier; chest_open_burst from ChestNode's own OPENING->
+##   OPENED transition, a one-time state-machine edge rather than TS's
+##   polled rewardShown flag, but the same "fires exactly once" guarantee
+##   — verified during step 12's audit that a chest can't open without a
+##   reward to trigger it early (UpgradePool.pick_upgrade_at_least_rarity's
+##   3-tier fallback makes an empty pool structurally unreachable, same
+##   guarantee the TS picker's own non-nullable return type relies on, so
+##   there's no case here where the burst fires but no reward is granted);
+##   level_up_burst from both a real level-up and the Zone 2 bow-unlock
+##   reward; death_burst's two-tone from the boss death (EMBER4 then
+##   EMBER6, back to back) alongside the single-tone regular-enemy call.
 ##
 ## A few deliberate, noted approximations recur (see VfxSystem's header for
 ## why): a constant extra directional bias added on top of an otherwise-

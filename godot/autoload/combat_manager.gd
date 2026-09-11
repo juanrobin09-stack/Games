@@ -9,11 +9,20 @@ extends Node
 ##
 ## Deferred this pass, on purpose (see GODOT_MIGRATION.md and each
 ## function's own comment for exactly what and why):
-## - Synergies (ashFire/emberCritical/lightHealing/wrath/shadowDodge) —
-##   depend on the upgrade-ownership system, build-order step 6.
-## - Abilities' actual effects (Ember Burst, Warding Sigil) — deferred to
-##   progression, step 6, alongside synergies (see below); weapon execution
-##   itself (melee arc + projectile shot) is done, in combat/weapon_behavior.gd.
+## - Synergies (ashFire/emberCritical/lightHealing/wrath/shadowDodge) — the
+##   upgrade-ownership system these depend on is real now (player.upgrades,
+##   MetaProgression, the Armory/Inventory screens), and synergy FORMATION
+##   is fully wired (player.add_upgrade returns newly-completed synergies,
+##   LevelFlow._grant_upgrade banners + plays synergyFormed for each) — but
+##   their actual gameplay EFFECTS (ashFire spreading burn, wrath's damage
+##   boost, etc.) still have no combat-pipeline hook at all, confirmed
+##   still true as of step 12's audit. A real feature to build, not
+##   integration glue — out of scope for a testing/tuning pass.
+## - Abilities' actual effects (Ember Burst, Warding Sigil) — same shape of
+##   gap as synergies above, still true as of step 12: weapon execution
+##   itself (melee arc + projectile shot) is done, in combat/weapon_behavior.gd,
+##   but start_ability() is still animation-only (main.gd's own header still
+##   documents this correctly).
 ## - Damage numbers, camera shake, hit-stop — still deferred (no such
 ##   system exists in this port at all yet). Particles (step 8) and SFX
 ##   (step 10, autoload/audio_engine.gd) are both wired now — but only
