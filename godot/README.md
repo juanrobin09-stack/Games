@@ -1400,6 +1400,36 @@ predates this pass, not fixed here since it's outside this pass's own
 scope.) Debug harness reverted after each (verified via `git diff`)
 before committing.
 
+**The merchant stall sprite.** `world/obstacle_node.gd`'s own
+`_draw_merchant_stall()` used to carry an honest disclosed gap: "No stall
+sprite asset is ported to Godot yet," always drawing `drawObstacle.ts`'s
+procedural fallback shape since there was no equivalent to the source's
+own `rendering/ShopAsset.ts` (`getStallSprite()`, chroma-keyed off
+`assets/textures/shop-props.png`). That's now ported: a new
+`assets/textures/shop_stall.png` is an offline, one-time crop of the same
+source sheet at `ShopAsset.ts`'s own `STALL_STONE` rect
+(x=948,y=45,w=465,h=340) with the same luminance chroma-key baked in
+(`chromaKey()`'s own [10,19] alpha ramp) rather than reproduced at
+runtime — Godot's `preload()` is synchronous, so there's no load-order
+reason to redo that processing on every launch the way the source's lazy
+`<img>` decode effectively forces in a browser. `_draw_merchant_stall()`
+now draws that texture with the source's own tuned sizing (`spriteW = r *
+7.2`, anchored so the counter lands near the obstacle's own origin); the
+old procedural shape is gone outright rather than kept as a fallback,
+since `preload()` either resolves at compile time or the project fails to
+open — unlike the source's async-decode race, there's no runtime path
+left that would ever reach it. This is the one sprite in the whole
+project that isn't pure `_draw()` procedural generation — every other
+obstacle, entity, particle, and UI element still is.
+
+**Verified** via a headless screenshot (not just the absence of script
+errors — this is a visual change, so it needed an actual look): a bare
+`ObstacleNode` set up as `MERCHANT_STALL` renders the real stone-canopy
+stall — counter, wares, lit candle, banner — cleanly composited with no
+leftover background box or hard edge from the chroma-key, its existing
+`PointLight2D` glow still layering correctly on top. Debug harness
+reverted after (verified via `git diff`) before committing.
+
 **What's genuinely still open**: `graphics_quality` and `high_contrast`
 (named above, with why) and the pre-existing enemy silhouette rendering
 warning just noted — plus, as ever, actually playing it.

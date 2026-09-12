@@ -22,6 +22,19 @@ enum Visual {
 ## const — see level_generator.gd's own RUINS_ENCOUNTERS_DATA for precedent).
 const BLOB_WOBBLE_SEEDS := [0.1, -0.06, 0.12, -0.09, 0.07, -0.11]
 
+## Ports rendering/ShopAsset.ts's getStallSprite() — the one painted prop in
+## the whole project, everything else here being pure `_draw()` procedural
+## generation. `assets/textures/shop_stall.png` is a one-time, offline crop
+## of the source's own `assets/textures/shop-props.png` sprite sheet (region
+## x=948,y=45,w=465,h=340 — ShopAsset.ts's own STALL_STONE rect) with the
+## same luminance chroma-key baked in (ShopAsset.ts's chromaKey(): pixels
+## with luminance in [10,19] ramp linearly to transparent, feathering the
+## silhouette edge instead of hard-cutting it) rather than reproduced at
+## runtime — Godot's `preload()` is synchronous, so there's no load-order
+## reason to redo that processing on every launch the way the source's
+## lazy `<img>` decode + canvas readback effectively forces in a browser.
+const STALL_TEXTURE := preload("res://assets/textures/shop_stall.png")
+
 var radius: float = 16.0
 var visual: Visual = Visual.ROCK
 var seed_value: float = 0.0
@@ -273,36 +286,21 @@ func _draw_statue() -> void:
 	eye.a = 0.6
 	draw_circle(Vector2(0.0, -radius * 1.5), 1.6, eye)
 
-func _draw_merchant_stall(now: float) -> void:
-	# No stall sprite asset is ported to Godot yet (the source's getStallSprite/
-	# ShopAsset path has no equivalent here) — always draws the source's
-	# procedural fallback, which is a complete, self-contained visual on its own.
-	var r := radius
-	var sway: float = sin(now * 1.3 + seed_value) * 0.03
-	draw_rect(Rect2(-r * 1.15, -r * 0.1, r * 0.22, r * 1.5), Color("#1c150e"), true)
-	draw_rect(Rect2(r * 0.95, -r * 0.1, r * 0.22, r * 1.5), Color("#1c150e"), true)
-	# Linear gradient (counter shading) simplified to its midpoint tone.
-	var counter_color := DrawUtils.lerp_color_hex("#3a2c1c", "#221a10", 0.5)
-	draw_rect(Rect2(-r * 1.3, -r * 0.2, r * 2.6, r * 0.35), counter_color, true)
-	# Wares on the counter (rounded rects simplified to plain rects).
-	var ware_colors := [Color(Palette.BLOOD), Color(Palette.SOUL_DIM), Color(Palette.GOLD)]
-	for i in range(3):
-		draw_rect(Rect2(-r * 0.9 + i * r * 0.75, -r * 0.42, r * 0.5, r * 0.28), ware_colors[i], true)
-	# Awning: sways gently on its own, independent of the fixed stall body below it.
-	var awning_color := DrawUtils.lerp_color_hex(Palette.GOLD_DIM, Palette.GOLD, 0.5)
-	var top_edge := _quad_bezier_points(Vector2(-r * 1.5, -r * 1.75), Vector2(0.0, -r * 2.15), Vector2(r * 1.5, -r * 1.75), 8)
-	var bottom_edge := _quad_bezier_points(Vector2(r * 1.3, -r * 1.35), Vector2(0.0, -r * 1.7), Vector2(-r * 1.3, -r * 1.35), 8)
-	var awning_pts := PackedVector2Array()
-	for p in top_edge:
-		awning_pts.append(p.rotated(sway))
-	for p in bottom_edge:
-		awning_pts.append(p.rotated(sway))
-	draw_colored_polygon(awning_pts, awning_color)
-	# Candle-flame light on the counter (the sprite path would supply its own
-	# painted flame; the procedural fallback needs an explicit bright dot too).
-	var flick: float = 0.8 + sin(now * 7.0 + seed_value) * 0.2
-	DrawUtils.draw_glow_circle(self, -r * 0.2, -r * 0.85, r * 1.6 * flick, Palette.EMBER4, 0.55)
-	draw_circle(Vector2(-r * 0.2, -r * 0.85), r * 0.14, Color(Palette.EMBER5))
+## Ports drawObstacle.ts's 'merchantStall' sprite branch (the source also
+## keeps a procedural branch for the one frame before its async image
+## decode resolves — no equivalent needed here, since STALL_TEXTURE is
+## already fully loaded by the time any node can call _draw()). Sized off
+## the sprite's own aspect ratio rather than a hardcoded height so a future
+## re-crop of shop_stall.png doesn't need a matching constant update here;
+## `spriteW = r * 7.2` and the `-spriteH * 0.6` vertical anchor are the
+## source's own tuned values (the counter — ~60% down the crop — lands near
+## the obstacle's own origin, where interaction distance is measured from,
+## canopy above it). No extra candle-glow drawn on top: the sprite already
+## paints its own lit candle.
+func _draw_merchant_stall(_now: float) -> void:
+	var sprite_w: float = radius * 7.2
+	var sprite_h: float = sprite_w * (STALL_TEXTURE.get_height() / float(STALL_TEXTURE.get_width()))
+	draw_texture_rect(STALL_TEXTURE, Rect2(-sprite_w / 2.0, -sprite_h * 0.6, sprite_w, sprite_h), false)
 
 func _draw_shrine(now: float) -> void:
 	var r := radius
