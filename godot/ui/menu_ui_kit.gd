@@ -197,6 +197,16 @@ static func make_button_row() -> HBoxContainer:
 ## every bar, every card), and CheckButton's default theme would be the
 ## one control on this screen not sharing it. SettingsUI owns wiring
 ## `toggled` to whatever the row actually controls.
+##
+## The pill alone (a flat color rect, on/off told apart only by a subtle
+## background tint) read as an unstyled placeholder box rather than a
+## switch — reported directly against a real screenshot, not a guess — so
+## a round knob is layered on top as a child Panel, sliding between the
+## pill's two ends, the actual "something is here to grab" cue a plain
+## color swap didn't give. Instant position swap when reduced_motion is
+## on (matching every other motion-gated effect this project already has
+## — see settings_ui.gd's own header for the full list); a short Tween
+## otherwise, since a toggle this small warrants a slide, not a jump cut.
 static func make_toggle(initial: bool) -> Button:
 	var btn := Button.new()
 	btn.toggle_mode = true
@@ -212,6 +222,27 @@ static func make_toggle(initial: bool) -> Button:
 	btn.add_theme_stylebox_override("hover", off_style)
 	btn.add_theme_stylebox_override("pressed", on_style)
 	btn.add_theme_stylebox_override("hover_pressed", on_style)
+
+	const KNOB_SIZE := 16.0
+	const KNOB_MARGIN := 3.0
+	const KNOB_X_ON := 42.0 - KNOB_SIZE - KNOB_MARGIN
+	var knob := Panel.new()
+	knob.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	knob.size = Vector2(KNOB_SIZE, KNOB_SIZE)
+	knob.position = Vector2(KNOB_X_ON if initial else KNOB_MARGIN, KNOB_MARGIN)
+	var knob_style := StyleBoxFlat.new()
+	knob_style.bg_color = Color(Palette.EMBER4 if initial else Palette.TEXT_FAINT)
+	knob_style.set_corner_radius_all(int(KNOB_SIZE / 2.0))
+	knob.add_theme_stylebox_override("panel", knob_style)
+	btn.add_child(knob)
+	btn.toggled.connect(func(pressed: bool):
+		var target_x: float = KNOB_X_ON if pressed else KNOB_MARGIN
+		knob_style.bg_color = Color(Palette.EMBER4 if pressed else Palette.TEXT_FAINT)
+		if MetaProgression.settings.get("reduced_motion", false):
+			knob.position.x = target_x
+		else:
+			knob.create_tween().tween_property(knob, "position:x", target_x, 0.12).set_trans(Tween.TRANS_CUBIC)
+	)
 	return btn
 
 ## Ports .segmented — a row of small buttons where exactly one is active;

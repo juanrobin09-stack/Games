@@ -1861,3 +1861,34 @@ flips the same `fullscreen` setting Settings' own row does, purely as a
 fast way to tell the two apart: if F11 does nothing either, on a real
 window it definitely should, which points at the editor's own embedding
 rather than these rows.
+
+### Toggle switches looked like empty rectangles — because they were
+
+Reported against a real screenshot: every toggle row (Mute All, Screen
+Shake, High Contrast, Reduced Motion, Fullscreen) rendered as a flat
+color pill with nothing inside it — correct on inspection, `MenuUiKit.
+make_toggle()` really was just a StyleBoxFlat swap between a dark "off"
+background and a translucent ember "on" one, no knob, no shape, nothing
+a glance would read as a switch rather than an unstyled placeholder box.
+
+Added an actual sliding knob: a small round `Panel` child, positioned at
+the pill's left end when off and right end when on, its own fill color
+swapping between a dim neutral (off) and solid ember (on) alongside the
+position change — the two together are what make it read as "a switch
+in a position" instead of "a box that changed color." Animated with a
+short `Tween` (0.12s, cubic) so flipping one feels like a slide rather
+than a jump cut, except when `reduced_motion` is on, where it snaps
+instantly — the same motion-gating this project's other effects already
+respect, checked directly off `MetaProgression.settings` rather than
+routed through hud.gd's own motion-scale helper (this one lives in
+`menu_ui_kit.gd`, general UI chrome rather than gameplay HUD).
+
+Verified by rebuilding the Settings screen twice with different
+saved states — the visible difference was the actual thing being
+checked, not just that a screenshot didn't crash: before, Screen Shake
+alone showed its knob on the right in ember; after flipping every
+toggle to the opposite state, that same row's knob had moved to the left
+in neutral gray while the newly-enabled rows (Mute All, High Contrast)
+showed theirs on the right, confirming the knob really tracks each
+toggle's own state rather than being a static decoration drawn the same
+way regardless.
