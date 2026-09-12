@@ -1407,28 +1407,58 @@ procedural fallback shape since there was no equivalent to the source's
 own `rendering/ShopAsset.ts` (`getStallSprite()`, chroma-keyed off
 `assets/textures/shop-props.png`). That's now ported: a new
 `assets/textures/shop_stall.png` is an offline, one-time crop of the same
-source sheet at `ShopAsset.ts`'s own `STALL_STONE` rect
-(x=948,y=45,w=465,h=340) with the same luminance chroma-key baked in
-(`chromaKey()`'s own [10,19] alpha ramp) rather than reproduced at
-runtime — Godot's `preload()` is synchronous, so there's no load-order
-reason to redo that processing on every launch the way the source's lazy
-`<img>` decode effectively forces in a browser. `_draw_merchant_stall()`
-now draws that texture with the source's own tuned sizing (`spriteW = r *
-7.2`, anchored so the counter lands near the obstacle's own origin); the
-old procedural shape is gone outright rather than kept as a fallback,
-since `preload()` either resolves at compile time or the project fails to
-open — unlike the source's async-decode race, there's no runtime path
-left that would ever reach it. This is the one sprite in the whole
-project that isn't pure `_draw()` procedural generation — every other
-obstacle, entity, particle, and UI element still is.
+source sheet, with the same luminance chroma-key baked in (`chromaKey()`'s
+own [10,19] alpha ramp) rather than reproduced at runtime — Godot's
+`preload()` is synchronous, so there's no load-order reason to redo that
+processing on every launch the way the source's lazy `<img>` decode
+effectively forces in a browser. `_draw_merchant_stall()` draws that
+texture with the source's own tuned width (`spriteW = r * 7.2`); the old
+procedural shape is gone outright rather than kept as a fallback, since
+`preload()` either resolves at compile time or the project fails to open —
+unlike the source's async-decode race, there's no runtime path left that
+would ever reach it. This is the one sprite in the whole project that
+isn't pure `_draw()` procedural generation — every other obstacle, entity,
+particle, and UI element still is.
 
-**Verified** via a headless screenshot (not just the absence of script
-errors — this is a visual change, so it needed an actual look): a bare
-`ObstacleNode` set up as `MERCHANT_STALL` renders the real stone-canopy
-stall — counter, wares, lit candle, banner — cleanly composited with no
-leftover background box or hard edge from the chroma-key, its existing
-`PointLight2D` glow still layering correctly on top. Debug harness
-reverted after (verified via `git diff`) before committing.
+**A real integration bug, caught by the user, not this pass's own first
+verification.** The first cut used `ShopAsset.ts`'s own `STALL_STONE` crop
+rect verbatim (x=948,y=45,w=465,h=340) and a straight port of `chromaKey()`
+— and a headless screenshot at the time looked clean. It wasn't: in actual
+play, the stall read as a pasted-on rectangle against the room floor. The
+screenshot that first "verified" it used an isolated obstacle, a bright
+default clear color, and a casual look at the whole frame rather than its
+edges — exactly the kind of miss this README has already flagged once
+before ("caught by zooming into the actual screenshot rather than trusting
+a full-window thumbnail"), repeated here with a new element instead of the
+lesson carrying over. Direct pixel sampling (measuring the same luminance
+formula `chromaKey()` uses, along every edge of the cropped image) found
+the actual cause: `STALL_STONE`'s own rect cuts straight through real
+painted content on 3 of its 4 sides — most visibly the counter's own drop
+shadow at the bottom, which never fades to background within that rect at
+all, confirmed by sampling luminance there directly rather than assuming
+it. This sheet packs its props tightly enough that no crop rect can
+guarantee a clean, fully-faded margin on every side by content position
+alone. Fixed two ways: the crop is now wider (w=473,h=385 — extended
+mainly downward, clearing the counter's real shadow before the next prop
+row starts, verified by sampling the gap between them), and a 16px alpha
+feather now runs inward from every edge of the crop as a deliberate
+safety net with no source equivalent — forcing true transparency at the
+image's own border regardless of exactly where content sampling says it
+should start, rather than trusting that judgment call alone a second time.
+The vertical placement anchor also moved from the source's own `spriteH *
+0.6` to `spriteH * 0.53`, re-derived for the taller crop so the counter
+still lands at the same real position (`0.6 * 340/385`) instead of
+drifting as a side effect of the height change.
+
+**Verified** the same way the bug was found, not just "does it still
+render": re-sampled the regenerated PNG's own edge pixels with the exact
+same luminance formula and confirmed 0 maximum alpha anywhere on its
+border (not "looks clean" — measured), then a fresh headless screenshot at
+the real in-game radius (26px, `level_generator.gd`'s own value for a shop
+landmark, not an arbitrarily larger test radius) showing the stall fading
+cleanly into a dark background with its `PointLight2D` glow still layering
+correctly on top. Debug harness reverted after each check (verified via
+`git diff`) before committing.
 
 **What's genuinely still open**: `graphics_quality` and `high_contrast`
 (named above, with why) and the pre-existing enemy silhouette rendering

@@ -25,14 +25,23 @@ const BLOB_WOBBLE_SEEDS := [0.1, -0.06, 0.12, -0.09, 0.07, -0.11]
 ## Ports rendering/ShopAsset.ts's getStallSprite() — the one painted prop in
 ## the whole project, everything else here being pure `_draw()` procedural
 ## generation. `assets/textures/shop_stall.png` is a one-time, offline crop
-## of the source's own `assets/textures/shop-props.png` sprite sheet (region
-## x=948,y=45,w=465,h=340 — ShopAsset.ts's own STALL_STONE rect) with the
-## same luminance chroma-key baked in (ShopAsset.ts's chromaKey(): pixels
-## with luminance in [10,19] ramp linearly to transparent, feathering the
-## silhouette edge instead of hard-cutting it) rather than reproduced at
-## runtime — Godot's `preload()` is synchronous, so there's no load-order
-## reason to redo that processing on every launch the way the source's
-## lazy `<img>` decode + canvas readback effectively forces in a browser.
+## of the source's own `assets/textures/shop-props.png` sprite sheet, region
+## x=948,y=45,w=473,h=385 — deliberately *wider* than ShopAsset.ts's own
+## STALL_STONE rect (w=465,h=340): that tighter rect cuts directly through
+## the counter's own painted drop shadow at the bottom (confirmed by sampling
+## luminance there — it never fades to background within STALL_STONE's own
+## bounds), since this sheet packs its props close together with little
+## clean margin anywhere. Two things applied to the crop, matching the
+## source's own chromaKey() first, this port's own addition second: (1) the
+## same luminance chroma-key (pixels with luminance in [10,19] ramp linearly
+## to transparent); (2) a 16px alpha feather inward from every crop edge,
+## which the source has no equivalent for — this sheet's cramped layout
+## means no crop rect can guarantee a fully-faded natural edge on all four
+## sides, so the feather forces one, rather than trusting content position
+## the way a rect with real breathing room could. Godot's `preload()` is
+## synchronous, so there's no load-order reason to redo any of this
+## processing on every launch the way the source's lazy `<img>` decode +
+## canvas readback effectively forces in a browser.
 const STALL_TEXTURE := preload("res://assets/textures/shop_stall.png")
 
 var radius: float = 16.0
@@ -292,15 +301,20 @@ func _draw_statue() -> void:
 ## already fully loaded by the time any node can call _draw()). Sized off
 ## the sprite's own aspect ratio rather than a hardcoded height so a future
 ## re-crop of shop_stall.png doesn't need a matching constant update here;
-## `spriteW = r * 7.2` and the `-spriteH * 0.6` vertical anchor are the
-## source's own tuned values (the counter — ~60% down the crop — lands near
-## the obstacle's own origin, where interaction distance is measured from,
-## canopy above it). No extra candle-glow drawn on top: the sprite already
-## paints its own lit candle.
+## `spriteW = r * 7.2` is the source's own tuned value. The vertical anchor
+## is `-spriteH * 0.53`, not the source's own `0.6` — STALL_TEXTURE's crop
+## is taller than ShopAsset.ts's STALL_STONE rect (see the const's own
+## comment above), and 0.6 was tuned to THAT shorter crop, where the
+## counter sat 60% of the way down; re-deriving it for the new, taller crop
+## (0.6 * old_height/new_height = 0.6 * 340/385) keeps the counter anchored
+## at the same real position — near the obstacle's own origin, where
+## interaction distance is measured from, canopy above it — instead of
+## drifting as a side effect of the crop getting taller. No extra
+## candle-glow drawn on top: the sprite already paints its own lit candle.
 func _draw_merchant_stall(_now: float) -> void:
 	var sprite_w: float = radius * 7.2
 	var sprite_h: float = sprite_w * (STALL_TEXTURE.get_height() / float(STALL_TEXTURE.get_width()))
-	draw_texture_rect(STALL_TEXTURE, Rect2(-sprite_w / 2.0, -sprite_h * 0.6, sprite_w, sprite_h), false)
+	draw_texture_rect(STALL_TEXTURE, Rect2(-sprite_w / 2.0, -sprite_h * 0.53, sprite_w, sprite_h), false)
 
 func _draw_shrine(now: float) -> void:
 	var r := radius
