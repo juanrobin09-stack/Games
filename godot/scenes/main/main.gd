@@ -53,6 +53,7 @@ var _escape_key_down: bool = false
 ## F2 opens AdminMenuUI, a personal dev/testing tool — not a shipped
 ## feature; safe to remove once no longer needed for that.
 var _f2_key_down: bool = false
+var _f11_key_down: bool = false
 
 ## Whichever meta-shell screen is currently on top (MainMenu, Credits,
 ## Victory/Defeat — later PauseMenu/Settings/Armory too), so the next
@@ -284,6 +285,23 @@ func _admin_teleport_to_room(room: RoomContainer, zone_index: int) -> void:
 
 ## Live readout of input/gating/combat/room state, refreshed every frame.
 func _process(_delta: float) -> void:
+	# Standard convention (browsers, most native games) independent of
+	# clicking Settings' own Fullscreen row — same MetaProgression setting
+	# either way, so this stays in sync with it rather than being a second,
+	# competing source of truth. Placed before the player==null guard below
+	# so it works from the main menu too, not just mid-run. A quick way to
+	# tell an unresponsive Fullscreen row apart from a window Godot isn't
+	# actually drawing full-screen independently at all (e.g. the editor's
+	# own Embedded Game View, a per-machine editor preference no project
+	# setting can reach, standing in for a real OS window) — if this key
+	# does nothing either, the row was never the problem.
+	if Input.is_physical_key_pressed(KEY_F11):
+		if not _f11_key_down:
+			_f11_key_down = true
+			MetaProgression.save_settings({"fullscreen": not bool(MetaProgression.settings.get("fullscreen", false))})
+	else:
+		_f11_key_down = false
+
 	if player == null:
 		return
 

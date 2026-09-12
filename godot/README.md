@@ -1842,3 +1842,22 @@ actually reported fullscreen, then toggled it back off and confirmed the
 window returned to 1728x972 — the saved 1.5x, not the original 1152x648 —
 rather than trusting that the round-trip would work from reading the code
 alone.
+
+**A user report that these two rows "did nothing" led to an F11 shortcut,
+not a rewrite.** Direct property checks (the verification just above)
+already showed `DisplayServer.window_set_size()`/`window_set_mode()`
+firing and taking effect correctly when the settings change, and
+`project.godot` has no `resizable=false` or similar override that would
+block it — so the Settings rows themselves aren't the likely fault. The
+more likely explanation this account can't verify directly (no real OS
+window in this environment to press F11 in and watch): Godot 4.3+'s
+Embedded Game View, a per-machine EDITOR preference (not a project
+setting, so nothing in this repo controls it) that runs the game inside
+the editor's own window on F5 instead of a real standalone one — no
+fullscreen or resize call has anywhere real to take effect against that.
+Added an F11 shortcut in `main.gd`'s `_process()` (before the
+`player == null` early-return, so it works from the main menu too) that
+flips the same `fullscreen` setting Settings' own row does, purely as a
+fast way to tell the two apart: if F11 does nothing either, on a real
+window it definitely should, which points at the editor's own embedding
+rather than these rows.
