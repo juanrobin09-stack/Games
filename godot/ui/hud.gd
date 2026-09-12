@@ -631,6 +631,19 @@ func _build_boss_bar() -> void:
 
 # ---------------------------------------------------------------- Toasts / banners
 
+## Ports the reduced_motion setting's real effect: style.css's own
+## `body.reduced-motion * { animation-duration: 0.001ms !important;
+## transition-duration: 0.001ms !important; }` collapses every CSS
+## keyframe/transition timeline to near-zero — not just the transitions
+## between states, the whole animation including its "hold" portion.
+## Scaling every duration/interval below by this factor reproduces that
+## exact "whole sequence compresses, proportions unchanged" effect
+## (0.05 rather than literally 0 — Tween accepts a 0-length tween_property
+## but this stays clear of relying on that edge case for something a
+## player can trigger from a menu).
+func _motion_scale() -> float:
+	return 0.05 if MetaProgression.settings.get("reduced_motion", false) else 1.0
+
 ## Ports HUD.ts's showToast — appends a new toast (unlike the banners
 ## below, several can be stacked/visible at once) that holds for
 ## `duration` seconds then fades over 0.4s and frees itself. No entrance
@@ -659,10 +672,11 @@ func show_toast(text: String, duration: float = 4.2) -> void:
 	toast.add_child(label)
 	_toast_area.add_child(toast)
 
+	var motion: float = _motion_scale()
 	var tween := create_tween()
 	tween.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
-	tween.tween_interval(duration)
-	tween.tween_property(toast, "modulate:a", 0.0, 0.4).set_trans(Tween.TRANS_LINEAR)
+	tween.tween_interval(duration * motion)
+	tween.tween_property(toast, "modulate:a", 0.0, 0.4 * motion).set_trans(Tween.TRANS_LINEAR)
 	tween.tween_callback(func():
 		_toast_area.remove_child(toast)
 		toast.queue_free()
@@ -704,19 +718,20 @@ func show_phase_banner(text: String) -> void:
 	# — the "hold" collapsed to ~0s and the banner vanished almost as soon
 	# as it appeared). Every entry below with no `.parallel()` before it
 	# waits for everything before it, same as plain sequential Tween use.
+	var motion: float = _motion_scale()
 	_phase_banner_tween = create_tween()
 	_phase_banner_tween.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
-	_phase_banner_tween.tween_property(_phase_banner, "modulate:a", 1.0, 0.39).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	_phase_banner_tween.tween_property(_phase_banner, "modulate:a", 1.0, 0.39 * motion).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	_phase_banner_tween.parallel()
-	_phase_banner_tween.tween_property(_phase_banner, "scale", Vector2.ONE, 0.39).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	_phase_banner_tween.tween_interval(1.69)
-	_phase_banner_tween.tween_property(_phase_banner, "modulate:a", 0.0, 0.52).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	_phase_banner_tween.tween_property(_phase_banner, "scale", Vector2.ONE, 0.39 * motion).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	_phase_banner_tween.tween_interval(1.69 * motion)
+	_phase_banner_tween.tween_property(_phase_banner, "modulate:a", 0.0, 0.52 * motion).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
 	_phase_banner_tween.parallel()
-	_phase_banner_tween.tween_property(_phase_banner, "scale", Vector2(1.05, 1.05), 0.52).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	_phase_banner_tween.tween_property(_phase_banner, "scale", Vector2(1.05, 1.05), 0.52 * motion).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
 	_phase_banner_tween.parallel()
-	_phase_banner_tween.tween_property(_phase_banner, "offset_top", -32.0, 0.52).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	_phase_banner_tween.tween_property(_phase_banner, "offset_top", -32.0, 0.52 * motion).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
 	_phase_banner_tween.parallel()
-	_phase_banner_tween.tween_property(_phase_banner, "offset_bottom", 12.0, 0.52).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	_phase_banner_tween.tween_property(_phase_banner, "offset_bottom", 12.0, 0.52 * motion).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
 
 ## Ports HUD.ts's showSynergyBanner — same single-reused-element restart
 ## pattern as show_phase_banner, timing read off style.css's own
@@ -738,19 +753,20 @@ func show_synergy_banner(synergy_name: String, description: String) -> void:
 	# statement before each tweener (not the sticky set_parallel(true)/
 	# chain() pair) is what actually gives correct sequential/parallel
 	# timing here.
+	var motion: float = _motion_scale()
 	_synergy_banner_tween = create_tween()
 	_synergy_banner_tween.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
-	_synergy_banner_tween.tween_property(_synergy_banner, "modulate:a", 1.0, 0.42).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
+	_synergy_banner_tween.tween_property(_synergy_banner, "modulate:a", 1.0, 0.42 * motion).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
 	_synergy_banner_tween.parallel()
-	_synergy_banner_tween.tween_property(_synergy_banner, "offset_top", SYNERGY_BANNER_REST_TOP, 0.42).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
+	_synergy_banner_tween.tween_property(_synergy_banner, "offset_top", SYNERGY_BANNER_REST_TOP, 0.42 * motion).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
 	_synergy_banner_tween.parallel()
-	_synergy_banner_tween.tween_property(_synergy_banner, "offset_bottom", SYNERGY_BANNER_REST_TOP + 90.0, 0.42).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
-	_synergy_banner_tween.tween_interval(3.15)
-	_synergy_banner_tween.tween_property(_synergy_banner, "modulate:a", 0.0, 0.63).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_IN)
+	_synergy_banner_tween.tween_property(_synergy_banner, "offset_bottom", SYNERGY_BANNER_REST_TOP + 90.0, 0.42 * motion).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
+	_synergy_banner_tween.tween_interval(3.15 * motion)
+	_synergy_banner_tween.tween_property(_synergy_banner, "modulate:a", 0.0, 0.63 * motion).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_IN)
 	_synergy_banner_tween.parallel()
-	_synergy_banner_tween.tween_property(_synergy_banner, "offset_top", SYNERGY_BANNER_REST_TOP - 12.0, 0.63).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_IN)
+	_synergy_banner_tween.tween_property(_synergy_banner, "offset_top", SYNERGY_BANNER_REST_TOP - 12.0, 0.63 * motion).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_IN)
 	_synergy_banner_tween.parallel()
-	_synergy_banner_tween.tween_property(_synergy_banner, "offset_bottom", SYNERGY_BANNER_REST_TOP - 12.0 + 90.0, 0.63).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_IN)
+	_synergy_banner_tween.tween_property(_synergy_banner, "offset_bottom", SYNERGY_BANNER_REST_TOP - 12.0 + 90.0, 0.63 * motion).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_IN)
 
 ## Ports HUD.ts's refreshMinimap — a passthrough to HudMinimap's own
 ## refresh(), called from LevelFlow whenever room_changed fires (run

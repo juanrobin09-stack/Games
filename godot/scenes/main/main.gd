@@ -70,6 +70,15 @@ func _ready() -> void:
 	CombatManager.boss_defeated.connect(func(_boss): _end_run(true))
 	CombatManager.player_died.connect(func(): _end_run(false))
 	hud.visible = false
+	# Game.ts's own textScale setting scales the whole UI by rewriting one
+	# CSS custom property the entire DOM's font-sizes cascade from
+	# (style.css's own `font-size: calc(16px * var(--ui-scale))` on body).
+	# This port's UI has no such single cascade point — every label sets
+	# its own explicit font size — so CanvasLayer.scale on $UI itself is
+	# the nearest equivalent: one property, applied once, scales
+	# everything under it uniformly, same "one knob" shape as the source.
+	_apply_ui_scale()
+	MetaProgression.settings_changed.connect(func(_patch): _apply_ui_scale())
 	# Game.ts only calls music.start() lazily, from the FIRST pointerdown/
 	# keydown handler — a one-shot gate that exists purely to satisfy
 	# browser autoplay policy (an AudioContext starts suspended until a
@@ -79,6 +88,10 @@ func _ready() -> void:
 	# plays for the whole session," not of the workaround around it.
 	MusicEngine.start()
 	_show_main_menu()
+
+func _apply_ui_scale() -> void:
+	var text_scale: float = MetaProgression.settings.get("text_scale", 1.0)
+	($UI as CanvasLayer).scale = Vector2.ONE * text_scale
 
 func _show_main_menu() -> void:
 	_close_current_screen()

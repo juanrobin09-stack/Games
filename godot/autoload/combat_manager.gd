@@ -100,8 +100,13 @@ var _hit_stop_end_msec: int = 0
 ## `strength` is a fraction of normal speed (0.06 = simulation crawls at
 ## 6% speed). A longer OR stronger request always wins over one already in
 ## flight; a shorter, weaker one is dropped rather than cutting the active
-## one short — exact port of the source's own trigger() gate.
+## one short — exact port of the source's own trigger() gate. Gated on the
+## screen_shake setting first, matching Game.ts's own `hitStop.enabled =
+## s.screenShake` — the source has no separate hit-stop toggle, so this
+## reuses the same one, same as the source does.
 func trigger_hit_stop(duration_seconds: float, strength: float) -> void:
+	if not MetaProgression.settings.get("screen_shake", true):
+		return
 	var now: int = Time.get_ticks_msec()
 	var remaining_seconds: float = maxf(0.0, float(_hit_stop_end_msec - now) / 1000.0)
 	var is_longer: bool = duration_seconds > remaining_seconds

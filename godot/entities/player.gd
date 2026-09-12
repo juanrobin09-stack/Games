@@ -330,7 +330,13 @@ func trigger_perfect_dodge() -> void:
 ## Ports Camera.ts's addShake: a new shake only overrides a still-decaying
 ## one if it's stronger than what that one has decayed to by now — a weak
 ## shake can't cut a strong one short, but a strong one always wins.
+## Gated on the screen_shake setting first — matches Game.ts's own
+## `camera.shakeEnabled = s.screenShake` (checked at the call site there;
+## checked in here instead, so every one of this port's ~15 call sites
+## gets it for free rather than needing its own guard).
 func add_camera_shake(magnitude: float, duration: float) -> void:
+	if not MetaProgression.settings.get("screen_shake", true):
+		return
 	_shake_magnitude = maxf(_shake_magnitude * (1.0 - _shake_time / maxf(_shake_duration, 0.001)), magnitude)
 	_shake_duration = duration
 	_shake_time = 0.0

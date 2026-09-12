@@ -174,7 +174,17 @@ static func emit(parent: Node, opts: Dictionary) -> void:
 
 	var particles := GPUParticles2D.new()
 	particles.position = opts.get("position", Vector2.ZERO)
-	particles.amount = maxi(1, opts.get("count", 1))
+	# Ports ParticleSystem.ts's own burst(): "low" halves the requested
+	# count (ceil'd), "medium"/"high" leave it untouched — the source's
+	# other quality lever, a hard cap on total simultaneously-active
+	# particle SLOTS across its one shared pool (QUALITY_LIMITS), has no
+	# equivalent here: this port has no shared pool to cap in the first
+	# place, since emit() builds an independent one-shot node per call
+	# (this file's own header) rather than drawing from one.
+	var count: int = opts.get("count", 1)
+	if MetaProgression.settings.get("particle_quality", "high") == "low":
+		count = ceili(count * 0.5)
+	particles.amount = maxi(1, count)
 	particles.one_shot = true
 	particles.explosiveness = 1.0
 	particles.local_coords = false
