@@ -1500,6 +1500,41 @@ edges: the background around the stall now reads as genuinely dark,
 matching the room around it, with only the candle's own light spilling
 naturally into its immediate surroundings.
 
+**A fourth round, asked to rule out the renderer and stop trusting "the
+PNG must be it."** Explicitly audited the full chain rather than the
+asset alone: `git diff` confirmed the working-tree PNG is byte-identical
+to what's pushed (no un-pushed local state); a grep across the whole repo
+found exactly one copy of `shop_stall.png` plus its own gitignored
+`.import`/`.godot/imported/` cache siblings, so there's no second asset
+the game could be reading instead; `obstacle_node.tscn`/`.gd` carry no
+`CanvasItemMaterial`, no `light_mode`, no `modulate`/`self_modulate`
+override, and a repo-wide search found no `CanvasGroup`, custom
+`blend_mode`, or `WorldEnvironment` anywhere near this rendering path —
+nothing between the texture and the screen that could selectively punch
+holes in it. Re-verified the PNG's own alpha channel fresh from the
+working tree (not memory of the earlier check): border still 0, interior
+haze still gone. Then wiped `godot/.godot/` *and* every asset's
+`.import` sidecar entirely — simulating a truly first-ever project open,
+the same state a fresh clone starts from — and reimported and screenshotted
+from that clean slate: identical clean result, plus the running game's own
+`ObstacleNode.STALL_TEXTURE.resource_path` and `.get_size()` printed and
+confirmed to be the one expected file at its current, fixed dimensions,
+not a stale or alternate copy.
+
+No new defect turned up in this pass — everything traced back to the same
+already-fixed, already-pushed asset. The one thing this environment can't
+rule out is a stale *local* import cache on a machine that already had an
+older copy of `shop_stall.png` open in the Godot editor across several
+quick pushes: Godot compiles textures into `.godot/imported/*.ctex` once
+per machine (both that folder and every `.import` sidecar are gitignored,
+never pushed), and an editor instance that was already running when a
+newer commit landed doesn't always notice the source file changed
+underneath it. If the sprite still looks wrong after pulling the latest
+commit, closing the Godot editor fully, deleting the project's local
+`.godot/` folder, and reopening it (forcing a full reimport from the
+current, verified-clean PNG) is the next concrete step — before assuming
+the asset itself regressed again.
+
 **What's genuinely still open**: whether this reads as "integrated enough"
 is inherently a subjective call a human needs to make in real play, not
 something a screenshot diff alone can close out — this account is honest
