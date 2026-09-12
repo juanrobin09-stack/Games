@@ -159,6 +159,7 @@ func _physics_process(delta: float) -> void:
 
 	var player := get_tree().get_first_node_in_group("player") as PlayerCharacter
 	EnemyAI.update(self, player, delta)
+	EnemyAI.apply_separation(self)
 	if phase_just_changed:
 		phase_just_changed = false
 		CombatManager.on_champion_shield_break(self, player)

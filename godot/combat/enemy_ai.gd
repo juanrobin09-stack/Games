@@ -5,12 +5,10 @@ extends RefCounted
 ## this session, not approximated. Called once per physics tick per enemy
 ## from EnemyCharacter._physics_process via `EnemyAI.update(enemy, player, dt)`.
 ##
-## Not ported this pass, on purpose: applyEnemySeparation (the soft
-## push-apart between overlapping enemies — a polish/crowd-control pass,
-## not core to whether combat works, and it wants a spatial grid this
-## project doesn't have yet either). Hazards/spore clouds are real now
-## (see combat_manager.gd's detonate_bloat()/consume_pending_cloud() and
-## world/hazard_node.gd). `bounds`-clamped teleport-on-vanish (reappearAt's
+## applyEnemySeparation (the soft push-apart between overlapping enemies)
+## and hazards/spore clouds are both real now too — see apply_separation()
+## below, and combat_manager.gd's detonate_bloat()/consume_pending_cloud()
+## + world/hazard_node.gd. `bounds`-clamped teleport-on-vanish (reappearAt's
 ## wall-inset) is simplified to a plain teleport — there are no walls to
 ## inset from until Room/LevelGenerator lands in build-order step 6.
 
@@ -57,6 +55,34 @@ static func update(enemy: EnemyCharacter, player: PlayerCharacter, dt: float) ->
 		_resolve_attack_trigger(enemy, player)
 	if def.behavior == EnemyDefinition.Behavior.BLOAT and enemy.state == EnemyCharacter.State.WINDUP and previous_state != EnemyCharacter.State.WINDUP:
 		AudioEngine.play_sfx("bloatSwell", 120.0)
+
+## Ports EnemyAI.ts's applyEnemySeparation exactly (including its literal
+## "40 * (1/60)" per-frame nudge, not scaled by `dt` — the source itself
+## doesn't scale this by frame time, so neither does this). TS backs the
+## neighbor query with a SpatialGrid purely to avoid an O(n²) scan across
+## potentially hundreds of entities; this port's rooms top out at a
+## handful of enemies at once (level_generator.gd's own encounter
+## templates), so a direct scan over every other alive enemy in the
+## "enemies" group produces the exact same push — the grid was always
+## just a performance optimization, never part of the separation math
+## itself. Called from every enemy's own _physics_process (enemy.gd AND
+## boss.gd — the source's own loop has no boss exception either, and a
+## boss-phase summon can plausibly spawn overlapping the boss itself).
+static func apply_separation(enemy: EnemyCharacter) -> void:
+	if not enemy.alive or enemy.state == EnemyCharacter.State.VANISHED or enemy.bash_timer > 0.0:
+		return
+	var push := Vector2.ZERO
+	for node in enemy.get_tree().get_nodes_in_group("enemies"):
+		var other := node as EnemyCharacter
+		if other == null or other == enemy or not other.alive:
+			continue
+		var offset: Vector2 = enemy.global_position - other.global_position
+		var dist: float = offset.length()
+		var min_dist: float = enemy.radius + other.radius
+		if dist > 0.01 and dist < min_dist:
+			var overlap: float = (min_dist - dist) / min_dist
+			push += (offset / dist) * overlap
+	enemy.global_position += push * 40.0 * (1.0 / 60.0)
 
 # ---------------------------------------------------------------- helpers
 

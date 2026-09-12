@@ -282,6 +282,7 @@ func _physics_process(delta: float) -> void:
 
 	var player := get_tree().get_first_node_in_group("player") as PlayerCharacter
 	EnemyAI.update(self, player, delta)
+	EnemyAI.apply_separation(self)
 
 	velocity = ai_velocity + knockback_velocity
 	move_and_slide()
