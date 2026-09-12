@@ -290,16 +290,25 @@ func set_active(active: bool) -> void:
 		else:
 			enemy.remove_from_group("enemies")
 
-## Zone-tinted floor/wall rects (build-order step 7) — real per-tile floor
-## and wall TEXTURES (RoomTexture.ts/FloorAsset.ts on the Web side) are a
-## deliberately separate, much larger art-production task this pass
-## doesn't attempt (see GODOT_MIGRATION.md §4's own recommendation to
-## start with a faithful procedural _draw() port, not authored art); using
-## each zone's own palette_floor/palette_wall is the cheap, already
-## data-driven step between "one hardcoded color everywhere" and that.
+## A real floor TEXTURE (a supplied stone-flagstone image) replaces the
+## flat zone-tinted floor rect this drew at build-order step 7. Stretched
+## to fill the room rect exactly rather than tiled — the source has its
+## own baked-in directional lighting (a warm highlight sweeping across it),
+## so repeating it across a room would show seams and repeated hot spots;
+## a single non-uniform stretch to 1000x620 has neither, at the cost of a
+## slight aspect distortion from the source's own square 1254x1254, which
+## is what the image was supplied for (its own construction assumes
+## whatever stretch a target rect needs). One shared texture for every
+## zone/room, not a per-zone set — only one image was supplied — so
+## zone.palette_floor no longer has a floor rect to tint; palette_wall
+## still tints the walls below, real per-tile wall TEXTURES
+## (RoomTexture.ts/FloorAsset.ts on the Web side) being the separate,
+## much larger art-production task GODOT_MIGRATION.md §4 recommended
+## deferring, still deferred.
+const FLOOR_TEXTURE := preload("res://assets/textures/floor_stone.png")
+
 func _draw() -> void:
-	var floor_color := Color(zone.palette_floor) if zone != null and zone.palette_floor != "" else Color(0.16, 0.14, 0.13)
 	var wall_color := Color(zone.palette_wall) if zone != null and zone.palette_wall != "" else Color(0.32, 0.29, 0.27)
-	draw_rect(Rect2(0.0, 0.0, ROOM_WIDTH, ROOM_HEIGHT), floor_color, true)
+	draw_texture_rect(FLOOR_TEXTURE, Rect2(0.0, 0.0, ROOM_WIDTH, ROOM_HEIGHT), false)
 	for rect in get_walls(is_locked()):
 		draw_rect(rect, wall_color, true)

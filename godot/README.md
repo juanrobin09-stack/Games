@@ -1587,3 +1587,37 @@ still the first thing to try if an older render somehow persists. Beyond
 that: `graphics_quality` and `high_contrast` (named above, with why) and
 the pre-existing enemy silhouette rendering warning just noted — plus, as
 ever, actually playing it.
+
+### Real floor texture — the first non-procedural floor art in the Godot port
+
+Every room's floor had been a flat zone-tinted `draw_rect` since build-order
+step 7 (`room_container.gd`'s own comment there called real per-tile floor/
+wall textures "a deliberately separate, much larger art-production task
+this pass doesn't attempt," matching GODOT_MIGRATION.md §4's recommendation
+to start with a faithful procedural port). A supplied stone-flagstone image
+(1254×1254, dropped via the same file-hand-off branch as the shop stall)
+closes that gap for the floor specifically — walls stay the flat
+zone-tinted rect for now, no wall texture was supplied this round.
+
+Unlike the shop stall, this needed no alpha/transparency work at all: it's
+a fully opaque RGB image, always the bottom-most layer, no chroma-key or
+feathering to get right — copied in essentially as supplied. The one real
+decision was how to fit a square image into the room's own 1000×620
+rect (`ROOM_WIDTH`/`ROOM_HEIGHT`, a 1.61:1 aspect): stretched non-uniformly
+to fill it exactly via `draw_texture_rect`, not tiled. Tiling was ruled out
+specifically because the source has its own baked-in directional lighting
+(a warm highlight sweeping diagonally across it) — repeating that would
+show as a visible seam and a repeated hot spot every ROOM_WIDTH/HEIGHT,
+exactly the kind of artifact a seamless tileable texture is built to avoid
+and this one isn't. One shared texture for every zone/room rather than a
+per-zone set, since only one image was supplied; `zone.palette_floor`
+no longer tints anything in `_draw()` as a result, though it's still read
+by `vfx_presets.gd` for particle coloring, so it stays on `ZoneDefinition`.
+
+Verified with two real screenshots from a running build, not just "the
+code compiles": the starting room (Ashen Woods · Entrance) showing the
+stretched texture filling the visible floor with no seams, no missing-
+texture fallback, and no leftover gap at the room edges; and a shop room,
+to confirm the new floor and the previously-fixed shop stall — both
+supplied images, both now in the same warm dark-stone palette — read
+consistently next to each other rather than clashing.
