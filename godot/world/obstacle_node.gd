@@ -24,57 +24,24 @@ const BLOB_WOBBLE_SEEDS := [0.1, -0.06, 0.12, -0.09, 0.07, -0.11]
 
 ## Ports rendering/ShopAsset.ts's getStallSprite() — the one painted prop in
 ## the whole project, everything else here being pure `_draw()` procedural
-## generation. `assets/textures/shop_stall.png` is a one-time, offline crop
-## of the source's own `assets/textures/shop-props.png` sprite sheet, region
-## x=948,y=45,w=473,h=385 — deliberately *wider* than ShopAsset.ts's own
-## STALL_STONE rect (w=465,h=340): that tighter rect cuts directly through
-## the counter's own painted drop shadow at the bottom (confirmed by sampling
-## luminance there — it never fades to background within STALL_STONE's own
-## bounds), since this sheet packs its props close together with little
-## clean margin anywhere. Two things applied to the crop, matching the
-## source's own chromaKey() first, this port's own addition second: (1) the
-## same luminance chroma-key (pixels with luminance in [10,19] ramp linearly
-## to transparent); (2) a 16px alpha feather inward from every crop edge,
-## which the source has no equivalent for — this sheet's cramped layout
-## means no crop rect can guarantee a fully-faded natural edge on all four
-## sides, so the feather forces one, rather than trusting content position
-## the way a rect with real breathing room could. Godot's `preload()` is
-## synchronous, so there's no load-order reason to redo any of this
-## processing on every launch the way the source's lazy `<img>` decode +
-## canvas readback effectively forces in a browser.
-##
-## A third pass, past both of the above: even with clean edges, a visible
-## gray haze filled most of the crop's own "empty" space in real play — the
-## source's chromaKey() output itself has it too, confirmed by inspecting
-## its alpha channel directly as its own image before any of this port's
-## own changes. Root cause: the reference painting has a real light source
-## (the candle) baked in, so much of the "background" around it reads at a
-## luminance well above the [10,19] band the simple ramp treats as
-## background — not object material, just ambient light falling on
-## nothing, but numerically inseparable from it by luminance alone (this
-## file's own header on `chromaKey()`, ported faithfully, already notes
-## legitimate stone-in-shadow reads under luminance 30 too, so raising the
-## threshold would eat real material first). Fixed by re-deriving the
-## post-chromaKey alpha through a gamma curve (`alpha ** 3.2`) rather than
-## changing the threshold: values already near-opaque (the real stone/wood/
-## banner silhouette) stay close to fully opaque, while every partial,
-## hazy value the light bleed produces collapses toward transparent, since
-## haze is by construction never as confidently opaque as the object
-## painted on top of it. Applied before the border feather so the two
-## compose correctly.
-##
-## One more step past the source, added after real in-game screenshots
-## (not just the crop fix) still read as "pasted on": the source's own
-## sheet is a soft, painterly reference image, but every other visual in
-## this entire project is flat-shaded straight `Palette` colors with no
-## soft photographic gradients anywhere. Cleaning up the alpha edges wasn't
-## enough to close that gap — a technically-clean sprite in the wrong
-## rendering register still reads as foreign next to that flat style. RGB
-## (never alpha) is pushed toward that same register: +35% contrast, +45%
-## saturation, -8% brightness, then posterized to 5 levels/channel to
-## flatten lingering soft gradient banding — closer to graphic/flat-shaded
-## than photo-painted, without discarding the source's own shading
-## structure entirely.
+## generation. `assets/textures/shop_stall.png` is now a purpose-made image
+## (supplied directly for this port, not derived from the source's own
+## `assets/textures/shop-props.png` sheet the way an earlier version of
+## this file was) — a real archway/counter/banner render with clean alpha
+## already baked in: exporting its own alpha channel as a grayscale image
+## and inspecting it directly showed a crisp, fully-opaque silhouette
+## against fully-transparent background, no gray haze the way the old
+## sheet-derived crop had. Processing here is correspondingly light: the
+## raw supplied image (1685×934) was cropped to its real content bounds
+## plus a small margin, downscaled to 660×406 (this sprite is drawn at a
+## few hundred px on screen at most — no reason to ship the original's
+## full resolution), and given an 8px inward alpha feather as a cheap
+## safety net (gentler than the 16px the old cramped source sheet needed,
+## since this source's own edges already measured clean). All of that is
+## a one-time offline step, not runtime work — Godot's `preload()` is
+## synchronous, so there's no load-order reason to redo it on every launch
+## the way the source's lazy `<img>` decode effectively forces in a
+## browser.
 const STALL_TEXTURE := preload("res://assets/textures/shop_stall.png")
 
 var radius: float = 16.0
@@ -334,20 +301,29 @@ func _draw_statue() -> void:
 ## already fully loaded by the time any node can call _draw()). Sized off
 ## the sprite's own aspect ratio rather than a hardcoded height so a future
 ## re-crop of shop_stall.png doesn't need a matching constant update here;
-## `spriteW = r * 7.2` is the source's own tuned value. The vertical anchor
-## is `-spriteH * 0.53`, not the source's own `0.6` — STALL_TEXTURE's crop
-## is taller than ShopAsset.ts's STALL_STONE rect (see the const's own
-## comment above), and 0.6 was tuned to THAT shorter crop, where the
-## counter sat 60% of the way down; re-deriving it for the new, taller crop
-## (0.6 * old_height/new_height = 0.6 * 340/385) keeps the counter anchored
-## at the same real position — near the obstacle's own origin, where
-## interaction distance is measured from, canopy above it — instead of
-## drifting as a side effect of the crop getting taller. No extra
-## candle-glow drawn on top: the sprite already paints its own lit candle.
+## `spriteW = r * 7.2` is the source's own tuned value, kept as-is even
+## though the new 660×406 image is notably wider/flatter than the previous
+## 473×385 crop (406/660 = 0.62 vs 385/473 = 0.81) — the derived sprite_h
+## comes out shorter at the same width, which matches this image's own
+## wider archway rather than needing a new tuned constant. The vertical
+## anchor is `-spriteH * 0.5`, re-measured from scratch for this asset
+## rather than carried over from the old 0.53 (itself re-derived from the
+## source's 0.6 for a since-replaced image — see STALL_TEXTURE's own
+## comment above for why that lineage no longer applies): sampling
+## STALL_TEXTURE's alpha channel row by row shows the two pillars standing
+## apart with the archway's empty opening between them until ~47% down,
+## where they join into one continuous opaque span — the counter filling
+## that gap — running to ~75% before narrowing again to just the pillar
+## bases and the hanging banner. Centering the origin at the midpoint of
+## that span keeps the same visual relationship the old asset's anchor
+## was tuned for: the archway opening above the obstacle's own position
+## (where interaction distance is measured from), counter and banner
+## below it. No extra candle-glow drawn on top: the sprite already paints
+## its own lit candle.
 func _draw_merchant_stall(_now: float) -> void:
 	var sprite_w: float = radius * 7.2
 	var sprite_h: float = sprite_w * (STALL_TEXTURE.get_height() / float(STALL_TEXTURE.get_width()))
-	draw_texture_rect(STALL_TEXTURE, Rect2(-sprite_w / 2.0, -sprite_h * 0.53, sprite_w, sprite_h), false)
+	draw_texture_rect(STALL_TEXTURE, Rect2(-sprite_w / 2.0, -sprite_h * 0.5, sprite_w, sprite_h), false)
 
 func _draw_shrine(now: float) -> void:
 	var r := radius

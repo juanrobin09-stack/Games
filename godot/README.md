@@ -1535,10 +1535,55 @@ commit, closing the Godot editor fully, deleting the project's local
 current, verified-clean PNG) is the next concrete step — before assuming
 the asset itself regressed again.
 
+**A fifth round replaced the source image entirely**, supplied directly
+rather than derived from the old `shop-props.png` sheet this port had
+been cropping from since the start. Before touching anything, the raw
+supplied image (1685×934) got the same alpha-channel-as-grayscale-image
+check as every round above — and unlike every prior crop from the old
+sheet, it came back clean on its own: a crisp, fully-opaque silhouette
+against a fully-transparent background, no haze to gamma-curve away.
+Processing was correspondingly light — crop to real content bounds plus
+a small margin, downscale to 660×406 via Lanczos (this sprite is drawn
+at a few hundred px on screen; no reason to ship the source's full
+resolution), and an 8px inward feather as a cheap safety net rather than
+a fix for a known problem. Border alpha re-verified at 0 after each step.
+
+Swapping in a wider/flatter image (406/660 ≈ 0.62, vs. the old crop's
+385/473 ≈ 0.81) meant the vertical anchor inherited from that old crop's
+own lineage — `-spriteH * 0.53`, itself re-derived from the ported
+source's `0.6` for an image since fully replaced — no longer had any
+basis. Rather than guess, the new image's alpha channel got sampled row
+by row: the two pillars stand apart (the archway's opening between them)
+until ~47% down, join into one continuous span (the counter filling that
+gap) to ~75%, then narrow again to the pillar bases and the banner.
+Centering the origin at that span's midpoint (`0.5`) reproduces the same
+relationship the old anchor was tuned for — archway opening above the
+obstacle's own position, counter and banner below it — measured fresh
+against this image rather than carried over from one that no longer
+exists in the repo.
+
+Verified the only way this account now trusts for this asset: a real
+run, teleported into an actual shop room via the admin menu's own
+teleport path (not a hand-rolled shortcut), screenshotted at normal
+gameplay zoom, then that region cropped and upscaled 3x for a close edge
+pass. No box, no haze, no hard rectangular cutoff anywhere along the
+arch, pillars, counter, or banner silhouette against the room's own dark
+ambient background — the only brightening near the sprite is the
+candle's own glow spilling outward, the same kind of soft radial falloff
+every other lit prop here already draws. The player's interaction prompt
+("[E] Browse Wares") lit up at the teleported-in distance, confirming the
+new anchor didn't drift the interaction point away from where the player
+actually stands.
+
 **What's genuinely still open**: whether this reads as "integrated enough"
 is inherently a subjective call a human needs to make in real play, not
 something a screenshot diff alone can close out — this account is honest
 about that rather than declaring the aesthetic question settled by
-process. Beyond that: `graphics_quality` and `high_contrast`
-(named above, with why) and the pre-existing enemy silhouette rendering
-warning just noted — plus, as ever, actually playing it.
+process. The stale-local-import-cache caveat from the fourth round still
+applies in principle to this new file too (same filename, same gitignored
+`.import`/`.godot/imported/` cache mechanics) — closing the Godot editor
+and deleting the project's local `.godot/` folder before reopening is
+still the first thing to try if an older render somehow persists. Beyond
+that: `graphics_quality` and `high_contrast` (named above, with why) and
+the pre-existing enemy silhouette rendering warning just noted — plus, as
+ever, actually playing it.
