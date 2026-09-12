@@ -1232,15 +1232,148 @@ after confirming; none of it ships.
 actually playing it — does combat feel weighty, is the pacing across 3
 zones right now that enemies have their real intended HP back, do the
 numbers this session tuned on the Web build still feel the same once
-movement is real physics instead of a fixed timestep loop. Two smaller,
-still-honest gaps remain, both real features rather than integration
-work: the boss's own attack FSM (`boss_state`, `BossSystem.ts`'s full
-telegraph/attack cycle) turned out to already be fully ported — a stale
-step-8 README note claiming otherwise is fixed above — so there's
-nothing left there; damage numbers/camera-shake/hit-stop are the ones
-this pass closed. What's still actually open: `spawnZoneAmbientParticle`
-(per-zone atmosphere particles, needs new `ZoneDefinition` fields) and
-a handful of settings (particle/graphics quality, text scale, high
-contrast, reduced motion, i18n) that persist correctly but have no
-engine-side effect yet — both already named honestly in their own
-sections above, not new.
+movement is real physics instead of a fixed timestep loop.
+
+### Closing every remaining disclosed gap
+
+Asked directly to close every point the previous pass's own closing
+section named — `spawnZoneAmbientParticle`, the two hazard/separation
+gaps, every inert setting, and the still-entirely-missing i18n system —
+rather than leave any of them for later. All five landed, each read
+against its own TS source rather than approximated, each verified via a
+real headless Godot run before committing.
+
+**Hazards (spore clouds).** `combat/CombatSystem.ts`'s Hazard system
+(`spawnSporeCloud`/`updateHazards`/`consumePendingClouds`) is real now:
+new `world/hazard_node.gd` + `.tscn`, a self-contained Node2D per active
+hazard (spawn/tick/free itself) rather than TS's own flat ticked array —
+matches every other transient world entity in this port
+(pickup/chest/obstacle/floating-text), and needs no spatial cap the
+source's own `MAX_HAZARDS` exists for, since each hazard is already a
+cheap, self-freeing node rather than a slot in one shared, ticked pool.
+Two real spawn sites, both using the source's own literal values: a
+Blightbloat's burst (`detonate_bloat`, using its own `cloud_radius`/
+`cloud_duration`) and a phase-2 Sunken Warden's bash landing
+(`consume_pending_cloud`, fixed 3.5s — `enemy.gd`'s own
+`pending_cloud_radius` field, set by the AI, was already there waiting on
+this). Lighting is a real `PointLight2D` child, the same native
+substitution every other lit thing in this port already uses instead of
+a manual per-frame accumulator. Fixing this surfaced two more shake/
+hit-stop call sites that pre-date this session's shake system and were
+never updated: `detonate_bloat`'s own shake, and `check_bash_hit`'s
+shake+hit-stop on a landed bash — both wired with the source's own
+values. `damage_enemy_to_player` also gained the hazard/normal feedback
+split it was missing entirely (a quieter fungusBright damage number +
+weak shake on a hazard tick, a bloodBright number + real shake
+otherwise) — previously a player taking a direct hit got no damage
+number and no shake at all.
+
+**Enemy separation.** `ai/EnemyAI.ts`'s `applyEnemySeparation` — the
+soft push-apart between overlapping enemies — is ported exactly,
+including its literal, not-`dt`-scaled per-frame nudge. The source backs
+its neighbor query with a `SpatialGrid` purely to avoid an O(n²) scan
+across potentially hundreds of entities; this port's rooms top out at a
+handful at once, so `EnemyAI.apply_separation()` scans every other alive
+enemy in the "enemies" group directly — the grid was always just a
+performance optimization, never part of the separation math, so this
+changes nothing about the actual behavior. Wired into both `enemy.gd`'s
+and `boss.gd`'s own `_physics_process` — the source's own loop has no
+boss exception either, and a boss-phase summon can plausibly spawn
+overlapping the boss itself.
+
+**Zone ambient particles.** `drawRoom.ts`'s `spawnZoneAmbientParticle`
+is real too. Researching it found the previous closing section's own
+claim for why it was deferred was stale: it said this port's
+`ZoneDefinition` resource was missing the fields the function needs
+(`ambientParticle`, `sporeColors`, `palette.ambient`/`accent`). It
+wasn't — `resources/definitions/zone_definition.gd` already declares
+`ambient_particle`/`spore_colors`/`palette_ambient`/`palette_accent`, and
+all 3 zone `.tres` files already have them fully populated with the
+exact values from `data/zones.ts`. Only the spawn function itself and
+its per-frame call were ever actually missing — a much smaller gap than
+documented. `vfx_presets.gd` gains `zone_ambient_particle()`, switching
+on the zone's own enum: ash falls (Ashen Woods), spores scatter two
+glowing motes in the zone's own violet/teal colors (Hollow Ruins —
+reuses `spore_mote()`, extended with an optional colors list so hazards'
+own call sites keep their existing default untouched), embers rise
+(Ember Citadel). `level_flow.gd` gains the source's own 0.12s
+`ambientTimer` cadence, spawning at a random point within (and slightly
+overscanning) the player's camera view.
+
+**Settings effects.** `MetaProgression.settings` has persisted
+`screen_shake`/`particle_quality`/`graphics_quality`/`text_scale`/
+`high_contrast`/`reduced_motion` correctly since step 11, but none of
+them did anything. Four of the six do now, each checked against
+`Game.ts`'s own `applySettings()`: `screen_shake` gates
+`add_camera_shake()`/`trigger_hit_stop()` (the source reuses one flag for
+both; so does this); `particle_quality` halves `VfxSystem.emit()`'s
+particle count on "low", matching `ParticleSystem.ts`'s own `burst()`
+rule exactly (its other lever, a hard cap on total simultaneously-active
+particle slots, has no equivalent here — this port's `emit()` builds an
+independent one-shot node per call rather than drawing from one shared
+pool, so there's no shared slot count to cap); `text_scale` applies as
+`CanvasLayer.scale` on `$UI` itself, the nearest equivalent to the
+source's own "one CSS variable the whole DOM's font-size cascades from"
+now that this port's UI sets explicit per-label sizes with no such
+cascade point; `reduced_motion` scales every toast/phase-banner/synergy-
+banner Tween's durations and hold intervals toward near-zero, reproducing
+the source's own `animation-duration: 0.001ms !important` — the whole
+timeline collapsing, not just the transitions. `graphics_quality` and
+`high_contrast` are left as genuine, disclosed gaps: the former's real
+mechanism (a window/viewport render-scale) can't be visually verified in
+this environment and risks interacting oddly with the fixed
+`--resolution` this whole session's own test harness relies on; the
+latter would need a proper alternate UI color theme touching many
+individual `Color(...)` literals across every screen, not a safe pass
+without being able to see the result.
+
+**i18n.** New `autoload/i18n.gd` ports `i18n/index.ts`'s
+`t(key, fallbackEn)`/`tc(id, field, fallbackEn)` contract exactly, backed
+by `i18n/fr.ts`'s own `FR_CONTENT`/`FR_UI` dictionaries transcribed
+verbatim — every enemy/weapon/ability/upgrade/permanent-upgrade/zone/
+unlock/synergy/world-event's real French text, plus every flat UI-chrome
+string. Deliberately not reactive, matching the source's own explicit
+non-goal (it reloads the whole page after a language change rather than
+retranslating whatever's already baked into the DOM) — this port's own
+screens are already rebuilt fresh every time they're shown, so a
+language change takes effect the next time each screen reopens, the same
+practical result without needing a reload. `MainMenuUI` is wired as a
+first, real, end-to-end case (Play/Upgrades/Armory/Settings/Credits, the
+seed placeholder, the tagline); every other screen — HUD, pause menu,
+shop/event/upgrade screens, inventory, armory, victory/defeat, and the
+settings screen itself — still builds hardcoded English. Converting each
+is mechanical (both dictionaries are already complete) but touches a
+large number of files, honestly named as still open rather than swept in
+alongside the infrastructure.
+
+**Verified** via real headless Godot runs, one per system, each with
+precise numeric assertions before committing: a hazard's shake, cloud
+radius/duration, and real tick damage against a player standing in it;
+overlapping enemies pushed apart by the exact expected fractional-pixel
+amount, a distant pair untouched, a mid-bash enemy correctly skipped;
+each of the 3 zones' `zone_ambient_particle()` branches executing without
+error and a real started run's own ambient timer ticking correctly;
+`screen_shake` off making both shake and hit-stop true no-ops while on
+they apply exactly as requested, `particle_quality` low emitting exactly
+half the requested count, `text_scale` visibly changing `$UI`'s own
+scale, `reduced_motion`'s exposed factor flipping between 1.0 and 0.05;
+`I18n.t()`/`.tc()` returning the correct French string, the correct
+English fallback, and the exact unmodified fallback for an untranslated
+key, plus `MainMenuUI`'s own Play button actually rendering "JOUER" end-
+to-end with the language set to French. Followed by a full cumulative
+regression: a real 3-zone run with all three ambient-particle types,
+overlapping enemies, and a bloat detonation exercised together, zero
+script errors throughout. (A separate, pre-existing "Invalid polygon
+data, triangulation failed" rendering warning surfaces from `enemy.gd`'s
+own polygon-based body silhouettes when several enemies render across
+many frames — confirmed unrelated to any of this pass's code, none of
+which calls `draw_colored_polygon`; a real but purely cosmetic issue that
+predates this pass, not fixed here since it's outside this pass's own
+scope.) Debug harness reverted after each (verified via `git diff`)
+before committing.
+
+**What's genuinely still open**: `graphics_quality` and `high_contrast`
+(named above, with why), the large mechanical sweep to wire `I18n.t()`/
+`.tc()` into every remaining UI screen, and the pre-existing enemy
+silhouette rendering warning just noted — plus, as ever, actually playing
+it.
