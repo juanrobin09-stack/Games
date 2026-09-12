@@ -19,17 +19,19 @@ extends Control
 ##   DisplayServer.window_set_mode() directly with no persisted state —
 ##   both now go through MetaProgression.settings/settings_changed like
 ##   every other row, so main.gd's own _apply_fullscreen()/
-##   _apply_window_scale() react to them the same reflexive way
+##   _apply_window_size() react to them the same reflexive way
 ##   _apply_ui_scale() already reacts to text_scale, and the choice
 ##   survives a relaunch instead of resetting to windowed every time.
-##   window_scale multiplies the project's own 1152x648 base resolution
-##   (window/stretch/mode="canvas_items" in project.godot scales the
-##   rendered canvas to fit whatever real window size that produces, so
-##   no screen's own pixel-space layout needed to change for this) —
-##   added after a user's reported blur turned out to be their OS
-##   upscaling a small, DPI-unaware window; a genuinely bigger window
-##   avoids that regardless of whether the underlying DPI setting ever
-##   gets fixed on their end.
+##   Window Size stores an actual window_width/window_height pair (not a
+##   multiplier on the project's own 1152x648 base — a first pass did
+##   that, then a request for real named resolutions plus a custom option
+##   replaced it) that DisplayServer.window_set_size() applies directly;
+##   window/stretch/mode="canvas_items" in project.godot scales the
+##   rendered canvas to fit whatever that produces, so no screen's own
+##   pixel-space layout needed to change for any of this. Added after a
+##   user's reported blur turned out to be their OS upscaling a small,
+##   DPI-unaware window; a genuinely bigger window avoids that regardless
+##   of whether the underlying DPI setting ever gets fixed on their end.
 ## - **Language** (en/fr) now has a real translation system behind it too
 ##   — autoload/i18n.gd ports i18n/index.ts + i18n/fr.ts's own FR_UI/
 ##   FR_CONTENT dictionaries verbatim, read through I18n.t()/I18n.tc(). Not
@@ -103,7 +105,7 @@ func _build(embedded: bool, on_close: Callable) -> void:
 	body.add_child(_build_toggle_row(I18n.t("settings.highContrast", "High Contrast"), I18n.t("settings.highContrastHint", "Increase text and UI contrast"), "high_contrast"))
 	body.add_child(_build_toggle_row(I18n.t("settings.reducedMotion", "Reduced Motion"), I18n.t("settings.reducedMotionHint", "Minimize UI animation"), "reduced_motion"))
 	body.add_child(_build_toggle_row(I18n.t("settings.fullscreen", "Fullscreen"), "", "fullscreen"))
-	body.add_child(_build_segmented_row(I18n.t("settings.windowSize", "Window Size"), "", ["1.0", "1.25", "1.5", "2.0"], ["1x", "1.25x", "1.5x", "2x"], "window_scale"))
+	body.add_child(_build_resolution_row())
 	content.add_child(body)
 
 	var button_row := MenuUiKit.make_button_row()
@@ -187,4 +189,119 @@ func _build_segmented_row(label_text: String, hint_text: String, options: Array,
 		MetaProgression.save_settings({key: value})
 	)
 	return _row_shell(label_text, hint_text, segmented)
+
+## Named resolutions here are all 16:9 (matching the project's own
+## 1152x648 base exactly, so window/stretch/mode="canvas_items" scales
+## the canvas up to fill any of them with no letterboxing); Custom is an
+## open width/height pair — a source of blur if someone picks a resolution
+## their own monitor can't cleanly display, but that's a real, informed
+## per-machine choice this row exists to make in the first place, not a
+## constraint worth pre-empting with a locked list. The two SpinBox
+## fields are only ever visible for that Custom case, matching how the
+## PC-gaming convention (a resolution dropdown, custom greyed out/hidden
+## until asked for) reads to a player already used to it.
+const RESOLUTION_PRESETS := [
+	{"w": 1280, "h": 720}, {"w": 1600, "h": 900},
+	{"w": 1920, "h": 1080}, {"w": 2560, "h": 1440},
+]
+
+func _style_field(edit: LineEdit) -> void:
+	var field_style := StyleBoxFlat.new()
+	field_style.bg_color = Color(Palette.BG1)
+	field_style.border_color = Color(Palette.BORDER)
+	field_style.set_border_width_all(1)
+	field_style.set_corner_radius_all(6)
+	field_style.content_margin_left = 8.0
+	field_style.content_margin_right = 8.0
+	field_style.content_margin_top = 4.0
+	field_style.content_margin_bottom = 4.0
+	edit.add_theme_stylebox_override("normal", field_style)
+	edit.add_theme_stylebox_override("focus", field_style)
+	edit.add_theme_color_override("font_color", Color(Palette.TEXT_WARM))
+
+func _build_resolution_row() -> HBoxContainer:
+	var col := VBoxContainer.new()
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.alignment = BoxContainer.ALIGNMENT_END
+	col.add_theme_constant_override("separation", 6)
+
+	var current_w: int = int(MetaProgression.settings.get("window_width", 1152))
+	var current_h: int = int(MetaProgression.settings.get("window_height", 648))
+	var matched_index := -1
+	for i in range(RESOLUTION_PRESETS.size()):
+		if RESOLUTION_PRESETS[i]["w"] == current_w and RESOLUTION_PRESETS[i]["h"] == current_h:
+			matched_index = i
+			break
+
+	var dropdown := OptionButton.new()
+	dropdown.focus_mode = Control.FOCUS_NONE
+	dropdown.custom_minimum_size = Vector2(170.0, 0.0)
+	dropdown.add_theme_color_override("font_color", Color(Palette.TEXT_WARM))
+	var dropdown_style := StyleBoxFlat.new()
+	dropdown_style.bg_color = Color(Palette.BG1)
+	dropdown_style.border_color = Color(Palette.BORDER)
+	dropdown_style.set_border_width_all(1)
+	dropdown_style.set_corner_radius_all(6)
+	dropdown_style.content_margin_left = 10.0
+	dropdown_style.content_margin_right = 10.0
+	dropdown_style.content_margin_top = 6.0
+	dropdown_style.content_margin_bottom = 6.0
+	dropdown.add_theme_stylebox_override("normal", dropdown_style)
+	dropdown.add_theme_stylebox_override("hover", dropdown_style)
+	dropdown.add_theme_stylebox_override("focus", dropdown_style)
+	for preset in RESOLUTION_PRESETS:
+		dropdown.add_item("%d×%d" % [preset["w"], preset["h"]])
+	dropdown.add_item(I18n.t("settings.customResolution", "Custom…"))
+	dropdown.selected = matched_index if matched_index >= 0 else RESOLUTION_PRESETS.size()
+	col.add_child(dropdown)
+
+	var custom_row := HBoxContainer.new()
+	custom_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	custom_row.add_theme_constant_override("separation", 6)
+	custom_row.visible = matched_index < 0
+
+	var width_box := SpinBox.new()
+	width_box.min_value = 640
+	width_box.max_value = 7680
+	width_box.step = 1
+	width_box.value = current_w
+	width_box.custom_minimum_size = Vector2(78.0, 0.0)
+	width_box.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_style_field(width_box.get_line_edit())
+
+	var x_label := Label.new()
+	x_label.text = "×"
+	x_label.add_theme_color_override("font_color", Color(Palette.TEXT_DIM))
+	x_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	var height_box := SpinBox.new()
+	height_box.min_value = 360
+	height_box.max_value = 4320
+	height_box.step = 1
+	height_box.value = current_h
+	height_box.custom_minimum_size = Vector2(78.0, 0.0)
+	height_box.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_style_field(height_box.get_line_edit())
+
+	var apply_custom := func():
+		MetaProgression.save_settings({"window_width": int(width_box.value), "window_height": int(height_box.value)})
+	width_box.value_changed.connect(func(_v): apply_custom.call())
+	height_box.value_changed.connect(func(_v): apply_custom.call())
+
+	custom_row.add_child(width_box)
+	custom_row.add_child(x_label)
+	custom_row.add_child(height_box)
+	col.add_child(custom_row)
+
+	dropdown.item_selected.connect(func(index: int):
+		if index < RESOLUTION_PRESETS.size():
+			custom_row.visible = false
+			var preset = RESOLUTION_PRESETS[index]
+			MetaProgression.save_settings({"window_width": preset["w"], "window_height": preset["h"]})
+		else:
+			custom_row.visible = true
+			apply_custom.call()
+	)
+
+	return _row_shell(I18n.t("settings.windowSize", "Window Size"), "", col)
 

@@ -92,8 +92,8 @@ func _ready() -> void:
 	# window — a bigger real window (or fullscreen, already wired below)
 	# renders at genuinely more pixels instead of relying on the OS to
 	# stretch fewer of them.
-	_apply_window_scale()
-	MetaProgression.settings_changed.connect(func(_patch): _apply_window_scale())
+	_apply_window_size()
+	MetaProgression.settings_changed.connect(func(_patch): _apply_window_size())
 	_apply_fullscreen()
 	MetaProgression.settings_changed.connect(func(_patch): _apply_fullscreen())
 	# Game.ts only calls music.start() lazily, from the FIRST pointerdown/
@@ -114,26 +114,31 @@ func _apply_ui_scale() -> void:
 ## just resize the window Godot's own fullscreen mode ignores anyway, and
 ## read back the wrong size next time this runs. _apply_fullscreen() below
 ## re-calls this itself right after switching back to windowed, which is
-## what actually restores the chosen scale the moment fullscreen turns off.
-func _apply_window_scale() -> void:
+## what actually restores the chosen size the moment fullscreen turns off.
+## window_width/window_height (settings_ui.gd's own Window Size row —
+## named-resolution dropdown plus a Custom width/height pair) store an
+## actual size rather than a multiplier on the project's 1152x648 base,
+## letting that row offer real resolutions instead of just scaling it.
+func _apply_window_size() -> void:
 	if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN:
 		return
-	var scale: float = float(MetaProgression.settings.get("window_scale", "1.0"))
-	DisplayServer.window_set_size(Vector2i(1152, 648) * scale)
+	var w: int = MetaProgression.settings.get("window_width", 1152)
+	var h: int = MetaProgression.settings.get("window_height", 648)
+	DisplayServer.window_set_size(Vector2i(w, h))
 
 ## Fullscreen is a real, persisted setting (not just a live DisplayServer
 ## call the old settings_ui.gd toggle button made and forgot) so it
 ## survives a relaunch like every other preference here — settings_ui.gd's
 ## fullscreen row is now a plain _build_toggle_row like screen_shake's own,
 ## reacting through the same settings_changed signal _apply_ui_scale/
-## _apply_window_scale already use rather than calling into main.gd
+## _apply_window_size already use rather than calling into main.gd
 ## directly, matching this project's own "UI screens call back into
 ## main.gd" shape without needing a new callback wired through it.
 func _apply_fullscreen() -> void:
 	var fullscreen: bool = MetaProgression.settings.get("fullscreen", false)
 	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if fullscreen else DisplayServer.WINDOW_MODE_WINDOWED)
 	if not fullscreen:
-		_apply_window_scale()
+		_apply_window_size()
 
 func _show_main_menu() -> void:
 	_close_current_screen()

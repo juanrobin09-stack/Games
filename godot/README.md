@@ -1892,3 +1892,46 @@ in neutral gray while the newly-enabled rows (Mute All, High Contrast)
 showed theirs on the right, confirming the knob really tracks each
 toggle's own state rather than being a static decoration drawn the same
 way regardless.
+
+### Window Size, from a 4-way multiplier to a real resolution dropdown with Custom
+
+A follow-up request asked for more than the 1x/1.25x/1.5x/2x segmented
+row could offer: a dropdown of real named resolutions, plus a genuine
+custom width/height option — the segmented-button shape (borrowed from
+Particles/Graphics Quality) doesn't scale past 3-4 choices before it runs
+out of row width, and a multiplier on the project's own non-standard
+1152x648 base was never going to line up with the resolutions a player
+actually thinks in (1080p, 1440p) anyway.
+
+Replaced the stored setting itself, not just the control: `window_scale`
+(a string multiplier) is gone, replaced by `window_width`/`window_height`
+(actual pixel dimensions, `main.gd`'s renamed `_apply_window_size()`
+passing them straight to `DisplayServer.window_set_size()`) — the more
+direct representation once real resolutions were the goal instead of
+scaling a fixed base. `_build_resolution_row()` builds an `OptionButton`
+listing four 16:9 presets (1280×720 through 2560×1440 — all exact
+multiples of the project's own aspect ratio, so `window/stretch/mode=
+"canvas_items"` scales any of them with no letterboxing) plus a
+"Custom…" entry; picking Custom reveals two `SpinBox` fields (width
+640–7680, height 360–4320) that apply live on every change, matching
+the sliders' own already-established live-apply convention rather than
+needing a separate confirm step. The custom fields stay hidden behind
+a preset match and only appear for Custom, and — since `OptionButton`
+and `SpinBox` are both Godot stock controls with no relation to this
+project's own dark StyleBoxFlat chrome — both got the same custom
+styling treatment (dark background, thin border, 6px corner radius)
+`main_menu_ui.gd`'s own seed-input `LineEdit` already established,
+rather than importing `MenuUiKit`'s private `_button_stylebox()` across
+a class boundary it was never meant to cross (an early pass tried
+exactly that and hit a real "function not found" parse error before
+landing on building the StyleBoxFlat inline instead).
+
+Verified by rebuilding the Settings screen at three different saved
+states: the project's own un-matched default (1152×648) correctly fell
+back to "Custom…" with both fields showing 1152 and 648; setting
+1920×1080 selected that exact preset and hid the custom fields; and a
+genuinely arbitrary custom size (3413×1920) round-tripped correctly —
+`DisplayServer.window_get_size()` read back that exact value, and
+reopening Settings showed "Custom…" selected with 3413/1920 in the
+fields, confirming the round trip works in both directions, not just
+that saving a value doesn't crash.

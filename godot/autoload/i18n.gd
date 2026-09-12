@@ -408,6 +408,7 @@ const FR_UI: Dictionary = {
 	"settings.reducedMotionHint": "Minimise les animations de l'interface",
 	"settings.fullscreen": "Plein Écran",
 	"settings.windowSize": "Taille de la Fenêtre",
+	"settings.customResolution": "Personnalisé…",
 	"settings.done": "Terminé",
 	# Mobile orientation lock
 	"orientation.rotate": "Faites pivoter votre appareil en mode paysage pour une meilleure expérience",
