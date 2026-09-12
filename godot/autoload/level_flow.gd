@@ -59,6 +59,11 @@ var ui_root: Node = null
 ## banner feedback calls throughout this file (room clears, rite waves,
 ## zone transitions, level-ups, synergies) all go through it.
 var hud: HudLayer = null
+## Ports Game.ts's own ambientTimer (0.12s cadence, spawnZoneAmbientParticle) —
+## a single per-frame tick here covers both of the source's own two call
+## sites (its exploring-state early return and its fuller per-frame
+## update), since neither one is on any different cadence.
+var _ambient_particle_timer: float = 0.0
 var _active_room: RoomContainer = null
 var _transition: Dictionary = {}
 var _interact_key_down: bool = false
@@ -141,6 +146,28 @@ func _physics_process(delta: float) -> void:
 	_check_interact_key()
 	_check_inventory_key()
 	_update_room_clear(delta)
+	_update_ambient_particles(delta)
+
+## Ports Game.ts's own ambientTimer tick + spawnZoneAmbientParticle call —
+## a random point within (and slightly beyond) the camera's current view,
+## same `* 1.1` overscan the source uses so particles can drift in from
+## just off-screen instead of popping into existence at the edge.
+func _update_ambient_particles(delta: float) -> void:
+	_ambient_particle_timer -= delta
+	if _ambient_particle_timer > 0.0:
+		return
+	_ambient_particle_timer = 0.12
+	var zone: ZoneDefinition = RunState.current_layout().get("zone")
+	var camera: Camera2D = player.camera
+	if zone == null or camera == null:
+		return
+	var view_size: Vector2 = get_viewport().get_visible_rect().size / camera.zoom
+	var center: Vector2 = camera.get_screen_center_position()
+	var pos := Vector2(
+		center.x + (randf() - 0.5) * view_size.x * 1.1,
+		center.y + (randf() - 0.5) * view_size.y * 1.1,
+	)
+	VfxPresets.zone_ambient_particle(player.get_parent(), zone, pos)
 
 # ---------------------------------------------------------------- Run bootstrap
 

@@ -12,11 +12,14 @@ extends RefCounted
 ##   ParticlePresets.ts but never called from anywhere in the Web build
 ##   (verified by grepping every call site). Porting an unreachable preset
 ##   would just be unused surface area.
-## - spawnZoneAmbientParticle (drawRoom.ts, not ParticlePresets.ts, but the
-##   same shape of gap): reads ZoneDefinition fields (ambientParticle,
-##   sporeColors, palette.ambient/accent) that don't exist on this port's
-##   ZoneDefinition resource. A genuine atmosphere addition, not a
-##   feedback effect tied to an existing action — left for a dedicated pass.
+## - spawnZoneAmbientParticle (drawRoom.ts, not ParticlePresets.ts) is real
+##   now too — zone_ambient_particle() below, ticked from level_flow.gd.
+##   The ZoneDefinition fields it reads (ambient_particle, spore_colors,
+##   palette_ambient/accent) turned out to already exist on this port's own
+##   ZoneDefinition resource and every zone .tres, fully populated — this
+##   note used to claim otherwise; re-checked while auditing what else was
+##   left to migrate. Only the spawn function and its per-frame call were
+##   ever actually missing.
 ## - (Resolved as of step 9/Phase B — kept here as history, not a current
 ##   gap.) spawnHealSparkle's 3 TS call sites, spawnChestOpenBurst's
 ##   reward-shown gate, spawnLevelUpBurst's bow-unlock variant, and
@@ -139,8 +142,12 @@ static func spore_burst_vfx(parent: Node, pos: Vector2, radius: float) -> void:
 ## as the TS call sites do (a for-loop of individual spawnSporeMote calls,
 ## never ps.burst()). TS's 70/30 fungusBright/soulBright per-mote color
 ## pick is rolled right here since each call is already exactly one mote.
-static func spore_mote(parent: Node, pos: Vector2) -> void:
-	var color_hex: String = Palette.FUNGUS_BRIGHT if randf() < 0.7 else Palette.SOUL_BRIGHT
+## `colors`, when given (zone_ambient_particle's own uniform-random pick
+## from a zone's spore_colors), replaces that weighted default entirely —
+## matches drawRoom.ts's own spawnZoneAmbientParticle, which picks
+## uniformly from the zone's colors with no such weighting.
+static func spore_mote(parent: Node, pos: Vector2, colors: Array[String] = []) -> void:
+	var color_hex: String = colors[randi() % colors.size()] if colors.size() > 0 else (Palette.FUNGUS_BRIGHT if randf() < 0.7 else Palette.SOUL_BRIGHT)
 	VfxSystem.emit(parent, {
 		"position": pos, "direction_deg": -90.0, "spread_deg": 25.0,
 		"speed_min": 10.0, "speed_max": 26.0,
@@ -150,6 +157,39 @@ static func spore_mote(parent: Node, pos: Vector2) -> void:
 		"life_min": 0.9, "life_max": 1.8,
 		"glow": true, "shape": "circle",
 	})
+
+## Ports drawRoom.ts's spawnZoneAmbientParticle, one call per ambient tick
+## (level_flow.gd), picked by the zone's own ambient_particle enum.
+## 'spores' internally spawns 2 motes with their own small positional
+## jitter around `pos` — matches the source's own `for (i=0;i<2;i++)`
+## exactly, denser and slower than ash/embers' single-particle branches,
+## reusing spore_mote() above (an upward glowing mote is already exactly
+## that shape) with the zone's own spore_colors instead of its default.
+static func zone_ambient_particle(parent: Node, zone: ZoneDefinition, pos: Vector2) -> void:
+	match zone.ambient_particle:
+		ZoneDefinition.AmbientParticle.ASH:
+			VfxSystem.emit(parent, {
+				"position": pos, "direction_deg": 90.0, "spread_deg": 20.0,
+				"speed_min": 22.0, "speed_max": 40.0,
+				"size_min": 2.0, "size_max": 4.0,
+				"color": zone.palette_ambient, "end_color": zone.palette_floor, "alpha": 0.6,
+				"life_min": 4.0, "life_max": 6.0,
+				"shape": "circle",
+			})
+		ZoneDefinition.AmbientParticle.SPORES:
+			var colors: Array[String] = zone.spore_colors if zone.spore_colors.size() > 0 else [zone.palette_accent]
+			for i in range(2):
+				var jittered: Vector2 = pos + Vector2((randf() - 0.5) * 120.0, (randf() - 0.5) * 80.0)
+				spore_mote(parent, jittered, colors)
+		ZoneDefinition.AmbientParticle.EMBERS, ZoneDefinition.AmbientParticle.DUST:
+			VfxSystem.emit(parent, {
+				"position": pos, "direction_deg": -90.0, "spread_deg": 18.0,
+				"speed_min": 26.0, "speed_max": 46.0, "gravity": -6.0,
+				"size_min": 2.0, "size_max": 4.4,
+				"color": zone.palette_accent, "end_color": zone.palette_wall_top, "alpha": 0.75,
+				"life_min": 3.0, "life_max": 5.0,
+				"glow": true, "shape": "circle",
+			})
 
 static func shield_sparks(parent: Node, pos: Vector2, facing: float) -> void:
 	VfxSystem.emit(parent, {
