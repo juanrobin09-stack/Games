@@ -13,9 +13,9 @@ static func show_victory(parent: Node, soul_ash_earned: int, on_continue: Callab
 	var ui := VictoryDefeatUI.new()
 	parent.add_child(ui)
 	ui._build(
-		"The Ember Endures", "The Ashen Colossus falls. For now, the dark recedes.",
-		"Time Survived", soul_ash_earned,
-		[{"text": "Continue", "variant": MenuUiKit.ButtonVariant.PRIMARY, "callback": on_continue}]
+		I18n.t("victory.title", "The Ember Endures"), I18n.t("victory.subtitle", "The Ashen Colossus falls. For now, the dark recedes."),
+		I18n.t("stat.time", "Time"), soul_ash_earned,
+		[{"text": I18n.t("victory.continue", "Continue"), "variant": MenuUiKit.ButtonVariant.PRIMARY, "callback": on_continue}]
 	)
 	return ui
 
@@ -25,13 +25,13 @@ static func show_defeat(parent: Node, soul_ash_earned: int, on_try_again: Callab
 	var zone_name: String = "?"
 	var room := RunState.current_room()
 	if room != null and room.zone != null:
-		zone_name = room.zone.name
+		zone_name = I18n.tc(room.zone.id, "name", room.zone.name)
 	ui._build(
-		"The Light Gutters Out", "Fallen in %s. The Ember dims, but does not die." % zone_name,
-		"Time Survived", soul_ash_earned,
+		I18n.t("defeat.title", "The Light Gutters Out"), I18n.t("defeat.subtitleFormat", "Fallen in {zone}. The Ember dims, but does not die.").format({"zone": zone_name}),
+		I18n.t("stat.timeSurvived", "Time Survived"), soul_ash_earned,
 		[
-			{"text": "Try Again", "variant": MenuUiKit.ButtonVariant.PRIMARY, "callback": on_try_again},
-			{"text": "Main Menu", "variant": MenuUiKit.ButtonVariant.GHOST, "callback": on_main_menu},
+			{"text": I18n.t("defeat.tryAgain", "Try Again"), "variant": MenuUiKit.ButtonVariant.PRIMARY, "callback": on_try_again},
+			{"text": I18n.t("defeat.mainMenu", "Main Menu"), "variant": MenuUiKit.ButtonVariant.GHOST, "callback": on_main_menu},
 		]
 	)
 	return ui
@@ -55,16 +55,16 @@ func _build(title_text: String, subtitle_text: String, time_label: String, soul_
 
 	var stats: Array = [
 		[time_label, HudLayer.format_time(RunState.elapsed_time)],
-		["Kills", str(RunState.kills)],
-		["Damage Dealt", str(roundi(RunState.damage_dealt))],
-		["Embers Collected", str(RunState.embers_collected)],
-		["Upgrades Taken", str(RunState.upgrades_chosen.size())],
-		["Soul Ash Earned", str(soul_ash_earned)],
+		[I18n.t("stat.kills", "Kills"), str(RunState.kills)],
+		[I18n.t("stat.damageDealt", "Damage Dealt"), str(roundi(RunState.damage_dealt))],
+		[I18n.t("stat.embersCollected", "Embers Collected"), str(RunState.embers_collected)],
+		[I18n.t("stat.upgradesTaken", "Upgrades Taken"), str(RunState.upgrades_chosen.size())],
+		[I18n.t("stat.soulAshEarned", "Soul Ash Earned"), str(soul_ash_earned)],
 	]
 	content.add_child(_build_stat_grid(stats))
 
 	var seed_label := Label.new()
-	seed_label.text = "Seed: %s" % MetaProgression.last_seed
+	seed_label.text = "%s: %s" % [I18n.t("endScreen.seedLabel", "Seed"), MetaProgression.last_seed]
 	seed_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	seed_label.add_theme_font_size_override("font_size", 12)
 	seed_label.add_theme_color_override("font_color", Color(Palette.TEXT_FAINT))

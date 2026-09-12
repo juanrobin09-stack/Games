@@ -82,7 +82,7 @@ func _build(def: WorldEventDefinition) -> void:
 	panel_bg.add_child(content)
 
 	var title := Label.new()
-	title.text = def.title
+	title.text = I18n.tc(def.id, "title", def.title)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 22)
 	title.add_theme_color_override("font_color", Color(Palette.EMBER6))
@@ -91,7 +91,7 @@ func _build(def: WorldEventDefinition) -> void:
 	content.add_child(title)
 
 	var description := Label.new()
-	description.text = def.description
+	description.text = I18n.tc(def.id, "description", def.description)
 	description.add_theme_font_size_override("font_size", 14)
 	description.add_theme_color_override("font_color", Color(Palette.TEXT_DIM))
 	description.autowrap_mode = TextServer.AUTOWRAP_WORD
@@ -128,14 +128,14 @@ func _make_option_row(option: EventOption) -> Control:
 	row.add_child(col)
 
 	var label := Label.new()
-	label.text = option.label
+	label.text = I18n.tc(option.id, "label", option.label)
 	label.add_theme_font_size_override("font_size", 15)
 	label.add_theme_color_override("font_color", Color(Palette.EMBER5) if affordable else Color(Palette.TEXT_FAINT))
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(label)
 
 	var detail := Label.new()
-	detail.text = option.detail
+	detail.text = I18n.tc(option.id, "detail", option.detail)
 	detail.add_theme_font_size_override("font_size", 12)
 	detail.add_theme_color_override("font_color", Color(Palette.TEXT_DIM) if affordable else Color(Palette.TEXT_FAINT))
 	detail.autowrap_mode = TextServer.AUTOWRAP_WORD
@@ -144,7 +144,7 @@ func _make_option_row(option: EventOption) -> Control:
 
 	if option.cost > 0.0:
 		var cost_label := Label.new()
-		cost_label.text = "Costs %d Embers" % int(option.cost)
+		cost_label.text = "%s %d %s" % [I18n.t("event.costsPrefix", "Costs"), int(option.cost), I18n.t("currency.embers", "Embers")]
 		cost_label.add_theme_font_size_override("font_size", 11)
 		cost_label.add_theme_color_override("font_color", Color(Palette.SOUL_BRIGHT) if affordable else Color(Palette.TEXT_FAINT))
 		cost_label.mouse_filter = Control.MOUSE_FILTER_IGNORE

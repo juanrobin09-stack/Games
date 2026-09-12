@@ -3,7 +3,11 @@ extends Control
 ## Ports ui/CreditsScreen.ts. The "tech" line is adapted, not translated
 ## verbatim — the source's own line ("Built with TypeScript, Vite, Canvas
 ## 2D, and the Web Audio API") describes the Web build specifically and
-## would be factually wrong here.
+## would be factually wrong here. Routed through I18n.t() under its own
+## "credits.techGodot" key (absent from FR_UI, same as hud.levelMax/
+## banner.colossusFalls) rather than reusing "credits.tech" — that key's
+## real fr.ts translation names the Web build's own stack, which would be
+## just as wrong in French as the English original.
 
 static func show_credits(parent: Node, on_close: Callable) -> CreditsUI:
 	var ui := CreditsUI.new()
@@ -25,19 +29,19 @@ func _build(on_close: Callable) -> void:
 	content.add_theme_constant_override("separation", 16)
 	content.custom_minimum_size = Vector2(380.0, 0.0)
 
-	content.add_child(MenuUiKit.make_title("Credits"))
+	content.add_child(MenuUiKit.make_title(I18n.t("menu.credits", "Credits")))
 
 	var body := VBoxContainer.new()
 	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	body.add_theme_constant_override("separation", 10)
 	body.add_child(MenuUiKit.make_body_text("EMBERFALL: LAST LIGHT"))
-	body.add_child(MenuUiKit.make_body_text("A self-contained dark fantasy action roguelite. Every sprite, particle, and light in this game is generated procedurally at runtime — no external art or audio files."))
-	body.add_child(MenuUiKit.make_body_text("Built with Godot Engine and GDScript."))
-	body.add_child(MenuUiKit.make_body_text("Thank you for guarding the last light."))
+	body.add_child(MenuUiKit.make_body_text(I18n.t("credits.about", "A self-contained dark fantasy action roguelite. Every sprite, particle, and sound in this game is generated procedurally at runtime — no external art or audio files.")))
+	body.add_child(MenuUiKit.make_body_text(I18n.t("credits.techGodot", "Built with Godot Engine and GDScript.")))
+	body.add_child(MenuUiKit.make_body_text(I18n.t("credits.thanks", "Thank you for guarding the last light.")))
 	content.add_child(body)
 
 	var button_row := MenuUiKit.make_button_row()
-	var back_btn := MenuUiKit.make_button("Back", MenuUiKit.ButtonVariant.PRIMARY)
+	var back_btn := MenuUiKit.make_button(I18n.t("pause.back", "Back"), MenuUiKit.ButtonVariant.PRIMARY)
 	back_btn.pressed.connect(func():
 		if on_close.is_valid():
 			on_close.call()

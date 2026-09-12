@@ -1337,14 +1337,34 @@ non-goal (it reloads the whole page after a language change rather than
 retranslating whatever's already baked into the DOM) — this port's own
 screens are already rebuilt fresh every time they're shown, so a
 language change takes effect the next time each screen reopens, the same
-practical result without needing a reload. `MainMenuUI` is wired as a
-first, real, end-to-end case (Play/Upgrades/Armory/Settings/Credits, the
-seed placeholder, the tagline); every other screen — HUD, pause menu,
-shop/event/upgrade screens, inventory, armory, victory/defeat, and the
-settings screen itself — still builds hardcoded English. Converting each
-is mechanical (both dictionaries are already complete) but touches a
-large number of files, honestly named as still open rather than swept in
-alongside the infrastructure.
+practical result without needing a reload.
+
+`MainMenuUI` landed first as a real, end-to-end case, honestly disclosed
+at the time as the only screen actually wired — a follow-up pass has
+since swept every remaining screen through `I18n.t()`/`.tc()` the same
+way: HUD (room/level/synergy/XP labels, the key hint), settings + pause
+menu, loadout + upgrade-select + the shared upgrade card + the reward
+popup, shop + event, inventory + armory, victory/defeat + credits, plus
+the cross-cutting construction sites in `main.gd`, `level_flow.gd`,
+`enemy.gd`, and `level_generator.gd` (zone/weapon/ability/boss names,
+every toast and phase banner, mutated/empowered/heart-warden display
+names). Two small gaps surfaced and were fixed alongside the sweep rather
+than deferred: `gainShieldCharge` events never actually told the player
+anything happened (`Game.ts`'s own handler plays `shieldUp` *and* shows a
+`toast.wardenWard` toast; this port only had the SFX) — the missing toast
+call is now there too. And Victory/Defeat shared one hardcoded "Time
+Survived" stat label where the source uses two different keys
+(`stat.time` for Victory, `stat.timeSurvived` for Defeat) — this now
+matches the source exactly. A couple of strings stay deliberately English
+in both languages, the same "no fabricated translation" discipline
+`hud.levelMax` already established: `credits.techGodot` (this port's own
+"Built with Godot Engine and GDScript" line — the source's real
+`credits.tech` translation names TypeScript/Vite/Canvas2D/Web Audio,
+which would be factually wrong here) and `settings.languageHintGodot`
+(the source's own `settings.languageHint` says "Reloads the game to
+apply," describing *its* reload-on-change behavior; this port's screens
+just re-read the language next time they're shown, so that hint would be
+actively misleading if reused).
 
 **Verified** via real headless Godot runs, one per system, each with
 precise numeric assertions before committing: a hazard's shake, cloud
@@ -1360,7 +1380,15 @@ scale, `reduced_motion`'s exposed factor flipping between 1.0 and 0.05;
 `I18n.t()`/`.tc()` returning the correct French string, the correct
 English fallback, and the exact unmodified fallback for an untranslated
 key, plus `MainMenuUI`'s own Play button actually rendering "JOUER" end-
-to-end with the language set to French. Followed by a full cumulative
+to-end with the language set to French. The follow-up sweep was verified
+the same way, at real scale: a dedicated headless run built every
+converted screen (Credits, Settings, both Armory tabs, Pause, Loadout,
+Upgrade-select, Shop, a real Event drawn from `DataRegistry`, Inventory,
+and both Victory and Defeat) with the language set to French and asserted
+a specific, known French string — or, for the two Godot-only hint
+strings, the exact expected English — actually rendered somewhere in that
+screen's live node tree: 27 assertions, 27 passes, zero script errors.
+Followed by a full cumulative
 regression: a real 3-zone run with all three ambient-particle types,
 overlapping enemies, and a bloat detonation exercised together, zero
 script errors throughout. (A separate, pre-existing "Invalid polygon
@@ -1373,7 +1401,5 @@ scope.) Debug harness reverted after each (verified via `git diff`)
 before committing.
 
 **What's genuinely still open**: `graphics_quality` and `high_contrast`
-(named above, with why), the large mechanical sweep to wire `I18n.t()`/
-`.tc()` into every remaining UI screen, and the pre-existing enemy
-silhouette rendering warning just noted — plus, as ever, actually playing
-it.
+(named above, with why) and the pre-existing enemy silhouette rendering
+warning just noted — plus, as ever, actually playing it.

@@ -86,7 +86,7 @@ func _build() -> void:
 	panel_bg.add_child(content)
 
 	var title := Label.new()
-	title.text = "Character"
+	title.text = I18n.t("inventory.title", "Character")
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 22)
 	title.add_theme_color_override("font_color", Color(Palette.EMBER6))
@@ -98,8 +98,8 @@ func _build() -> void:
 	tab_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	tab_row.add_theme_constant_override("separation", 8)
 	content.add_child(tab_row)
-	_tab_buttons[Tab.CHARACTER] = _make_tab_button("Character", Tab.CHARACTER)
-	_tab_buttons[Tab.BUILD] = _make_tab_button("Build", Tab.BUILD)
+	_tab_buttons[Tab.CHARACTER] = _make_tab_button(I18n.t("inventory.tabCharacter", "Character"), Tab.CHARACTER)
+	_tab_buttons[Tab.BUILD] = _make_tab_button(I18n.t("inventory.tabBuild", "Build"), Tab.BUILD)
 	tab_row.add_child(_tab_buttons[Tab.CHARACTER])
 	tab_row.add_child(_tab_buttons[Tab.BUILD])
 
@@ -118,7 +118,7 @@ func _build() -> void:
 	button_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	button_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	content.add_child(button_row)
-	var back_button := _make_button("Back", true, false)
+	var back_button := _make_button(I18n.t("pause.back", "Back"), true, false)
 	back_button.pressed.connect(_close)
 	button_row.add_child(back_button)
 
@@ -179,7 +179,7 @@ func _build_character_tab(container: VBoxContainer) -> void:
 	container.add_child(header)
 
 	var level_label := Label.new()
-	level_label.text = "PLAYER — Level %d" % RunState.player_level
+	level_label.text = "%s — %s" % [I18n.t("inventory.player", "PLAYER"), I18n.t("inventory.levelFormat", "Level {n}").format({"n": RunState.player_level})]
 	level_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	level_label.add_theme_font_size_override("font_size", 16)
 	level_label.add_theme_color_override("font_color", Color(Palette.GOLD_BRIGHT))
@@ -210,7 +210,7 @@ func _build_character_tab(container: VBoxContainer) -> void:
 	xp_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	xp_track.add_child(xp_fill)
 	var xp_label := Label.new()
-	xp_label.text = "MAX" if is_max else "%d / %d XP" % [int(RunState.xp), int(xp_needed)]
+	xp_label.text = I18n.t("hud.levelMax", "MAX") if is_max else "%d / %d XP" % [int(RunState.xp), int(xp_needed)]
 	xp_label.set_anchors_preset(Control.PRESET_FULL_RECT)
 	xp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	xp_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -220,7 +220,7 @@ func _build_character_tab(container: VBoxContainer) -> void:
 
 	if RunState.stat_points > 0:
 		var points_label := Label.new()
-		points_label.text = "%d stat point(s) available" % RunState.stat_points
+		points_label.text = I18n.t("inventory.pointsAvailableFormat", "{count} stat point(s) available").format({"count": RunState.stat_points})
 		points_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		points_label.add_theme_font_size_override("font_size", 12)
 		points_label.add_theme_color_override("font_color", Color(Palette.GOLD_BRIGHT))
@@ -235,22 +235,24 @@ func _build_character_tab(container: VBoxContainer) -> void:
 	var has_bow: bool = player.unlocked_weapons.has("bow") if player != null else false
 	for def in PlayerProgression.player_stats():
 		var level: int = RunState.stat_levels.get(def.id, 0)
-		var per_level_text: String = ("+%s" % _format_num(def.value_per_level)) if def.mode == StatModifier.Mode.FLAT else ("+%d%%" % roundi(def.value_per_level * 100.0))
+		var unit_text: String = I18n.t("stat.unit.%s" % def.id, "")
+		var per_level_text: String = ("+%s %s" % [_format_num(def.value_per_level), unit_text]).strip_edges() if def.mode == StatModifier.Mode.FLAT else ("+%d%%" % roundi(def.value_per_level * 100.0))
 		var locked: bool = PlayerProgression.is_player_stat_locked(def.id, has_bow, RunState.zone_index)
 		var lock_reason: String = ""
 		if locked:
-			lock_reason = "Locked — recover the Warden's Bow to unlock." if def.id == "attackSpeed" else "Locked — reach the Hollow Ruins (Level 2) to unlock."
+			lock_reason = I18n.t("stat.lockedReason.attackSpeed", "Locked — recover the Warden's Bow to unlock.") if def.id == "attackSpeed" else I18n.t("stat.lockedReason.abilityDamage", "Locked — reach the Hollow Ruins (Level 2) to unlock.")
 		var can_spend: bool = RunState.stat_points > 0 and not locked
 		var stat_id: String = def.id
 		var right_widget: Control = _make_locked_badge() if locked else _make_plus_button(can_spend, func(): _on_spend_pressed(stat_id))
-		var desc: String = lock_reason if locked else "%s per level" % per_level_text
-		rows.add_child(_make_meta_row(def.icon, "%s — Level %d" % [_stat_display_name(def.id), level], Color(Palette.TEXT_WARM), desc, right_widget, locked))
+		var desc: String = lock_reason if locked else I18n.t("inventory.perLevelFormat", "{value} per level").format({"value": per_level_text})
+		var stat_name: String = I18n.t("stat.%s" % def.id, _stat_display_name(def.id))
+		rows.add_child(_make_meta_row(def.icon, "%s — %s %d" % [stat_name, I18n.t("upgrade.level", "Level"), level], Color(Palette.TEXT_WARM), desc, right_widget, locked))
 		# Ability Range isn't a stat-point row (driven entirely by in-run
 		# range upgrades) — shown read-only right after Ability Damage,
 		# same placement as the source.
 		if def.id == "abilityDamage" and player != null:
 			var range_value: float = PlayerProgression.get_ability_range_display(player.stats.area_damage_mult)
-			rows.add_child(_make_meta_row("range", "Ability Range", Color(Palette.TEXT_WARM), "Base 10 — grows with range upgrades found this run.", _make_value_badge(_format_num(range_value)), false))
+			rows.add_child(_make_meta_row("range", I18n.t("stat.abilityRange", "Ability Range"), Color(Palette.TEXT_WARM), I18n.t("inventory.abilityRangeDesc", "Base 10 — grows with range upgrades found this run."), _make_value_badge(_format_num(range_value)), false))
 
 func _on_spend_pressed(stat_id: String) -> void:
 	if _on_spend.call(stat_id):
@@ -282,7 +284,7 @@ func _build_build_tab(container: VBoxContainer) -> void:
 				active_synergies.append(s)
 
 	var subtitle1 := Label.new()
-	subtitle1.text = "Active synergies" if not active_synergies.is_empty() else "No synergies active yet — some upgrade pairs unlock a bonus effect."
+	subtitle1.text = I18n.t("pause.activeSynergies", "Active synergies") if not active_synergies.is_empty() else I18n.t("pause.noSynergies", "No synergies active yet — some upgrade pairs unlock a bonus effect.")
 	subtitle1.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	subtitle1.add_theme_font_size_override("font_size", 13)
 	subtitle1.add_theme_color_override("font_color", Color(Palette.TEXT_DIM))
@@ -297,7 +299,7 @@ func _build_build_tab(container: VBoxContainer) -> void:
 		container.add_child(syn_rows)
 		for s in active_synergies:
 			var syn := s as SynergyDefinition
-			syn_rows.add_child(_make_meta_row(syn.icon, syn.name, Color(Palette.SOUL_BRIGHT), syn.description, null, false))
+			syn_rows.add_child(_make_meta_row(syn.icon, I18n.tc(syn.id, "name", syn.name), Color(Palette.SOUL_BRIGHT), I18n.tc(syn.id, "description", syn.description), null, false))
 
 	var divider := ColorRect.new()
 	divider.color = Color(Palette.BORDER)
@@ -308,7 +310,9 @@ func _build_build_tab(container: VBoxContainer) -> void:
 	var owned: Array[OwnedUpgrade] = player.upgrades if player != null else []
 	var count: int = owned.size()
 	var subtitle2 := Label.new()
-	subtitle2.text = ("%d upgrade collected this run" % count) if count == 1 else ("%d upgrades collected this run" % count)
+	var count_key: String = "pause.upgradeCountOne" if count == 1 else "pause.upgradeCountMany"
+	var count_fallback: String = "{count} upgrade collected this run" if count == 1 else "{count} upgrades collected this run"
+	subtitle2.text = I18n.t(count_key, count_fallback).format({"count": count})
 	subtitle2.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	subtitle2.add_theme_font_size_override("font_size", 13)
 	subtitle2.add_theme_color_override("font_color", Color(Palette.TEXT_DIM))
@@ -317,7 +321,7 @@ func _build_build_tab(container: VBoxContainer) -> void:
 
 	if owned.is_empty():
 		var empty_label := Label.new()
-		empty_label.text = "No upgrades yet — clear a room, open a chest, or visit a shop."
+		empty_label.text = I18n.t("pause.noUpgrades", "No upgrades yet — clear a room, open a chest, or visit a shop.")
 		empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		empty_label.add_theme_font_size_override("font_size", 13)
 		empty_label.add_theme_color_override("font_color", Color(Palette.TEXT_DIM))
@@ -426,7 +430,7 @@ func _make_badge_pill(text: String, text_color: Color) -> Control:
 	return wrap
 
 func _make_locked_badge() -> Control:
-	return _make_badge_pill("Locked", Color(Palette.TEXT_DIM))
+	return _make_badge_pill(I18n.t("stat.locked", "Locked"), Color(Palette.TEXT_DIM))
 
 func _make_value_badge(text: String) -> Control:
 	return _make_badge_pill(text, Color(Palette.EMBER4))

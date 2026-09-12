@@ -85,19 +85,23 @@ func _on_boss_phase_changed(boss: Node) -> void:
 	var b := boss as BossCharacter
 	if b == null or hud == null:
 		return
-	hud.show_phase_banner("PHASE %d" % int(b.phase))
+	hud.show_phase_banner(I18n.t("banner.phase", "PHASE") + (" %d" % int(b.phase)))
 
 ## Ports BossSystem.ts's own deathAnimationDone-gated bossDefeated handling.
 func _on_boss_defeated(_boss: Node) -> void:
 	if hud != null:
-		hud.show_phase_banner("THE ASHEN COLOSSUS FALLS")
+		# Godot-port-only banner (the source goes straight to endRun/Victory
+		# with no phase banner here) — no FR_UI key exists for it, same
+		# honest "stays English in French mode" shape as hud.levelMax's own
+		# untranslated fallback.
+		hud.show_phase_banner(I18n.t("banner.colossusFalls", "THE ASHEN COLOSSUS FALLS"))
 
 ## Ports Game.ts's private onChampionShieldBreak's own showPhaseBanner call
 ## — the bloat-spawn/VFX half of that method already lives on CombatManager
 ## itself (see its own on_champion_shield_break), which emits this signal
 ## first specifically so the banner isn't coupled to that logic succeeding.
 func _on_champion_shield_broken(_enemy: Node) -> void:
-	hud.show_phase_banner("THE SHIELD SHATTERS")
+	hud.show_phase_banner(I18n.t("banner.shieldShatters", "THE SHIELD SHATTERS"))
 
 ## Ports every refreshMinimap() call site in Game.ts EXCEPT its one debug/
 ## dev-warp helper and the legacy no-stairwell advanceZone() fallback
@@ -122,10 +126,11 @@ func _on_player_leveled_up(new_level: int, _stat_points_awarded: int) -> void:
 		var parent := player.get_parent()
 		if parent != null:
 			VfxPresets.level_up_burst(parent, player.global_position)
-	hud.show_phase_banner("LEVEL %d" % new_level)
+	hud.show_phase_banner(I18n.t("banner.levelUp", "LEVEL") + (" %d" % new_level))
 	hud.show_toast(
-		"A new stat point is ready to spend — press I to open your character." if RunState.stat_points == 1
-		else "%d stat points are ready to spend — press I to open your character." % RunState.stat_points
+		I18n.t("toast.statPointOne", "A new stat point is ready to spend — press {key} to open your character.").format({"key": "I"})
+		if RunState.stat_points == 1
+		else I18n.t("toast.statPointMany", "{count} stat points are ready to spend — press {key} to open your character.").format({"count": RunState.stat_points, "key": "I"})
 	)
 
 func _physics_process(delta: float) -> void:
@@ -337,7 +342,7 @@ func enter_room(room: RoomContainer, from_dir) -> void:
 				# means the boss isn't instantly attacking the instant the door
 				# seals behind the player.
 				if hud != null:
-					hud.show_phase_banner(boss_def.name.to_upper())
+					hud.show_phase_banner(I18n.tc(boss_def.id, "name", boss_def.name).to_upper())
 				get_tree().create_timer(1.8).timeout.connect(boss.begin_fight)
 	elif not room.spawned_content:
 		LevelGenerator.populate_room_content(room, RunState.current_layout()["zone"], _spawn_options())
@@ -401,30 +406,32 @@ func get_interaction() -> Variant:
 
 	if room.type == RoomContainer.Type.CHEST and room.chest != null and room.chest.can_interact():
 		if p.distance_to(room.chest.position) < 75.0:
-			return {"label": "Open Chest", "action": func(): open_chest(room)}
+			return {"label": I18n.t("interact.openChest", "Open Chest"), "action": func(): open_chest(room)}
 	if room.type == RoomContainer.Type.SHOP:
 		var stall := _find_obstacle(room, ObstacleNode.Visual.MERCHANT_STALL)
 		if stall != null and p.distance_to(stall.position) < 110.0:
-			return {"label": "Browse Wares", "action": func(): open_shop_room(room)}
+			return {"label": I18n.t("interact.browseWares", "Browse Wares"), "action": func(): open_shop_room(room)}
 	if room.type == RoomContainer.Type.EVENT and not room.event_resolved:
 		var shrine := _find_obstacle(room, ObstacleNode.Visual.SHRINE)
 		if shrine != null and p.distance_to(shrine.position) < 110.0:
-			return {"label": "Investigate", "action": func(): open_event_room(room)}
+			return {"label": I18n.t("interact.investigate", "Investigate"), "action": func(): open_event_room(room)}
 	if room.type == RoomContainer.Type.REST and not room.rest_used:
 		var brazier := _find_obstacle(room, ObstacleNode.Visual.BRAZIER)
 		if brazier != null and p.distance_to(brazier.position) < 110.0:
-			return {"label": "Rest at the Brazier", "action": func(): use_rest(room)}
+			return {"label": I18n.t("interact.restAtBrazier", "Rest at the Brazier"), "action": func(): use_rest(room)}
 	if room.type == RoomContainer.Type.SANCTUM and not room.ritual_active and not room.cleared:
 		if center_dist < LevelGenerator.SANCTUM_RING_RADIUS * 0.65:
-			return {"label": "Kneel at the Circle", "action": func(): begin_rite(room)}
+			return {"label": I18n.t("interact.kneelAtCircle", "Kneel at the Circle"), "action": func(): begin_rite(room)}
 	if room.type == RoomContainer.Type.START and RunState.zone_index > 0:
 		var stairs_up := _find_obstacle(room, ObstacleNode.Visual.STAIRS_UP)
 		if stairs_up != null and p.distance_to(stairs_up.position) < stairs_up.radius + 72.0:
-			return {"label": "Ascend", "action": func(): begin_ascent(stairs_up)}
+			var ascend_label: String = I18n.t("interact.ascendToFormat", "Ascend to {name}").format({"name": I18n.t("interact.thePreviousZone", "the previous zone")})
+			return {"label": ascend_label, "action": func(): begin_ascent(stairs_up)}
 	if room.type == RoomContainer.Type.HEART and room.cleared and not RunState.is_final_zone():
 		var stairs_down := _find_obstacle(room, ObstacleNode.Visual.STAIRS_DOWN)
 		if stairs_down != null and stairs_down.activated and p.distance_to(stairs_down.position) < stairs_down.radius + 72.0:
-			return {"label": "Descend", "action": func(): begin_descent(stairs_down)}
+			var descend_label: String = I18n.t("interact.descendToFormat", "Descend to {name}").format({"name": I18n.t("interact.theNextZone", "the next zone")})
+			return {"label": descend_label, "action": func(): begin_descent(stairs_down)}
 	return null
 
 func _check_interact_key() -> void:
@@ -490,8 +497,8 @@ func _grant_room_clear_reward(room: RoomContainer) -> void:
 		player.weapon_id = "bow"
 		AudioEngine.play_sfx("chestOpenLegendary")
 		VfxPresets.level_up_burst(room, player.global_position)
-		hud.show_phase_banner("THE WARDEN'S BOW")
-		hud.show_toast("A weapon fast where the blade is slow. Attack speed now has something to sharpen.")
+		hud.show_phase_banner(I18n.t("banner.bowFound", "THE WARDEN'S BOW"))
+		hud.show_toast(I18n.t("toast.bowFound", "A weapon fast where the blade is slow. Attack speed now has something to sharpen."))
 
 	var bonus_luck: float = 0.0
 	if room.type == RoomContainer.Type.ELITE or room.type == RoomContainer.Type.HEART:
@@ -540,7 +547,7 @@ func open_stairs(room: RoomContainer, animate: bool) -> void:
 	for i in range(10):
 		var jitter := Vector2(randf_range(-30.0, 30.0), randf_range(-20.0, 20.0))
 		VfxPresets.spore_mote(room, stairs.global_position + jitter)
-	hud.show_toast("The seal grinds open. The stairs lead down.")
+	hud.show_toast(I18n.t("toast.sealOpen", "The seal grinds open. The stairs lead down."))
 
 func begin_descent(stairs: ObstacleNode) -> void:
 	if not _transition.is_empty():
@@ -635,10 +642,10 @@ func _complete_descent() -> void:
 	_land_after_transition(next_room, arrival, "descend")
 	AudioEngine.play_sfx("zoneArrive")
 	MusicEngine.set_mood(RunState.zone_index)
-	hud.show_phase_banner(zone.name.to_upper())
+	hud.show_phase_banner(I18n.tc(zone.id, "name", zone.name).to_upper())
 	# 1.1s delay matches the source exactly — long enough that the subtitle
 	# toast doesn't visually collide with the phase banner's own entrance.
-	get_tree().create_timer(1.1).timeout.connect(func(): hud.show_toast(zone.subtitle))
+	get_tree().create_timer(1.1).timeout.connect(func(): hud.show_toast(I18n.tc(zone.id, "subtitle", zone.subtitle)))
 
 ## Mirrors _complete_descent: lands the player back in the previous zone's
 ## heart/boss room, at the mouth of ITS stairsDown, then walks them out to
@@ -655,7 +662,7 @@ func _complete_ascent() -> void:
 	# No subtitle toast here (unlike _complete_descent) — matches the
 	# source: re-entering a zone you've already visited doesn't need its
 	# "welcome to X" line again, only the phase banner.
-	hud.show_phase_banner(zone.name.to_upper())
+	hud.show_phase_banner(I18n.tc(zone.id, "name", zone.name).to_upper())
 
 func _land_after_transition(room: RoomContainer, arrival: ObstacleNode, kind: String) -> void:
 	var fallback_mouth := Vector2(RoomContainer.ROOM_WIDTH / 2.0, RoomContainer.ROOM_HEIGHT / 2.0)
@@ -682,7 +689,7 @@ func begin_rite(room: RoomContainer) -> void:
 	room.refresh_walls()
 	AudioEngine.play_sfx("ritualCandle")
 	AudioEngine.play_sfx("doorOpen")
-	hud.show_phase_banner("THE RITE BEGINS")
+	hud.show_phase_banner(I18n.t("banner.riteBegins", "THE RITE BEGINS"))
 	_sync_combat_state()
 
 func _update_rite(room: RoomContainer, delta: float) -> void:
@@ -712,7 +719,7 @@ func _update_rite(room: RoomContainer, delta: float) -> void:
 		VfxPresets.spore_burst_vfx(room, e.global_position, 26.0)
 	room.ritual_wave += 1
 	room.ritual_wave_timer = 1.6
-	hud.show_phase_banner("WAVE %d" % room.ritual_wave)
+	hud.show_phase_banner(I18n.t("banner.wave", "WAVE") + (" %d" % room.ritual_wave))
 	# Ports Game.ts's updateRite: two more candles catch per wave survived
 	# (indices (wave-1)*2 and (wave-1)*2+1, using the just-incremented wave).
 	for idx in [(room.ritual_wave - 1) * 2, (room.ritual_wave - 1) * 2 + 1]:
@@ -732,8 +739,8 @@ func _complete_rite(room: RoomContainer) -> void:
 	player.heal(player.stats.max_hp * 0.3)
 	VfxPresets.heal_sparkle(room, player.global_position)
 	RunState.add_embers(35)
-	hud.show_phase_banner("THE RITE IS DONE")
-	hud.show_toast("The sanctum yields what it kept: a rare blessing, and 35 Embers.")
+	hud.show_phase_banner(I18n.t("banner.riteDone", "THE RITE IS DONE"))
+	hud.show_toast(I18n.t("toast.sanctumReward", "The sanctum yields what it kept: a rare blessing, and 35 Embers."))
 	_sync_combat_state()
 	_grant_room_clear_reward(room)
 
@@ -755,7 +762,7 @@ func _grant_upgrade(def: UpgradeDefinition) -> void:
 		if syn == null:
 			continue
 		get_tree().create_timer(i * 0.9).timeout.connect(func():
-			hud.show_synergy_banner(syn.name, syn.description)
+			hud.show_synergy_banner(I18n.tc(syn.id, "name", syn.name), I18n.tc(syn.id, "description", syn.description))
 			AudioEngine.play_sfx("synergyFormed")
 		)
 
@@ -770,7 +777,7 @@ func use_rest(room: RoomContainer) -> void:
 	player.heal(heal_amount)
 	VfxPresets.heal_sparkle(room, player.global_position)
 	AudioEngine.play_sfx("pickupHeart")
-	hud.show_toast("The brazier's warmth mends your wounds.")
+	hud.show_toast(I18n.t("toast.brazier", "The brazier's warmth mends your wounds."))
 
 ## Ports Game.ts's private openChest: a chest grants exactly one upgrade, at
 ## or above its own tier — no player choice involved, unlike a room-clear
@@ -801,7 +808,7 @@ func open_chest(room: RoomContainer) -> void:
 		return
 	var level: int = UpgradePool.upcoming_upgrade_level(def.id, player.upgrades)
 	_grant_upgrade(def)
-	RewardPopup.show_reward(ui_root, def, "Chest Reward", level)
+	RewardPopup.show_reward(ui_root, def, I18n.t("reward.chest", "Chest Reward"), level)
 
 ## Ports Game.ts's private openShopRoom. reroll_count is boxed in a 1-
 ## element Array, not a plain int — GDScript lambdas capture locals BY
@@ -902,7 +909,7 @@ func _apply_event_effect(option: EventOption, room: RoomContainer) -> void:
 			var def := UpgradePool.pick_upgrade_at_least_rarity(rng, min_rarity, current_gate_ids(), player.upgrades, RunState.zone_index)
 			var level: int = UpgradePool.upcoming_upgrade_level(def.id, player.upgrades)
 			_grant_upgrade(def)
-			RewardPopup.show_reward(ui_root, def, "The Merchant", level)
+			RewardPopup.show_reward(ui_root, def, I18n.t("reward.merchant", "The Merchant"), level)
 		EventOption.EffectKind.LOSE_HP_FOR_RARE_UPGRADE:
 			var loss: float = player.stats.max_hp * (option.value if option.value > 0.0 else 0.25)
 			player.hp = maxf(1.0, player.hp - loss)
@@ -910,7 +917,7 @@ func _apply_event_effect(option: EventOption, room: RoomContainer) -> void:
 			var def2 := UpgradePool.pick_upgrade_at_least_rarity(rng2, UpgradeDefinition.Rarity.RARE, current_gate_ids(), player.upgrades, RunState.zone_index)
 			var level2: int = UpgradePool.upcoming_upgrade_level(def2.id, player.upgrades)
 			_grant_upgrade(def2)
-			RewardPopup.show_reward(ui_root, def2, "The Dying Flame", level2)
+			RewardPopup.show_reward(ui_root, def2, I18n.tc("dyingFlame", "title", "The Dying Flame"), level2)
 		EventOption.EffectKind.GAMBLE_EMBERS:
 			if randf() < 0.5:
 				RunState.add_embers(RunState.embers)
@@ -925,6 +932,7 @@ func _apply_event_effect(option: EventOption, room: RoomContainer) -> void:
 		EventOption.EffectKind.GAIN_SHIELD_CHARGE:
 			player.shield_charges += int(option.value) if option.value > 0.0 else 1
 			AudioEngine.play_sfx("shieldUp")
+			hud.show_toast(I18n.t("toast.wardenWard", "A Warden’s ward settles over you."))
 		EventOption.EffectKind.GAIN_MAX_HP:
 			var amount: float = option.value if option.value > 0.0 else 15.0
 			var mod := StatModifier.new()

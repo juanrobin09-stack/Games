@@ -79,7 +79,7 @@ func _build(choices: Array[UpgradeDefinition], levels: Array[int]) -> void:
 	panel_bg.add_child(panel)
 
 	var title := Label.new()
-	title.text = "A Blessing Awaits"
+	title.text = I18n.t("upgradeSelect.title", "A Blessing Awaits")
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 24)
 	title.add_theme_color_override("font_color", Color(Palette.EMBER6))
@@ -87,7 +87,7 @@ func _build(choices: Array[UpgradeDefinition], levels: Array[int]) -> void:
 	panel.add_child(title)
 
 	var subtitle := Label.new()
-	subtitle.text = "Choose one. The Ember remembers every choice."
+	subtitle.text = I18n.t("upgradeSelect.subtitle", "Choose one. The Ember remembers every choice.")
 	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	subtitle.add_theme_font_size_override("font_size", 13)
 	subtitle.add_theme_color_override("font_color", Color(Palette.TEXT_DIM))
@@ -104,7 +104,8 @@ func _build(choices: Array[UpgradeDefinition], levels: Array[int]) -> void:
 		var card := UpgradeCard.new()
 		card.def = choices[i]
 		card.level = levels[i]
-		card.first_tag_text = UpgradeDefinition.Rarity.keys()[choices[i].rarity].to_lower()
+		var rarity_key: String = UpgradeDefinition.Rarity.keys()[choices[i].rarity].to_lower()
+		card.first_tag_text = I18n.t("rarity.%s" % rarity_key, rarity_key)
 		card.clickable = true
 		cards_row.add_child(card)
 		card.chosen.connect(func(def: UpgradeDefinition): chosen.emit(def))

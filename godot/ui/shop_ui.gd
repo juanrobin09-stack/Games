@@ -81,7 +81,7 @@ func _build() -> void:
 	panel_bg.add_child(content)
 
 	var title := Label.new()
-	title.text = "The Forgotten Merchant"
+	title.text = I18n.t("shop.title", "The Forgotten Merchant")
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 24)
 	title.add_theme_color_override("font_color", Color(Palette.EMBER6))
@@ -89,7 +89,7 @@ func _build() -> void:
 	content.add_child(title)
 
 	var subtitle := Label.new()
-	subtitle.text = "\"Everything has a price, Warden. Choose wisely.\""
+	subtitle.text = I18n.t("shop.subtitle", "\"Everything has a price, Warden. Choose wisely.\"")
 	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	subtitle.add_theme_font_size_override("font_size", 13)
 	subtitle.add_theme_color_override("font_color", Color(Palette.TEXT_DIM))
@@ -123,10 +123,10 @@ func _build() -> void:
 	button_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	button_row.add_theme_constant_override("separation", 10)
 	content.add_child(button_row)
-	_reroll_button = _make_button("Reroll (%d)" % Shop.REROLL_COST, false, true)
+	_reroll_button = _make_button("%s (%d)" % [I18n.t("shop.reroll", "Reroll"), Shop.REROLL_COST], false, true)
 	_reroll_button.pressed.connect(_on_reroll_pressed)
 	button_row.add_child(_reroll_button)
-	var leave_button := _make_button("Leave", true, false)
+	var leave_button := _make_button(I18n.t("shop.leave", "Leave"), true, false)
 	leave_button.pressed.connect(_close)
 	button_row.add_child(leave_button)
 
@@ -183,13 +183,14 @@ func _make_offer_row(offer: ShopOffer) -> Control:
 	info.add_theme_constant_override("separation", 2)
 	hbox.add_child(info)
 	var name_label := Label.new()
-	name_label.text = ("%s — Level %d" % [offer.upgrade.name, offer.upgrade_level]) if is_upgrade else "Mend Your Wounds"
+	var base_name: String = I18n.tc(offer.upgrade.id, "name", offer.upgrade.name) if is_upgrade else I18n.t("shop.healName", "Mend Your Wounds")
+	name_label.text = ("%s — %s %d" % [base_name, I18n.t("upgrade.level", "Level"), offer.upgrade_level]) if is_upgrade else base_name
 	name_label.add_theme_font_size_override("font_size", 15)
 	name_label.add_theme_color_override("font_color", accent)
 	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	info.add_child(name_label)
 	var desc_label := Label.new()
-	desc_label.text = offer.upgrade.description if is_upgrade else "Restore a portion of your health."
+	desc_label.text = I18n.tc(offer.upgrade.id, "description", offer.upgrade.description) if is_upgrade else I18n.t("shop.healDesc", "Restore a portion of your health.")
 	desc_label.add_theme_font_size_override("font_size", 12)
 	desc_label.add_theme_color_override("font_color", Color(Palette.TEXT_DIM))
 	desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD
@@ -214,7 +215,7 @@ func _make_offer_row(offer: ShopOffer) -> Control:
 	cost_row.add_child(cost_label)
 
 	var affordable: bool = RunState.embers >= offer.cost and not offer.purchased
-	var buy_btn := _make_button("Sold" if offer.purchased else "Buy", false, true)
+	var buy_btn := _make_button(I18n.t("shop.sold", "Sold") if offer.purchased else I18n.t("shop.buy", "Buy"), false, true)
 	buy_btn.disabled = not affordable
 	buy_btn.pressed.connect(func(): _buy(offer))
 	hbox.add_child(buy_btn)

@@ -403,7 +403,7 @@ func _build_bottom_left() -> void:
 	_ability_slot.add_child(_ability_sweep)
 
 	var key_hint := Label.new()
-	key_hint.text = "RMB"
+	key_hint.text = I18n.t("hud.rmbHint", "RMB")
 	key_hint.position = Vector2(ABILITY_SLOT_SIZE - 30.0, ABILITY_SLOT_SIZE - 16.0)
 	key_hint.size = Vector2(28.0, 14.0)
 	key_hint.add_theme_font_size_override("font_size", 9)
@@ -457,7 +457,7 @@ func _build_bottom_right() -> void:
 	_xp_fill = xp["fill"]
 	_xp_label = xp["label"]
 	_level_label = Label.new()
-	_level_label.text = "Lv.1"
+	_level_label.text = I18n.t("hud.levelAbbrevFormat", "Lv.{n}").format({"n": 1})
 	_level_label.add_theme_font_size_override("font_size", 13)
 	_level_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var xp_row := xp["row"] as HBoxContainer
@@ -552,7 +552,7 @@ func _build_banners() -> void:
 	synergy_col.add_theme_constant_override("separation", 2)
 	_synergy_banner.add_child(synergy_col)
 	var synergy_label := Label.new()
-	synergy_label.text = "Synergy Formed"
+	synergy_label.text = I18n.t("hud.synergyFormed", "Synergy Formed")
 	synergy_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	synergy_label.add_theme_font_size_override("font_size", 10)
 	synergy_label.add_theme_color_override("font_color", Color(Palette.SOUL_BRIGHT))
@@ -790,14 +790,14 @@ func refresh_minimap(layout: Dictionary, current_room_key: String) -> void:
 func update(data: Dictionary) -> void:
 	var player: PlayerCharacter = data["player"]
 
-	_level_label.text = "Lv.%d" % int(data["player_level"])
+	_level_label.text = I18n.t("hud.levelAbbrevFormat", "Lv.{n}").format({"n": int(data["player_level"])})
 	var is_max: bool = data["is_max_level"]
 	var xp_ratio: float = 1.0 if is_max else clampf(float(data["xp"]) / maxf(1.0, float(data["xp_to_next"])), 0.0, 1.0)
 	_set_bar_ratio(_xp_fill, xp_ratio)
-	_xp_label.text = "MAX" if is_max else "%d/%d" % [int(data["xp"]), int(data["xp_to_next"])]
+	_xp_label.text = I18n.t("hud.levelMax", "MAX") if is_max else "%d/%d" % [int(data["xp"]), int(data["xp_to_next"])]
 	var stat_points: int = data["stat_points"]
 	if stat_points > 0:
-		_points_hint.text = "+%d  [I]" % stat_points
+		_points_hint.text = "%s  [I]" % I18n.t("hud.pointsReadyFormat", "+{count}").format({"count": stat_points})
 		_points_hint.visible = true
 	else:
 		_points_hint.visible = false
@@ -915,16 +915,16 @@ func update(data: Dictionary) -> void:
 ## Mirrors Game.ts's private roomTypeLabel.
 static func room_type_label(type: RoomContainer.Type) -> String:
 	match type:
-		RoomContainer.Type.START: return "Entrance"
-		RoomContainer.Type.COMBAT: return "Combat"
-		RoomContainer.Type.ELITE: return "Elite Den"
-		RoomContainer.Type.CHEST: return "Vault"
-		RoomContainer.Type.SHOP: return "Merchant"
-		RoomContainer.Type.EVENT: return "Unknown"
-		RoomContainer.Type.REST: return "Respite"
-		RoomContainer.Type.HEART: return "Zone Heart"
-		RoomContainer.Type.BOSS: return "The Colossus"
-		RoomContainer.Type.SANCTUM: return "Drowned Sanctum"
+		RoomContainer.Type.START: return I18n.t("room.start", "Entrance")
+		RoomContainer.Type.COMBAT: return I18n.t("room.combat", "Combat")
+		RoomContainer.Type.ELITE: return I18n.t("room.elite", "Elite Den")
+		RoomContainer.Type.CHEST: return I18n.t("room.chest", "Vault")
+		RoomContainer.Type.SHOP: return I18n.t("room.shop", "Merchant")
+		RoomContainer.Type.EVENT: return I18n.t("room.event", "Unknown")
+		RoomContainer.Type.REST: return I18n.t("room.rest", "Respite")
+		RoomContainer.Type.HEART: return I18n.t("room.heart", "Zone Heart")
+		RoomContainer.Type.BOSS: return I18n.t("room.boss", "The Colossus")
+		RoomContainer.Type.SANCTUM: return I18n.t("room.sanctum", "Drowned Sanctum")
 		_: return "?"
 
 ## Mirrors Game.ts's iconForWeapon/iconForAbility.

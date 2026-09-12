@@ -93,7 +93,8 @@ func _build_content() -> void:
 	# it's suppressed (show_tags = false), fold that into the name line
 	# instead — matches the source's Build-tab card, whose name text is
 	# `${name} — Level ${stacks}` with no separate tags row at all.
-	name_label.text = def.name if show_tags else "%s — Level %d" % [def.name, level]
+	var display_name: String = I18n.tc(def.id, "name", def.name)
+	name_label.text = display_name if show_tags else "%s — %s %d" % [display_name, I18n.t("upgrade.level", "Level"), level]
 	name_label.add_theme_font_size_override("font_size", 16)
 	name_label.add_theme_color_override("font_color", _rarity_color())
 	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD
@@ -101,7 +102,7 @@ func _build_content() -> void:
 	col.add_child(name_label)
 
 	var desc_label := Label.new()
-	desc_label.text = def.description
+	desc_label.text = I18n.tc(def.id, "description", def.description)
 	desc_label.add_theme_font_size_override("font_size", 12)
 	desc_label.add_theme_color_override("font_color", Color(Palette.TEXT_DIM))
 	desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD
@@ -117,7 +118,7 @@ func _build_content() -> void:
 		col.add_child(tags_row)
 		if first_tag_text != "":
 			tags_row.add_child(_make_tag(first_tag_text, _rarity_color()))
-		tags_row.add_child(_make_tag("Level %d" % level, Color(Palette.TEXT_DIM)))
+		tags_row.add_child(_make_tag("%s %d" % [I18n.t("upgrade.level", "Level"), level], Color(Palette.TEXT_DIM)))
 
 func _make_tag(text: String, color: Color) -> Control:
 	var wrap := PanelContainer.new()

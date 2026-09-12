@@ -96,7 +96,7 @@ func _build() -> void:
 	scroll.add_child(_list_col)
 
 	var button_row := MenuUiKit.make_button_row()
-	var back_btn := MenuUiKit.make_button("Back", MenuUiKit.ButtonVariant.PRIMARY)
+	var back_btn := MenuUiKit.make_button(I18n.t("pause.back", "Back"), MenuUiKit.ButtonVariant.PRIMARY)
 	back_btn.pressed.connect(func():
 		if _on_close.is_valid():
 			_on_close.call()
@@ -109,12 +109,12 @@ func _build() -> void:
 	_render_list()
 
 func _title_text() -> String:
-	return "Permanent Upgrades" if _mode == Mode.UPGRADES else "Armory"
+	return I18n.t("meta.permanentUpgrades", "Permanent Upgrades") if _mode == Mode.UPGRADES else I18n.t("menu.armory", "Armory")
 
 func _subtitle_text() -> String:
-	return ("Spend Soul Ash gathered across fallen runs to strengthen every Warden to come."
+	return (I18n.t("meta.upgradesSubtitle", "Spend Soul Ash gathered across fallen runs to strengthen every Warden to come.")
 		if _mode == Mode.UPGRADES
-		else "Unlock new weapons, abilities, and threats that persist across every run.")
+		else I18n.t("meta.armorySubtitle", "Unlock new weapons, abilities, and threats that persist across every run."))
 
 func _switch_mode(mode: Mode) -> void:
 	if _mode == mode:
@@ -136,10 +136,10 @@ func _render_tabs() -> void:
 	for child in _tab_row.get_children():
 		_tab_row.remove_child(child)
 		child.queue_free()
-	var upgrades_btn := MenuUiKit.make_button("Upgrades", MenuUiKit.ButtonVariant.PRIMARY if _mode == Mode.UPGRADES else MenuUiKit.ButtonVariant.PLAIN)
+	var upgrades_btn := MenuUiKit.make_button(I18n.t("menu.upgrades", "Upgrades"), MenuUiKit.ButtonVariant.PRIMARY if _mode == Mode.UPGRADES else MenuUiKit.ButtonVariant.PLAIN)
 	upgrades_btn.pressed.connect(func(): _switch_mode(Mode.UPGRADES))
 	_tab_row.add_child(upgrades_btn)
-	var armory_btn := MenuUiKit.make_button("Armory", MenuUiKit.ButtonVariant.PRIMARY if _mode == Mode.ARMORY else MenuUiKit.ButtonVariant.PLAIN)
+	var armory_btn := MenuUiKit.make_button(I18n.t("menu.armory", "Armory"), MenuUiKit.ButtonVariant.PRIMARY if _mode == Mode.ARMORY else MenuUiKit.ButtonVariant.PLAIN)
 	armory_btn.pressed.connect(func(): _switch_mode(Mode.ARMORY))
 	_tab_row.add_child(armory_btn)
 
@@ -147,7 +147,7 @@ func _render_list() -> void:
 	for child in _list_col.get_children():
 		_list_col.remove_child(child)
 		child.queue_free()
-	_balance_label.text = "%d Soul Ash" % MetaProgression.soul_ash
+	_balance_label.text = "%d %s" % [MetaProgression.soul_ash, I18n.t("currency.soulAsh", "Soul Ash")]
 	if _mode == Mode.UPGRADES:
 		for d in DataRegistry.all("permanent_upgrades"):
 			_list_col.add_child(_make_upgrade_row(d as PermanentUpgradeDefinition))
@@ -163,16 +163,17 @@ func _make_upgrade_row(def: PermanentUpgradeDefinition) -> Control:
 
 	var buy_label: String
 	if locked:
-		buy_label = "Locked"
+		buy_label = I18n.t("meta.locked", "Locked")
 	elif cost == null:
-		buy_label = "Max"
+		buy_label = I18n.t("meta.max", "Max")
 	else:
 		buy_label = str(cost)
 
-	var desc: String = def.description
+	var desc: String = I18n.tc(def.id, "description", def.description)
 	if locked:
 		var required_def := DataRegistry.get_permanent_upgrade(def.requires)
-		desc = "Requires %s" % (required_def.name if required_def != null else def.requires)
+		var required_name: String = I18n.tc(required_def.id, "name", required_def.name) if required_def != null else def.requires
+		desc = I18n.t("meta.requiresFormat", "Requires {name}").format({"name": required_name})
 
 	var pips := HBoxContainer.new()
 	pips.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -194,23 +195,23 @@ func _make_upgrade_row(def: PermanentUpgradeDefinition) -> Control:
 			AudioEngine.play_sfx("shopError")
 	)
 
-	return _make_row(def.icon, def.name, desc, pips, buy_btn, locked)
+	return _make_row(def.icon, I18n.tc(def.id, "name", def.name), desc, pips, buy_btn, locked)
 
 func _make_unlock_row(def: UnlockDefinition) -> Control:
 	var unlocked := MetaProgression.has_unlock(def.id)
 	var can_buy := MetaProgression.can_purchase_unlock(def.id)
 
-	var detail := def.description
+	var detail: String = I18n.tc(def.id, "description", def.description)
 	if def.kind == UnlockDefinition.Kind.WEAPON:
 		var weapon_def := DataRegistry.get_weapon(def.ref_id)
 		if weapon_def != null:
-			detail = weapon_def.description
+			detail = I18n.tc(weapon_def.id, "description", weapon_def.description)
 	elif def.kind == UnlockDefinition.Kind.ABILITY:
 		var ability_def := DataRegistry.get_ability(def.ref_id)
 		if ability_def != null:
-			detail = ability_def.description
+			detail = I18n.tc(ability_def.id, "description", ability_def.description)
 
-	var buy_btn := MenuUiKit.make_button("Unlocked" if unlocked else str(def.cost), MenuUiKit.ButtonVariant.PLAIN)
+	var buy_btn := MenuUiKit.make_button(I18n.t("meta.unlocked", "Unlocked") if unlocked else str(def.cost), MenuUiKit.ButtonVariant.PLAIN)
 	buy_btn.disabled = unlocked or not can_buy
 	buy_btn.pressed.connect(func():
 		if MetaProgression.purchase_unlock(def.id):
@@ -220,7 +221,7 @@ func _make_unlock_row(def: UnlockDefinition) -> Control:
 			AudioEngine.play_sfx("shopError")
 	)
 
-	return _make_row(UNLOCK_ICON.get(def.kind, "blade"), def.name, detail, null, buy_btn, false)
+	return _make_row(UNLOCK_ICON.get(def.kind, "blade"), I18n.tc(def.id, "name", def.name), detail, null, buy_btn, false)
 
 ## Ports `.meta-node`: icon badge | name+desc(+optional `extra`, e.g. the
 ## Upgrades tab's level pips) | trailing widget (the buy button, here —

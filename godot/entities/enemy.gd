@@ -333,13 +333,14 @@ func _draw() -> void:
 		draw_string(font, Vector2(-radius - 10.0, -radius - 10.0), label, HORIZONTAL_ALIGNMENT_LEFT, 160.0, 13, Color.WHITE)
 
 	if font != null and (def.is_elite or is_elite_instance or is_mutated_variant):
-		# Name label above the head — ports drawEnemy.ts's own label. No
-		# Godot i18n system exists yet (source looks up tc(def.id,'name',..)
-		# first), so this just falls back straight to display_name/def.name.
+		# Name label above the head — ports drawEnemy.ts's own label
+		# (tc(def.id, 'name', def.name) when display_name isn't already
+		# set — level_generator.gd's own empowered/mutated/heart-warden
+		# variants already route their own override text through I18n).
 		# draw_string has no shadow/outline primitive either, so the
 		# source's shadowBlur behind the text is dropped — a flat color
 		# read is enough at this scale.
-		var shown_name: String = display_name if display_name != "" else def.name
+		var shown_name: String = display_name if display_name != "" else I18n.tc(def.id, "name", def.name)
 		var name_color: Color = Color(Palette.SOUL_BRIGHT) if (is_mutated_variant and not is_elite_instance and not def.is_elite) else Color(Palette.EMBER5)
 		draw_string(font, Vector2(-70.0, -r - 18.0), shown_name.to_upper(), HORIZONTAL_ALIGNMENT_CENTER, 140.0, 13, name_color)
 

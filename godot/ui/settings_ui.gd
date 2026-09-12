@@ -22,10 +22,14 @@ extends Control
 ##   TS already baked into the DOM) — this port's own screens are already
 ##   rebuilt fresh each time they're shown, so a change takes effect next
 ##   time each screen reopens, same practical result without needing a
-##   reload. MainMenuUI is wired as a first, real, verifiable case; every
-##   other screen (this one included) still builds its own strings as
-##   hardcoded English — converting the rest is a large, separate,
-##   mechanical sweep, not attempted alongside the infrastructure itself.
+##   reload. Every screen in the project (this one included) now builds
+##   its strings through I18n — the full sweep beyond MainMenuUI's own
+##   first, verifiable case is complete, not just started. The language
+##   row's own hint text is therefore Godot-specific (`settings.
+##   languageHintGodot`, no FR_UI entry to reuse): the source's own
+##   `settings.languageHint` ("Reloads the game to apply") describes ITS
+##   reload-on-change behavior, which would be factually wrong to show
+##   here.
 ## - **screen_shake, particle_quality, and reduced_motion are real now**
 ##   too (see PlayerCharacter.add_camera_shake()/CombatManager.
 ##   trigger_hit_stop()/VfxSystem.emit()'s own quality check, and hud.gd's
@@ -64,28 +68,29 @@ func _build(embedded: bool, on_close: Callable) -> void:
 	content.add_theme_constant_override("separation", 14)
 	content.custom_minimum_size = Vector2(420.0, 0.0)
 
-	content.add_child(MenuUiKit.make_title("Settings"))
+	content.add_child(MenuUiKit.make_title(I18n.t("menu.settings", "Settings")))
 
 	var body := VBoxContainer.new()
 	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	body.add_theme_constant_override("separation", 2)
 
-	body.add_child(_build_segmented_row("Language", "Applies to the main menu now — most other screens, this one included, aren't translated yet", ["en", "fr"], ["English", "Français"], "language"))
-	body.add_child(_build_slider_row("Master Volume", "master_volume", 0.0, 1.0, 0.01))
-	body.add_child(_build_slider_row("Music Volume", "music_volume", 0.0, 1.0, 0.01))
-	body.add_child(_build_slider_row("SFX Volume", "sfx_volume", 0.0, 1.0, 0.01))
-	body.add_child(_build_toggle_row("Mute All", "Silence all audio output", "muted"))
-	body.add_child(_build_toggle_row("Screen Shake", "Camera shake on heavy impacts", "screen_shake"))
-	body.add_child(_build_segmented_row("Particles", "", ["low", "medium", "high"], ["Low", "Medium", "High"], "particle_quality"))
-	body.add_child(_build_segmented_row("Graphics Quality", "", ["low", "medium", "high"], ["Low", "Medium", "High"], "graphics_quality"))
-	body.add_child(_build_slider_row("Text Size", "text_scale", 0.85, 1.3, 0.05))
-	body.add_child(_build_toggle_row("High Contrast", "Increase text and UI contrast", "high_contrast"))
-	body.add_child(_build_toggle_row("Reduced Motion", "Minimize UI animation", "reduced_motion"))
+	var quality_labels: Array[String] = [I18n.t("settings.quality.low", "Low"), I18n.t("settings.quality.medium", "Medium"), I18n.t("settings.quality.high", "High")]
+	body.add_child(_build_segmented_row(I18n.t("settings.language", "Language"), I18n.t("settings.languageHintGodot", "Takes effect the next time each screen opens"), ["en", "fr"], ["English", "Français"], "language"))
+	body.add_child(_build_slider_row(I18n.t("settings.masterVolume", "Master Volume"), "master_volume", 0.0, 1.0, 0.01))
+	body.add_child(_build_slider_row(I18n.t("settings.musicVolume", "Music Volume"), "music_volume", 0.0, 1.0, 0.01))
+	body.add_child(_build_slider_row(I18n.t("settings.sfxVolume", "SFX Volume"), "sfx_volume", 0.0, 1.0, 0.01))
+	body.add_child(_build_toggle_row(I18n.t("settings.muteAll", "Mute All"), I18n.t("settings.muteAllHint", "Silence all audio output"), "muted"))
+	body.add_child(_build_toggle_row(I18n.t("settings.screenShake", "Screen Shake"), I18n.t("settings.screenShakeHint", "Camera shake on heavy impacts"), "screen_shake"))
+	body.add_child(_build_segmented_row(I18n.t("settings.particles", "Particles"), "", ["low", "medium", "high"], quality_labels, "particle_quality"))
+	body.add_child(_build_segmented_row(I18n.t("settings.graphicsQuality", "Graphics Quality"), "", ["low", "medium", "high"], quality_labels, "graphics_quality"))
+	body.add_child(_build_slider_row(I18n.t("settings.textSize", "Text Size"), "text_scale", 0.85, 1.3, 0.05))
+	body.add_child(_build_toggle_row(I18n.t("settings.highContrast", "High Contrast"), I18n.t("settings.highContrastHint", "Increase text and UI contrast"), "high_contrast"))
+	body.add_child(_build_toggle_row(I18n.t("settings.reducedMotion", "Reduced Motion"), I18n.t("settings.reducedMotionHint", "Minimize UI animation"), "reduced_motion"))
 	body.add_child(_build_fullscreen_row())
 	content.add_child(body)
 
 	var button_row := MenuUiKit.make_button_row()
-	var done_btn := MenuUiKit.make_button("Done", MenuUiKit.ButtonVariant.PRIMARY)
+	var done_btn := MenuUiKit.make_button(I18n.t("settings.done", "Done"), MenuUiKit.ButtonVariant.PRIMARY)
 	done_btn.pressed.connect(func():
 		if on_close.is_valid():
 			on_close.call()
@@ -167,9 +172,9 @@ func _build_segmented_row(label_text: String, hint_text: String, options: Array,
 	return _row_shell(label_text, hint_text, segmented)
 
 func _build_fullscreen_row() -> HBoxContainer:
-	var btn := MenuUiKit.make_button("Toggle", MenuUiKit.ButtonVariant.PLAIN)
+	var btn := MenuUiKit.make_button(I18n.t("settings.toggle", "Toggle"), MenuUiKit.ButtonVariant.PLAIN)
 	btn.pressed.connect(func():
 		var is_fullscreen: bool = DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if is_fullscreen else DisplayServer.WINDOW_MODE_FULLSCREEN)
 	)
-	return _row_shell("Fullscreen", "", btn)
+	return _row_shell(I18n.t("settings.fullscreen", "Fullscreen"), "", btn)

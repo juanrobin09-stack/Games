@@ -469,7 +469,7 @@ static func _maybe_apply_mutated_variant(enemy: EnemyCharacter, def: EnemyDefini
 	enemy.hp = enemy.max_hp
 	enemy.difficulty_damage_mult *= MUTATED_DAMAGE_MULT
 	enemy.radius *= MUTATED_RADIUS_MULT
-	enemy.display_name = "%s, Ember-Marked" % def.name
+	enemy.display_name = I18n.t("enemy.mutatedFormat", "{name}, Ember-Marked").format({"name": I18n.tc(def.id, "name", def.name)})
 
 # ---------------------------------------------------------------- Sanctum rite
 
@@ -621,7 +621,7 @@ static func populate_room_content(room: RoomContainer, zone: ZoneDefinition, opt
 			room.add_enemy(leader)
 			leader.setup(leader_def, leader_pos, factors["hp_mult"] * 2.1, factors["damage_mult"] * 1.35)
 			leader.is_elite_instance = true
-			leader.display_name = "Empowered %s" % leader_def.name
+			leader.display_name = I18n.t("enemy.empoweredFormat", "Empowered {name}").format({"name": I18n.tc(leader_def.id, "name", leader_def.name)})
 			leader.radius *= 1.25
 			for i in range(2):
 				var id: String = _pick(rng, safe_pool)
@@ -647,7 +647,8 @@ static func populate_room_content(room: RoomContainer, zone: ZoneDefinition, opt
 			var guard_damage_mult: float = (factors["damage_mult"] as float) * 1.1 if champion else (factors["damage_mult"] as float) * 1.5
 			guardian.setup(guard_def, pos, guard_hp_mult, guard_damage_mult)
 			guardian.is_elite_instance = true
-			guardian.display_name = guard_def.name if champion else "%s, Heart Warden" % guard_def.name
+			var translated_guard_name: String = I18n.tc(guard_def.id, "name", guard_def.name)
+			guardian.display_name = translated_guard_name if champion else I18n.t("enemy.heartWardenFormat", "{name}, Heart Warden").format({"name": translated_guard_name})
 			if not champion:
 				guardian.radius *= 1.4
 			var escort_pool: Array = safe_pool

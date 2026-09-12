@@ -238,11 +238,11 @@ func _process(_delta: float) -> void:
 	hud.update({
 		"player": player,
 		"embers": RunState.embers,
-		"zone_name": room.zone.name if room != null and room.zone != null else "?",
+		"zone_name": I18n.tc(room.zone.id, "name", room.zone.name) if room != null and room.zone != null else "?",
 		"room_label": HudLayer.room_type_label(room.type) if room != null else "?",
 		"corruption": RunState.corruption_ratio(),
-		"weapon_name": w.name if w != null else "?",
-		"ability_name": a.name if a != null else "?",
+		"weapon_name": I18n.tc(player.weapon_id, "name", w.name) if w != null else "?",
+		"ability_name": I18n.tc(player.ability_id, "name", a.name) if a != null else "?",
 		"weapon_icon": HudLayer.icon_for_weapon(player.weapon_id),
 		"ability_icon": HudLayer.icon_for_ability(player.ability_id),
 		"interact_prompt": interaction["label"] if interaction != null else "",
@@ -305,7 +305,7 @@ func _boss_hud_data(room: RoomContainer) -> Variant:
 		var boss := e as BossCharacter
 		if boss != null:
 			return {
-				"name": boss.def.name if boss.def != null else "?",
+				"name": I18n.tc(boss.def.id, "name", boss.def.name) if boss.def != null else "?",
 				"hp_ratio": boss.hp / maxf(1.0, boss.max_hp),
 				"phase": int(boss.phase),
 				"max_phase": 3,

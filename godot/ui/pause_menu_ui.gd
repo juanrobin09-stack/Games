@@ -60,10 +60,10 @@ func _render_main() -> void:
 	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	content.add_theme_constant_override("separation", 14)
 	content.custom_minimum_size = Vector2(280.0, 0.0)
-	content.add_child(MenuUiKit.make_title("Paused"))
+	content.add_child(MenuUiKit.make_title(I18n.t("pause.title", "Paused")))
 
 	var col := MenuUiKit.make_button_column()
-	var resume_btn := MenuUiKit.make_button("Resume", MenuUiKit.ButtonVariant.PRIMARY)
+	var resume_btn := MenuUiKit.make_button(I18n.t("pause.resume", "Resume"), MenuUiKit.ButtonVariant.PRIMARY)
 	resume_btn.pressed.connect(func():
 		_close()
 		var callback: Callable = _callbacks.get("on_resume", Callable())
@@ -72,7 +72,7 @@ func _render_main() -> void:
 	)
 	col.add_child(resume_btn)
 
-	var build_btn := MenuUiKit.make_button("Your Build", MenuUiKit.ButtonVariant.PLAIN)
+	var build_btn := MenuUiKit.make_button(I18n.t("pause.yourBuild", "Your Build"), MenuUiKit.ButtonVariant.PLAIN)
 	build_btn.pressed.connect(func():
 		_close()
 		var callback: Callable = _callbacks.get("on_open_inventory", Callable())
@@ -81,11 +81,11 @@ func _render_main() -> void:
 	)
 	col.add_child(build_btn)
 
-	var settings_btn := MenuUiKit.make_button("Settings", MenuUiKit.ButtonVariant.PLAIN)
+	var settings_btn := MenuUiKit.make_button(I18n.t("menu.settings", "Settings"), MenuUiKit.ButtonVariant.PLAIN)
 	settings_btn.pressed.connect(_render_settings)
 	col.add_child(settings_btn)
 
-	var abandon_btn := MenuUiKit.make_button("Abandon Run", MenuUiKit.ButtonVariant.DANGER)
+	var abandon_btn := MenuUiKit.make_button(I18n.t("pause.abandonRun", "Abandon Run"), MenuUiKit.ButtonVariant.DANGER)
 	abandon_btn.pressed.connect(_render_confirm_abandon)
 	col.add_child(abandon_btn)
 	content.add_child(col)
@@ -98,14 +98,14 @@ func _render_confirm_abandon() -> void:
 	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	content.add_theme_constant_override("separation", 14)
 	content.custom_minimum_size = Vector2(360.0, 0.0)
-	content.add_child(MenuUiKit.make_title("Abandon this run?"))
-	content.add_child(MenuUiKit.make_body_text("The Ember will fall dark here. All progress from this run will be lost — only Soul Ash already banked remains."))
+	content.add_child(MenuUiKit.make_title(I18n.t("pause.abandonConfirmTitle", "Abandon this run?")))
+	content.add_child(MenuUiKit.make_body_text(I18n.t("pause.abandonConfirmBody", "The Ember will fall dark here. All progress from this run will be lost — only Soul Ash already banked remains.")))
 
 	var row := MenuUiKit.make_button_row()
-	var keep_going_btn := MenuUiKit.make_button("Keep Going", MenuUiKit.ButtonVariant.GHOST)
+	var keep_going_btn := MenuUiKit.make_button(I18n.t("pause.keepGoing", "Keep Going"), MenuUiKit.ButtonVariant.GHOST)
 	keep_going_btn.pressed.connect(_render_main)
 	row.add_child(keep_going_btn)
-	var abandon_btn := MenuUiKit.make_button("Abandon", MenuUiKit.ButtonVariant.DANGER)
+	var abandon_btn := MenuUiKit.make_button(I18n.t("pause.abandonConfirm", "Abandon"), MenuUiKit.ButtonVariant.DANGER)
 	abandon_btn.pressed.connect(func():
 		_close()
 		var callback: Callable = _callbacks.get("on_abandon", Callable())

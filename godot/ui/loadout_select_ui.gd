@@ -50,16 +50,16 @@ func _build() -> void:
 	content.add_theme_constant_override("separation", 12)
 	content.custom_minimum_size = Vector2(640.0, 0.0)
 
-	content.add_child(MenuUiKit.make_title("Choose Your Loadout"))
+	content.add_child(MenuUiKit.make_title(I18n.t("loadout.title", "Choose Your Loadout")))
 
-	content.add_child(MenuUiKit.make_subtitle("Weapon"))
+	content.add_child(MenuUiKit.make_subtitle(I18n.t("loadout.weapon", "Weapon")))
 	_weapon_row = HBoxContainer.new()
 	_weapon_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_weapon_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	_weapon_row.add_theme_constant_override("separation", 12)
 	content.add_child(_weapon_row)
 
-	content.add_child(MenuUiKit.make_subtitle("Ability"))
+	content.add_child(MenuUiKit.make_subtitle(I18n.t("loadout.ability", "Ability")))
 	_ability_row = HBoxContainer.new()
 	_ability_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ability_row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -67,7 +67,7 @@ func _build() -> void:
 	content.add_child(_ability_row)
 
 	var button_row := MenuUiKit.make_button_row()
-	var begin_btn := MenuUiKit.make_button("Begin", MenuUiKit.ButtonVariant.PRIMARY)
+	var begin_btn := MenuUiKit.make_button(I18n.t("loadout.begin", "Begin"), MenuUiKit.ButtonVariant.PRIMARY)
 	begin_btn.pressed.connect(func():
 		if _on_confirm.is_valid():
 			_on_confirm.call(_weapon_id, _ability_id)
@@ -88,7 +88,7 @@ func _render_weapons() -> void:
 		if def == null:
 			continue
 		var picked_id := id
-		_weapon_row.add_child(_make_card("blade", def.name, def.description, id == _weapon_id, func():
+		_weapon_row.add_child(_make_card("blade", I18n.tc(id, "name", def.name), I18n.tc(id, "description", def.description), id == _weapon_id, func():
 			_weapon_id = picked_id
 			_render_weapons()
 		))
@@ -102,7 +102,7 @@ func _render_abilities() -> void:
 		if def == null:
 			continue
 		var picked_id := id
-		_ability_row.add_child(_make_card("ability", def.name, def.description, id == _ability_id, func():
+		_ability_row.add_child(_make_card("ability", I18n.tc(id, "name", def.name), I18n.tc(id, "description", def.description), id == _ability_id, func():
 			_ability_id = picked_id
 			_render_abilities()
 		))
