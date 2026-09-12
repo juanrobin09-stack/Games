@@ -82,6 +82,19 @@ func _ready() -> void:
 	# everything under it uniformly, same "one knob" shape as the source.
 	_apply_ui_scale()
 	MetaProgression.settings_changed.connect(func(_patch): _apply_ui_scale())
+	# The window itself, not the canvas scale _apply_ui_scale() above
+	# handles — window/stretch/mode="canvas_items" (project.godot) means
+	# resizing the actual OS window just scales the rendered 1152x648
+	# canvas to fit, so every existing screen's pixel-space layout code
+	# needs no changes for this to work. Exists because a user reported
+	# blur that turned out to be their OS upscaling a small, DPI-unaware
+	# window — a bigger real window (or fullscreen, already wired below)
+	# renders at genuinely more pixels instead of relying on the OS to
+	# stretch fewer of them.
+	_apply_window_scale()
+	MetaProgression.settings_changed.connect(func(_patch): _apply_window_scale())
+	_apply_fullscreen()
+	MetaProgression.settings_changed.connect(func(_patch): _apply_fullscreen())
 	# Game.ts only calls music.start() lazily, from the FIRST pointerdown/
 	# keydown handler — a one-shot gate that exists purely to satisfy
 	# browser autoplay policy (an AudioContext starts suspended until a
@@ -95,6 +108,31 @@ func _ready() -> void:
 func _apply_ui_scale() -> void:
 	var text_scale: float = MetaProgression.settings.get("text_scale", 1.0)
 	($UI as CanvasLayer).scale = Vector2.ONE * text_scale
+
+## Skipped while fullscreen: window_set_size() on a fullscreen window would
+## just resize the window Godot's own fullscreen mode ignores anyway, and
+## read back the wrong size next time this runs. _apply_fullscreen() below
+## re-calls this itself right after switching back to windowed, which is
+## what actually restores the chosen scale the moment fullscreen turns off.
+func _apply_window_scale() -> void:
+	if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN:
+		return
+	var scale: float = float(MetaProgression.settings.get("window_scale", "1.0"))
+	DisplayServer.window_set_size(Vector2i(1152, 648) * scale)
+
+## Fullscreen is a real, persisted setting (not just a live DisplayServer
+## call the old settings_ui.gd toggle button made and forgot) so it
+## survives a relaunch like every other preference here — settings_ui.gd's
+## fullscreen row is now a plain _build_toggle_row like screen_shake's own,
+## reacting through the same settings_changed signal _apply_ui_scale/
+## _apply_window_scale already use rather than calling into main.gd
+## directly, matching this project's own "UI screens call back into
+## main.gd" shape without needing a new callback wired through it.
+func _apply_fullscreen() -> void:
+	var fullscreen: bool = MetaProgression.settings.get("fullscreen", false)
+	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if fullscreen else DisplayServer.WINDOW_MODE_WINDOWED)
+	if not fullscreen:
+		_apply_window_scale()
 
 func _show_main_menu() -> void:
 	_close_current_screen()

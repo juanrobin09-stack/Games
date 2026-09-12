@@ -14,6 +14,22 @@ extends Control
 ##   10, autoload/audio_engine.gd): each slider/toggle write reaches
 ##   AudioServer live via MetaProgression's own settings_changed signal —
 ##   no polling, no "apply on close" step.
+## - **Fullscreen and Window Size are real too**, and — unlike the
+##   original fullscreen control here, a bare button calling
+##   DisplayServer.window_set_mode() directly with no persisted state —
+##   both now go through MetaProgression.settings/settings_changed like
+##   every other row, so main.gd's own _apply_fullscreen()/
+##   _apply_window_scale() react to them the same reflexive way
+##   _apply_ui_scale() already reacts to text_scale, and the choice
+##   survives a relaunch instead of resetting to windowed every time.
+##   window_scale multiplies the project's own 1152x648 base resolution
+##   (window/stretch/mode="canvas_items" in project.godot scales the
+##   rendered canvas to fit whatever real window size that produces, so
+##   no screen's own pixel-space layout needed to change for this) —
+##   added after a user's reported blur turned out to be their OS
+##   upscaling a small, DPI-unaware window; a genuinely bigger window
+##   avoids that regardless of whether the underlying DPI setting ever
+##   gets fixed on their end.
 ## - **Language** (en/fr) now has a real translation system behind it too
 ##   — autoload/i18n.gd ports i18n/index.ts + i18n/fr.ts's own FR_UI/
 ##   FR_CONTENT dictionaries verbatim, read through I18n.t()/I18n.tc(). Not
@@ -86,7 +102,8 @@ func _build(embedded: bool, on_close: Callable) -> void:
 	body.add_child(_build_slider_row(I18n.t("settings.textSize", "Text Size"), "text_scale", 0.85, 1.3, 0.05))
 	body.add_child(_build_toggle_row(I18n.t("settings.highContrast", "High Contrast"), I18n.t("settings.highContrastHint", "Increase text and UI contrast"), "high_contrast"))
 	body.add_child(_build_toggle_row(I18n.t("settings.reducedMotion", "Reduced Motion"), I18n.t("settings.reducedMotionHint", "Minimize UI animation"), "reduced_motion"))
-	body.add_child(_build_fullscreen_row())
+	body.add_child(_build_toggle_row(I18n.t("settings.fullscreen", "Fullscreen"), "", "fullscreen"))
+	body.add_child(_build_segmented_row(I18n.t("settings.windowSize", "Window Size"), "", ["1.0", "1.25", "1.5", "2.0"], ["1x", "1.25x", "1.5x", "2x"], "window_scale"))
 	content.add_child(body)
 
 	var button_row := MenuUiKit.make_button_row()
@@ -171,10 +188,3 @@ func _build_segmented_row(label_text: String, hint_text: String, options: Array,
 	)
 	return _row_shell(label_text, hint_text, segmented)
 
-func _build_fullscreen_row() -> HBoxContainer:
-	var btn := MenuUiKit.make_button(I18n.t("settings.toggle", "Toggle"), MenuUiKit.ButtonVariant.PLAIN)
-	btn.pressed.connect(func():
-		var is_fullscreen: bool = DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
-		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if is_fullscreen else DisplayServer.WINDOW_MODE_FULLSCREEN)
-	)
-	return _row_shell(I18n.t("settings.fullscreen", "Fullscreen"), "", btn)

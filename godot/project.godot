@@ -27,6 +27,13 @@ MusicEngine="*res://autoload/music_engine.gd"
 CombatManager="*res://autoload/combat_manager.gd"
 LevelFlow="*res://autoload/level_flow.gd"
 
+[display]
+
+window/size/viewport_width=1152
+window/size/viewport_height=648
+window/stretch/mode="canvas_items"
+window/stretch/aspect="keep"
+
 [rendering]
 
 renderer/rendering_method="forward_plus"

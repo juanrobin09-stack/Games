@@ -1800,3 +1800,45 @@ real-screenshot battery as every wall version before it: individual
 stone blocks read clearly on both orientations at every wall midpoint
 and both diagonal corners of an actual locked room, with the corner
 posts' own proportions now visibly matched between the two bands.
+
+### Window Size and a real Fullscreen setting
+
+A further "still blurry" report, after two rounds of asset fixes, traced
+to something outside every texture entirely: the player's own display was
+scaling a small, DPI-unaware game window up at the OS level, which no
+amount of source-image resolution can fix — the blur is added after
+Godot has already rendered a perfectly sharp frame. `project.godot` never
+declared a `[display]` section at all, meaning `window/stretch/mode` sat
+at its engine default of `"disabled"` — resizing the actual window did
+nothing to the rendered canvas, so the only way to get more real pixels
+on screen was already-correct texture work fighting an OS compositor
+upscaling too few of them.
+
+Added an explicit `[display]` section (`window/stretch/mode=
+"canvas_items"`, `aspect="keep"`, viewport still 1152x648): every
+existing screen's UI is built in that same fixed pixel space
+already, so this changes nothing about how anything is laid out, only how
+the finished 1152x648 canvas maps onto whatever real window size the OS
+window actually is. On top of that, `settings_ui.gd` gets a real Window
+Size row (1x/1.25x/1.5x/2x, `DisplayServer.window_set_size()`) and the
+existing Fullscreen control — previously a bare button calling
+`DisplayServer.window_set_mode()` directly with nothing remembering the
+choice — is now a real persisted setting like every other row, going
+through `MetaProgression.settings`/`settings_changed` the same reflexive
+way `text_scale` already does, so `main.gd`'s new `_apply_window_scale()`/
+`_apply_fullscreen()` pick it up automatically and it survives a relaunch
+instead of resetting to windowed every time.
+
+The one real subtlety: leaving fullscreen has to actively restore the
+chosen window scale, not just fall back to whatever size Godot happens to
+leave the window at. `_apply_window_scale()` itself no-ops while
+`DisplayServer.window_get_mode()` reports fullscreen (resizing a
+fullscreen window is meaningless and would read back the wrong size next
+time), and `_apply_fullscreen()` explicitly re-calls it the instant it
+switches back to windowed. Verified directly rather than assumed: saved
+`window_scale: "1.5"` and confirmed the real window resized to 1728x972,
+toggled `fullscreen: true` and confirmed `DisplayServer.window_get_mode()`
+actually reported fullscreen, then toggled it back off and confirmed the
+window returned to 1728x972 — the saved 1.5x, not the original 1152x648 —
+rather than trusting that the round-trip would work from reading the code
+alone.

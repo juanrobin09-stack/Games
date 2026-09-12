@@ -47,6 +47,8 @@ var settings: Dictionary = {
 	"high_contrast": false,
 	"reduced_motion": false,
 	"language": "en",
+	"window_scale": "1.0",
+	"fullscreen": false,
 }
 var hints_shown: Array[String] = []
 var last_seed: String = ""
@@ -335,6 +337,10 @@ func load_save() -> void:
 			settings["reduced_motion"] = _safe_bool(loaded_settings["reduced_motion"], settings["reduced_motion"])
 		if loaded_settings.has("language") and typeof(loaded_settings["language"]) == TYPE_STRING and ["en", "fr"].has(loaded_settings["language"]):
 			settings["language"] = loaded_settings["language"]
+		if loaded_settings.has("window_scale") and typeof(loaded_settings["window_scale"]) == TYPE_STRING and ["1.0", "1.25", "1.5", "2.0"].has(loaded_settings["window_scale"]):
+			settings["window_scale"] = loaded_settings["window_scale"]
+		if loaded_settings.has("fullscreen"):
+			settings["fullscreen"] = _safe_bool(loaded_settings["fullscreen"], settings["fullscreen"])
 	hints_shown.clear()
 	var loaded_hints = parsed.get("hints_shown", [])
 	if typeof(loaded_hints) == TYPE_ARRAY:

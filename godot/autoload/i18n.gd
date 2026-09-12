@@ -407,7 +407,7 @@ const FR_UI: Dictionary = {
 	"settings.reducedMotion": "Mouvement Réduit",
 	"settings.reducedMotionHint": "Minimise les animations de l'interface",
 	"settings.fullscreen": "Plein Écran",
-	"settings.toggle": "Basculer",
+	"settings.windowSize": "Taille de la Fenêtre",
 	"settings.done": "Terminé",
 	# Mobile orientation lock
 	"orientation.rotate": "Faites pivoter votre appareil en mode paysage pour une meilleure expérience",
