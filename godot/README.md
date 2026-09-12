@@ -1680,3 +1680,44 @@ corners of an actual locked room: continuous stone at every straight
 run, a sealed-looking barrier exactly where a locked door's gap would
 otherwise show, and clean corner posts with no black bleed at either
 corner checked.
+
+### The wall texture, replaced again — a cleaner source sidesteps the whole corner problem
+
+A follow-up reference PNG replaced `wall_frame.png` before that asset had
+been in the repo for more than a few minutes: not another closed-frame
+scene this time, but a proper sprite sheet of separately pre-cut
+horizontal and vertical wall strips at several lengths each, already
+alpha-cut clean. A straight brightness-scan-outward check (the same
+technique used on every supplied image this project has taken in) found
+literally zero border alpha on the longest horizontal piece and only
+single-digit-out-of-255 residue on the longest vertical one — negligible,
+no feathering needed, the cleanest of the three supplied images so far.
+
+This doesn't just swap the picture, it removes a whole category of bug
+the closed-frame image needed real machinery to work around. That image
+was one picture of all four walls at once with no door gaps drawn in, so
+every wall piece had to crop a proportional slice out of a shared border
+band — and because the frame's outer corners were rounded rather than
+square, a piece sampling near its own corner-adjacent end could reach
+past the corner post into the frame's own black interior (the bug the
+previous section's corner screenshot caught), fixed only by an inset
+margin tuned to clear that rounding. Picking the longest horizontal
+(949×48) and longest vertical (48×325) piece off the new sheet instead
+gives each piece its own dedicated, fully self-contained texture with
+nothing beyond its own edges to ever sample past — so a wall piece is
+just stretched to fill its destination rect the same simple way
+FLOOR_TEXTURE already is, no shared crop and no corner-margin math left
+in the code at all. `_draw_walls()` keeps exactly the same
+`has_door()`/`is_locked()` branching as before — that part of the
+problem (a door needs a real gap, a locked room needs that gap sealed)
+was never about the closed-frame image specifically, it's inherent to
+drawing any single wall texture onto a room whose doors move gaps
+around, sprite sheet or not.
+
+Re-verified with the same real-screenshot battery as the frame version —
+all four wall midpoints plus both diagonal corners of an actual locked
+room — before calling it done rather than assuming a cleaner source
+couldn't have introduced its own new problem: continuous stone at every
+straight run, sealed-looking barriers at both of this room's locked
+doors, and clean corners with no black bleed, this time with no inset
+hack required to get there.
