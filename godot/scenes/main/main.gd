@@ -50,9 +50,8 @@ var _run_ending: bool = false
 var _debug_visible: bool = false
 var _f1_key_down: bool = false
 var _escape_key_down: bool = false
-## F2 jumps straight to the current run's shop room — a manual-testing aid
-## (finding the merchant stall via normal exploration is real playtime),
-## not a shipped feature; safe to remove once no longer needed for that.
+## F2 opens AdminMenuUI, a personal dev/testing tool — not a shipped
+## feature; safe to remove once no longer needed for that.
 var _f2_key_down: bool = false
 
 ## Whichever meta-shell screen is currently on top (MainMenu, Credits,
@@ -207,37 +206,42 @@ func _try_open_pause() -> void:
 		"on_abandon": on_abandon,
 	})
 
-## Manual-testing aid (F2): jumps to the current run's shop room instead of
-## finding it through real exploration. Searches every generated zone's
-## layout (a shop is guaranteed once per zone — see level_generator.gd's
-## own take_one.call(always, RoomContainer.Type.SHOP, true)), populates the
-## room's content on demand exactly like a real door-crossing would
-## (LevelGenerator.populate_room_content, guarded by spawned_content the
-## same way _process's own room-entry path already is), activates it via
-## LevelFlow's own room-sync entry point, and re-centers the camera since
-## teleporting skips the movement that would otherwise carry it there.
-func _debug_teleport_to_shop() -> void:
-	if not GameState.is_in([GameState.State.EXPLORATION, GameState.State.COMBAT]):
+func _try_open_admin_menu() -> void:
+	if RunState.layouts.is_empty() or get_tree().paused:
 		return
-	var shop_room: RoomContainer = null
-	var shop_zone: ZoneDefinition = null
-	for zone_layout in RunState.layouts.values():
-		var z: ZoneDefinition = zone_layout["zone"]
-		for room in (zone_layout["rooms"] as Dictionary).values():
-			var r: RoomContainer = room
-			if r.type == RoomContainer.Type.SHOP and shop_zone == null:
-				shop_room = r
-				shop_zone = z
-	if shop_room == null:
+	AdminMenuUI.show_menu($UI, _admin_teleport_to_room)
+
+## AdminMenuUI's own on_teleport callback — the UI screen only ever picks a
+## (room, zone_index) pair from data RunState.layouts already has; this is
+## where that choice actually mutates game state, same "UI calls back into
+## main.gd" split as _begin_run()/_confirm_loadout() already use.
+##
+## Points RunState.zone_index/current_room_key at the target BEFORE calling
+## LevelFlow.enter_room() — enter_room()'s own non-boss branch reads
+## RunState.current_layout() to populate content, so those need to already
+## agree with the room being entered. from_dir is passed null rather than
+## a real Direction: enter_room() only uses it to place the player at
+## room.spawn_point_from(opposite(from_dir)), which makes sense for a real
+## door-crossing and not for a teleport, so positioning is done here
+## instead, after enter_room() has already spawned the room's real content
+## (including the one-time boss-spawn branch a hand-rolled populate-only
+## call would skip entirely).
+func _admin_teleport_to_room(room: RoomContainer, zone_index: int) -> void:
+	if not is_instance_valid(room) or not is_instance_valid(player):
 		return
-	if not shop_room.spawned_content:
-		LevelGenerator.populate_room_content(shop_room, shop_zone, LevelFlow._spawn_options())
-	var stall_pos: Vector2 = shop_room.global_position
-	for o in shop_room.obstacles:
-		if o.visual == ObstacleNode.Visual.MERCHANT_STALL:
-			stall_pos = o.global_position + Vector2(0.0, 90.0)
-	LevelFlow._sync_active_room(shop_room)
-	player.global_position = stall_pos
+	var rooms: Dictionary = RunState.layouts[zone_index]["rooms"]
+	var room_key = rooms.find_key(room)
+	if room_key == null:
+		return
+	RunState.zone_index = zone_index
+	RunState.current_room_key = room_key
+	LevelFlow.enter_room(room, null)
+	var target_pos: Vector2 = room.global_position + Vector2(RoomContainer.ROOM_WIDTH / 2.0, RoomContainer.ROOM_HEIGHT / 2.0)
+	for o in room.obstacles:
+		if o.visual in [ObstacleNode.Visual.MERCHANT_STALL, ObstacleNode.Visual.SHRINE, ObstacleNode.Visual.BRAZIER, ObstacleNode.Visual.SARCOPHAGUS]:
+			target_pos = o.global_position + Vector2(0.0, 90.0)
+			break
+	player.global_position = target_pos
 	player.camera.reset_smoothing()
 
 ## Live readout of input/gating/combat/room state, refreshed every frame.
@@ -257,7 +261,7 @@ func _process(_delta: float) -> void:
 	if Input.is_physical_key_pressed(KEY_F2):
 		if not _f2_key_down:
 			_f2_key_down = true
-			_debug_teleport_to_shop()
+			_try_open_admin_menu()
 	else:
 		_f2_key_down = false
 
