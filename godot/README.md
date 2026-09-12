@@ -1750,3 +1750,53 @@ routing every vertical draw through the tiling helper for cases that
 didn't need it. Re-cropped the exact same screen region from a fresh
 screenshot after the fix: individual stone blocks now read as clearly
 on the vertical wall as they do on the horizontal one.
+
+### The wall textures, replaced a third time — a genuinely higher-resolution source
+
+A follow-up reference PNG (1620×971, roughly 60% more linear resolution
+than the sprite sheet it replaced) landed after two separate pieces of
+feedback: a report that the vertical wall still looked lower-quality
+than expected, and a separate observation that the left (vertical) wall
+looked wider than the horizontal one. Unlike every prior wall image, this
+one wasn't already alpha-cut — its "transparent" area was a literal
+checkerboard pattern painted in as opaque near-white/gray pixels (R≈G≈B,
+brightness > ~195), a known ChatGPT/image-generator artifact when a
+transparent background is requested but the model draws a placeholder
+pattern instead of emitting real alpha. Chroma-keyed those pixels to
+alpha 0 (the same technique as every prior asset's own cleanup, just a
+different key color this time) and ran a MedianFilter(3) over the
+resulting alpha channel first to remove the handful of stray single-
+pixel misclassifications visible in the alpha-as-grayscale check, before
+touching anything else.
+
+The image itself is a single L-shaped corner piece — one continuous
+horizontal band across the top and one continuous vertical band down the
+left, meeting at a real corner — rather than a sheet of separate pieces.
+Cropping the horizontal and vertical bands out of the SAME image (rather
+than two separately-generated pieces, as the previous sprite sheet's
+longest-of-each-orientation picks were) is very likely what the "left is
+wider" report was actually about: two independently-generated pieces
+have no reason to agree on how thick their own buttress joints are drawn
+relative to their own length, while two crops of one coherent piece
+share the same proportions by construction. Re-hit the same rounded-
+corner lesson learned from the very first wall_frame.png attempt while
+finding the safe crop boundaries — a first pass right at the visually-
+measured boundary caught a transition row/column where the silhouette
+was already receding into the corner's own rounding, verified by scanning
+for the largest y (for the horizontal band) and x (for the vertical
+band) where the ENTIRE remaining width/height was still fully opaque,
+not just checking a single sample point — WALL_HORIZONTAL came out
+1592×157 and WALL_VERTICAL 163×795, both with confirmed 0/255 alpha
+(fully binary, no haze) along every border of the final crop.
+
+At this resolution, every wall piece — the previously-blurry full-height
+vertical case included — now downscales rather than upscales (795→620
+is 0.78x), so `_draw_wall_v_tiled()`'s own stretch-factor check
+naturally resolves to a single tile with no stretching-related code
+change needed; the fix from the previous round stays in place as a
+safety margin for whatever the next source image's own resolution turns
+out to be, rather than becoming dead code. Re-verified with the same
+real-screenshot battery as every wall version before it: individual
+stone blocks read clearly on both orientations at every wall midpoint
+and both diagonal corners of an actual locked room, with the corner
+posts' own proportions now visibly matched between the two bands.
