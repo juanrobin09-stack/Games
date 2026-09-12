@@ -1477,6 +1477,29 @@ screenshot, this time showing visibly punchier, more graphic colors that
 sit together with the room's other flat-shaded elements (its chest,
 its own glow) rather than apart from them.
 
+**A third round found the actual dominant problem.** Asked directly
+whether the issue was really understood to be about transparency, it
+wasn't — not fully. Exporting the sprite's own alpha channel as a
+grayscale image (not sampling scattered coordinates, which had already
+produced one wrong read this pass) showed a large gray haze filling most
+of the crop's "empty" space, and re-running the same export on the raw
+output of `chromaKey()`'s own formula — before any of this port's changes
+— showed the same haze already there. Root cause: the reference painting
+has a real light source (the candle) baked in, so background near it
+reads at a luminance well above the simple [10,19] "background" band —
+ambient light on nothing, numerically inseparable from real material by
+luminance alone (raising the threshold would erase legitimate stone-in-
+shadow first, per `chromaKey()`'s own header, ported faithfully). Fixed
+with a gamma curve on the post-`chromaKey()` alpha (`** 3.2`) rather than
+a threshold change: already-confident alpha (the real silhouette) stays
+close to opaque, while every hazy partial value collapses toward
+transparent, since haze can't be as opaque as the object painted over it.
+Re-verified the same two ways again — border alpha still 0, and a fresh
+real-gameplay screenshot showing the haze actually gone, not just the
+edges: the background around the stall now reads as genuinely dark,
+matching the room around it, with only the candle's own light spilling
+naturally into its immediate surroundings.
+
 **What's genuinely still open**: whether this reads as "integrated enough"
 is inherently a subjective call a human needs to make in real play, not
 something a screenshot diff alone can close out — this account is honest

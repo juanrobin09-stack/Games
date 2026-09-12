@@ -43,6 +43,26 @@ const BLOB_WOBBLE_SEEDS := [0.1, -0.06, 0.12, -0.09, 0.07, -0.11]
 ## processing on every launch the way the source's lazy `<img>` decode +
 ## canvas readback effectively forces in a browser.
 ##
+## A third pass, past both of the above: even with clean edges, a visible
+## gray haze filled most of the crop's own "empty" space in real play — the
+## source's chromaKey() output itself has it too, confirmed by inspecting
+## its alpha channel directly as its own image before any of this port's
+## own changes. Root cause: the reference painting has a real light source
+## (the candle) baked in, so much of the "background" around it reads at a
+## luminance well above the [10,19] band the simple ramp treats as
+## background — not object material, just ambient light falling on
+## nothing, but numerically inseparable from it by luminance alone (this
+## file's own header on `chromaKey()`, ported faithfully, already notes
+## legitimate stone-in-shadow reads under luminance 30 too, so raising the
+## threshold would eat real material first). Fixed by re-deriving the
+## post-chromaKey alpha through a gamma curve (`alpha ** 3.2`) rather than
+## changing the threshold: values already near-opaque (the real stone/wood/
+## banner silhouette) stay close to fully opaque, while every partial,
+## hazy value the light bleed produces collapses toward transparent, since
+## haze is by construction never as confidently opaque as the object
+## painted on top of it. Applied before the border feather so the two
+## compose correctly.
+##
 ## One more step past the source, added after real in-game screenshots
 ## (not just the crop fix) still read as "pasted on": the source's own
 ## sheet is a soft, painterly reference image, but every other visual in
