@@ -341,6 +341,29 @@ func _draw() -> void:
 const WALL_TEXTURE_H := preload("res://assets/textures/wall_horizontal.png")
 const WALL_TEXTURE_V := preload("res://assets/textures/wall_vertical.png")
 
+## Stretching a wall piece's whole texture across its destination in one
+## draw_texture_rect call works fine everywhere else — every other piece
+## stretches by at most ~1.05x, matching WALL_TEXTURE_H's own full-width
+## case — but the full, undoored W/E wall stretches WALL_TEXTURE_V's
+## 325px height to ROOM_HEIGHT's 620, a ~1.9x upscale a real screenshot
+## showed visibly soft next to every other piece's near-native sharpness
+## (a direct report of "the image quality" after that screenshot went
+## out, not a guess). Splitting it into evenly-sized tiles, each
+## stretched by no more than WALL_V_MAX_STRETCH, keeps every tile close
+## to 1:1. The source isn't built to tile seamlessly, so the seam between
+## tiles repeats the same joint pattern rather than hiding it, but that
+## reads far better than the blur it replaces — confirmed the same way,
+## with another real screenshot after the change, not assumed from the
+## math alone.
+const WALL_V_MAX_STRETCH := 1.1
+
+func _draw_wall_v_tiled(x: float, y: float, w: float, h: float) -> void:
+	var tex_h := float(WALL_TEXTURE_V.get_height())
+	var tile_count := maxi(1, ceili(h / (tex_h * WALL_V_MAX_STRETCH)))
+	var tile_h := h / float(tile_count)
+	for i in range(tile_count):
+		draw_texture_rect(WALL_TEXTURE_V, Rect2(x, y + i * tile_h, w, tile_h), false)
+
 func _draw_walls() -> void:
 	var t := WALL_THICKNESS
 	var half := DOOR_WIDTH / 2.0
@@ -371,7 +394,7 @@ func _draw_walls() -> void:
 		if locked:
 			draw_texture_rect(WALL_TEXTURE_V, Rect2(0.0, ROOM_HEIGHT / 2.0 - half, t, DOOR_WIDTH), false)
 	else:
-		draw_texture_rect(WALL_TEXTURE_V, Rect2(0.0, 0.0, t, ROOM_HEIGHT), false)
+		_draw_wall_v_tiled(0.0, 0.0, t, ROOM_HEIGHT)
 
 	if has_door(Direction.E):
 		var span := ROOM_HEIGHT / 2.0 - half
@@ -380,4 +403,4 @@ func _draw_walls() -> void:
 		if locked:
 			draw_texture_rect(WALL_TEXTURE_V, Rect2(ROOM_WIDTH - t, ROOM_HEIGHT / 2.0 - half, t, DOOR_WIDTH), false)
 	else:
-		draw_texture_rect(WALL_TEXTURE_V, Rect2(ROOM_WIDTH - t, 0.0, t, ROOM_HEIGHT), false)
+		_draw_wall_v_tiled(ROOM_WIDTH - t, 0.0, t, ROOM_HEIGHT)

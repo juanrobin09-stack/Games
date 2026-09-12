@@ -1721,3 +1721,32 @@ couldn't have introduced its own new problem: continuous stone at every
 straight run, sealed-looking barriers at both of this room's locked
 doors, and clean corners with no black bleed, this time with no inset
 hack required to get there.
+
+**Reported as a quality problem right after those screenshots went out —
+and it was real, isolated to exactly one case.** Every wall piece
+stretches its own dedicated texture to fill its destination rect, and
+every piece does that at close to native resolution except one:
+WALL_TEXTURE_H's 949px width stretches to ROOM_WIDTH's 1000 (~1.05x,
+negligible) and every door-split or barrier piece on either axis
+*shrinks* its source to fit (a downscale, no blur risk) — except the
+full, undoored W/E wall, which stretches WALL_TEXTURE_V's 325px height
+to ROOM_HEIGHT's 620, a ~1.9x upscale. Cropping the same screen region
+from the W-wall screenshot at 3x and comparing it directly against the
+same crop from an N/S wall confirmed it: individual stone blocks read
+clearly on the horizontal wall, and turn to mush on the vertical one.
+
+Fixed with `_draw_wall_v_tiled()`: instead of one `draw_texture_rect`
+stretching the full height in a single pass, it splits the destination
+into evenly-sized tiles sized so no single tile stretches WALL_TEXTURE_V
+by more than 1.1x, and draws each separately. For ROOM_HEIGHT that comes
+out to 2 tiles of 310 each — a 0.95x scale, matching the horizontal
+wall's own near-native sharpness. The source isn't built to tile
+seamlessly, so the join between the two tiles repeats the same joint
+pattern rather than hiding it, but a repeat reads far better than a blur
+mid-wall. Only the full-height (no-door) case needed the change — the
+door-split and barrier pieces on that axis were already downscaling, so
+they were never blurry, and left as plain single stretches rather than
+routing every vertical draw through the tiling helper for cases that
+didn't need it. Re-cropped the exact same screen region from a fresh
+screenshot after the fix: individual stone blocks now read as clearly
+on the vertical wall as they do on the horizontal one.
