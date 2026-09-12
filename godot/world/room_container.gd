@@ -300,15 +300,106 @@ func set_active(active: bool) -> void:
 ## is what the image was supplied for (its own construction assumes
 ## whatever stretch a target rect needs). One shared texture for every
 ## zone/room, not a per-zone set — only one image was supplied — so
-## zone.palette_floor no longer has a floor rect to tint; palette_wall
-## still tints the walls below, real per-tile wall TEXTURES
-## (RoomTexture.ts/FloorAsset.ts on the Web side) being the separate,
-## much larger art-production task GODOT_MIGRATION.md §4 recommended
-## deferring, still deferred.
+## zone.palette_floor no longer has a floor rect to tint, and neither does
+## palette_wall below now that the walls are a real texture too — see
+## _draw_walls()'s own comment for why that one couldn't just be stretched
+## the same simple way.
 const FLOOR_TEXTURE := preload("res://assets/textures/floor_stone.png")
 
 func _draw() -> void:
-	var wall_color := Color(zone.palette_wall) if zone != null and zone.palette_wall != "" else Color(0.32, 0.29, 0.27)
 	draw_texture_rect(FLOOR_TEXTURE, Rect2(0.0, 0.0, ROOM_WIDTH, ROOM_HEIGHT), false)
-	for rect in get_walls(is_locked()):
-		draw_rect(rect, wall_color, true)
+	_draw_walls()
+
+## A real WALL texture (a supplied stone-frame image covering all four
+## walls and their corners in one picture) replaces the flat zone-tinted
+## wall rects get_walls() used to draw directly. It can't be stretched
+## once over the whole room the way FLOOR_TEXTURE is: the source is a
+## fully CLOSED frame with no door gaps, but a room's actual walls have
+## real gaps wherever has_door() is true — the same gaps get_walls()
+## itself leaves out of its returned rects so the player can walk through
+## them. get_walls()'s Rect2-only return doesn't carry which side each
+## rect came from, and can't grow that without disturbing its other two
+## callers (_setup_physics_bodies's collision geometry and projectile.gd's
+## own wall check), so the same has_door()/is_locked() branching get_walls()
+## itself uses is reproduced here, once per side, each piece pulling a
+## proportional CROP of that side's own border band from WALL_TEXTURE
+## instead of the whole image — sized and positioned in source pixels to
+## match where that piece falls along the room's own width/height, so a
+## door-split side crops the same real gap out of the source that
+## get_walls() leaves out of the destination, and a LOCKED room's barrier
+## piece (get_walls(true)'s third rect, sealing the gap during a boss
+## fight) draws the middle crop that would otherwise be skipped, so a
+## sealed door reads as sealed rather than showing an opening collision
+## still blocks. Border thickness in the source (measured via a
+## brightness scan out from each edge — this is a plain RGB image, no
+## alpha, so "content" means "not near-black") is a consistent ~72px in
+## from a ~26px empty margin on all four sides — comfortably inside the
+## wall band, away from the frame's black interior, at any point along a
+## side's MIDDLE stretch. The frame's outer silhouette is rounded at each
+## corner, though, not square: right at a corner (the lengthwise coordinate
+## near 0 or near that side's full length, not the thickness one above),
+## the actual art pulls back well past that 26px margin — a first-lit-pixel
+## scan out from a corner found nothing at all for roughly 80px, versus
+## ~26px mid-span — so a piece that runs a side's full lengthwise range
+## through a naive proportional map samples straight into that black
+## pull-back exactly at its own corner ends (caught by a real screenshot's
+## corner test, not by eye). WALL_TEXTURE_CORNER_MARGIN insets the
+## lengthwise sampling window symmetrically on both ends before mapping
+## the destination onto it, comfortably past the ~80px measured — every
+## piece's own corner-adjacent end (whether that end is a true room
+## corner or a door edge one span-length in) samples from just inside the
+## corner posts' own solid art instead of their black surroundings, at
+## the cost of never quite reaching the outermost sliver of that corner
+## post's own pixels.
+const WALL_TEXTURE := preload("res://assets/textures/wall_frame.png")
+const WALL_TEXTURE_BORDER := 26.0
+const WALL_TEXTURE_THICKNESS := 72.0
+const WALL_TEXTURE_CORNER_MARGIN := 100.0
+
+func _draw_walls() -> void:
+	var tex_w := float(WALL_TEXTURE.get_width())
+	var tex_h := float(WALL_TEXTURE.get_height())
+	var t := WALL_THICKNESS
+	var half := DOOR_WIDTH / 2.0
+	var b := WALL_TEXTURE_BORDER
+	var bt := WALL_TEXTURE_THICKNESS
+	var cm := WALL_TEXTURE_CORNER_MARGIN
+	var sx := (tex_w - 2.0 * cm) / ROOM_WIDTH
+	var sy := (tex_h - 2.0 * cm) / ROOM_HEIGHT
+	var locked := is_locked()
+
+	if has_door(Direction.N):
+		var span := ROOM_WIDTH / 2.0 - half
+		draw_texture_rect_region(WALL_TEXTURE, Rect2(0.0, 0.0, span, t), Rect2(cm, b, span * sx, bt))
+		draw_texture_rect_region(WALL_TEXTURE, Rect2(ROOM_WIDTH / 2.0 + half, 0.0, span, t), Rect2(cm + (ROOM_WIDTH / 2.0 + half) * sx, b, span * sx, bt))
+		if locked:
+			draw_texture_rect_region(WALL_TEXTURE, Rect2(ROOM_WIDTH / 2.0 - half, 0.0, DOOR_WIDTH, t), Rect2(cm + span * sx, b, DOOR_WIDTH * sx, bt))
+	else:
+		draw_texture_rect_region(WALL_TEXTURE, Rect2(0.0, 0.0, ROOM_WIDTH, t), Rect2(cm, b, ROOM_WIDTH * sx, bt))
+
+	if has_door(Direction.S):
+		var span := ROOM_WIDTH / 2.0 - half
+		draw_texture_rect_region(WALL_TEXTURE, Rect2(0.0, ROOM_HEIGHT - t, span, t), Rect2(cm, tex_h - b - bt, span * sx, bt))
+		draw_texture_rect_region(WALL_TEXTURE, Rect2(ROOM_WIDTH / 2.0 + half, ROOM_HEIGHT - t, span, t), Rect2(cm + (ROOM_WIDTH / 2.0 + half) * sx, tex_h - b - bt, span * sx, bt))
+		if locked:
+			draw_texture_rect_region(WALL_TEXTURE, Rect2(ROOM_WIDTH / 2.0 - half, ROOM_HEIGHT - t, DOOR_WIDTH, t), Rect2(cm + span * sx, tex_h - b - bt, DOOR_WIDTH * sx, bt))
+	else:
+		draw_texture_rect_region(WALL_TEXTURE, Rect2(0.0, ROOM_HEIGHT - t, ROOM_WIDTH, t), Rect2(cm, tex_h - b - bt, ROOM_WIDTH * sx, bt))
+
+	if has_door(Direction.W):
+		var span := ROOM_HEIGHT / 2.0 - half
+		draw_texture_rect_region(WALL_TEXTURE, Rect2(0.0, 0.0, t, span), Rect2(b, cm, bt, span * sy))
+		draw_texture_rect_region(WALL_TEXTURE, Rect2(0.0, ROOM_HEIGHT / 2.0 + half, t, span), Rect2(b, cm + (ROOM_HEIGHT / 2.0 + half) * sy, bt, span * sy))
+		if locked:
+			draw_texture_rect_region(WALL_TEXTURE, Rect2(0.0, ROOM_HEIGHT / 2.0 - half, t, DOOR_WIDTH), Rect2(b, cm + span * sy, bt, DOOR_WIDTH * sy))
+	else:
+		draw_texture_rect_region(WALL_TEXTURE, Rect2(0.0, 0.0, t, ROOM_HEIGHT), Rect2(b, cm, bt, ROOM_HEIGHT * sy))
+
+	if has_door(Direction.E):
+		var span := ROOM_HEIGHT / 2.0 - half
+		draw_texture_rect_region(WALL_TEXTURE, Rect2(ROOM_WIDTH - t, 0.0, t, span), Rect2(tex_w - b - bt, cm, bt, span * sy))
+		draw_texture_rect_region(WALL_TEXTURE, Rect2(ROOM_WIDTH - t, ROOM_HEIGHT / 2.0 + half, t, span), Rect2(tex_w - b - bt, cm + (ROOM_HEIGHT / 2.0 + half) * sy, bt, span * sy))
+		if locked:
+			draw_texture_rect_region(WALL_TEXTURE, Rect2(ROOM_WIDTH - t, ROOM_HEIGHT / 2.0 - half, t, DOOR_WIDTH), Rect2(tex_w - b - bt, cm + span * sy, bt, DOOR_WIDTH * sy))
+	else:
+		draw_texture_rect_region(WALL_TEXTURE, Rect2(ROOM_WIDTH - t, 0.0, t, ROOM_HEIGHT), Rect2(tex_w - b - bt, cm, bt, ROOM_HEIGHT * sy))

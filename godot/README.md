@@ -1621,3 +1621,62 @@ texture fallback, and no leftover gap at the room edges; and a shop room,
 to confirm the new floor and the previously-fixed shop stall — both
 supplied images, both now in the same warm dark-stone palette — read
 consistently next to each other rather than clashing.
+
+### Real wall texture — and the harder problem the floor didn't have: doors
+
+A supplied wall image (1763×892, same file-hand-off channel) closes the
+wall half of the gap the floor's own section above left open. Unlike the
+floor, this one couldn't just be stretched over the room the simple way:
+the source is a single picture of a complete, CLOSED rectangular frame —
+all four walls and their corners in one image, no door gaps drawn into it
+anywhere — while a real room's walls have actual gaps wherever
+`has_door()` says a door exists, the same gaps `get_walls()` already
+leaves out of its own returned rects so the player can walk through them.
+Stretching the closed frame uniformly over every room regardless of its
+actual doors would have shown solid wall exactly where a door should
+read as open — a real navigation-clarity regression, not just a cosmetic
+one, and exactly the kind of door-legibility problem step 7's own door
+visual identity work had already solved once.
+
+So each wall piece draws a proportional CROP of that side's own border
+band out of the source, sized and positioned to match where that piece
+falls along the room's width/height, rather than the whole image
+stretched once — the same `has_door()`/`is_locked()` branching
+`get_walls()` uses internally is reproduced in a new `_draw_walls()`
+(not threaded through `get_walls()`'s own Rect2-only return, which
+`_setup_physics_bodies()`'s collision setup and `projectile.gd`'s own
+wall check both still need untouched), so a door-split side crops the
+same real gap out of the source that `get_walls()` leaves out of the
+destination, and — easy to miss, since it only shows up on the single
+most common room state in the game — a LOCKED room (any uncleared
+COMBAT/ELITE/HEART/BOSS room, not just a boss fight specifically, per
+`is_locked()`'s own condition) draws a third piece filling the gap with
+the middle crop that would otherwise be skipped, so a sealed door reads
+as sealed instead of showing an opening the collision barrier still
+blocks.
+
+**A real bug a corner-only glance would have missed.** Border thickness
+came out a consistent ~72px in from a ~26px empty margin on all four
+sides at each edge's own MIDDLE — measured the same brightness-scan-
+outward-from-black way as the floor's own margin, since this is another
+plain RGB image with no alpha. Naively mapping each piece's full
+lengthwise span onto that band at a fixed thickness rendered fine along
+every straight stretch, but a real screenshot of an actual corner (not
+assumed correct from the middle-span measurement alone) showed a
+black wedge exactly where two pieces met. Cause: the frame's outer
+silhouette is rounded at each corner, not square, so the ~26px margin
+that holds up mid-span is nowhere near enough right at a corner — a
+pixel scan outward from a corner found no content at all for roughly
+80px, versus ~26px mid-span. A piece sampling its full lengthwise range
+via a naive proportional map reaches straight into that pulled-back
+black region at its own corner-adjacent end. Fixed by insetting the
+lengthwise sampling window symmetrically by a safe margin (100px, clear
+of the ~80px measured) before mapping the destination onto it, so every
+piece's corner-adjacent end — whether that end is a true room corner or
+a door edge one span-length in — samples from just inside the corner
+posts' own solid art instead of their black surroundings. Re-verified
+with real screenshots at all four wall midpoints plus both diagonal
+corners of an actual locked room: continuous stone at every straight
+run, a sealed-looking barrier exactly where a locked door's gap would
+otherwise show, and clean corner posts with no black bleed at either
+corner checked.
