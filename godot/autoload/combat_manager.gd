@@ -17,11 +17,12 @@ extends Node
 ## already wired before this; this closed the remaining gap, confirmed via
 ## a grep-based audit that it was still genuinely open, not stale.
 ##
+## Hazards (spore clouds — Bloat's detonation, the Sunken Warden's phase-2
+## bash landings) are real now too: see world/hazard_node.gd, spawned from
+## detonate_bloat()/consume_pending_cloud() below.
+##
 ## Still deferred, on purpose (see GODOT_MIGRATION.md and each function's
 ## own comment for exactly what and why):
-## - Hazards (spore clouds) — Bloat and the Warden champion still deal
-##   their direct-hit damage below; the lingering cloud they'd normally
-##   also leave is a self-contained follow-up.
 ## - `resolve_melee_land`'s exact body isn't a byte-exact port (the
 ##   relevant Game.ts callback wasn't read this session) — see its own
 ##   comment for the from-source-principles implementation used instead.
@@ -237,14 +238,17 @@ func check_bash_hit(enemy: EnemyCharacter, player: PlayerCharacter) -> void:
 	if dist > enemy.radius + player.radius + 6.0:
 		return
 	enemy.bash_hit_landed = true
-	damage_enemy_to_player(player, enemy.attack_damage(), {
+	var landed: bool = damage_enemy_to_player(player, enemy.attack_damage(), {
 		"knockback_dir": Vector2(cos(enemy.facing), sin(enemy.facing)),
 		"knockback_force": 300.0,
 	})
+	if landed:
+		player.add_camera_shake(9.0, 0.25)
+		trigger_hit_stop(0.04, 0.06)
 
 ## A bloat's swell finished: direct hit on anyone close, then the body is
-## consumed. The lingering spore cloud it normally also leaves is deferred
-## (hazards aren't ported this pass — see this file's header note).
+## consumed and the lingering spore cloud (HazardNode — see that file's own
+## header) takes over for the rest of its duration.
 func detonate_bloat(player: PlayerCharacter, enemy: EnemyCharacter) -> void:
 	enemy.pending_burst = false
 	if not enemy.alive:
@@ -256,6 +260,7 @@ func detonate_bloat(player: PlayerCharacter, enemy: EnemyCharacter) -> void:
 		VfxPresets.spore_burst_vfx(parent, enemy.global_position, radius)
 	AudioEngine.play_sfx("sporeBurst", 40.0)
 	if player != null:
+		player.add_camera_shake(6.0, 0.2)
 		var dist: float = enemy.global_position.distance_to(player.global_position)
 		if dist <= radius + player.radius:
 			var dir: Vector2 = player.global_position - enemy.global_position
@@ -264,7 +269,29 @@ func detonate_bloat(player: PlayerCharacter, enemy: EnemyCharacter) -> void:
 				"knockback_dir": dir,
 				"knockback_force": 230.0,
 			})
+	if parent != null:
+		var cloud_radius: float = enemy.def.cloud_radius if enemy.def.cloud_radius > 0.0 else 80.0
+		var cloud_duration: float = enemy.def.cloud_duration if enemy.def.cloud_duration > 0.0 else 5.0
+		HazardNode.spawn(parent, enemy.global_position, cloud_radius, cloud_duration, 5.0 * enemy.difficulty_damage_mult)
 	enemy.take_damage(enemy.hp + 1.0)
+
+## Ports CombatSystem.ts's consumePendingClouds, called per-enemy (see
+## enemy.gd's own _physics_process) rather than once per frame over
+## room.enemies — same per-node dispatch every other enemy-side check in
+## this file already uses. Only ever non-zero on a phase-2 Sunken Warden
+## right after a bash lands (ai/EnemyAI.ts's runWarden sets
+## pending_cloud_radius = 72 there) — every other enemy's own call here is
+## a harmless no-op via the early return, matching the source's own
+## `if (e.pendingCloudRadius <= 0) continue`.
+func consume_pending_cloud(enemy: EnemyCharacter) -> void:
+	if enemy.pending_cloud_radius <= 0.0:
+		return
+	var parent := enemy.get_parent()
+	if parent != null:
+		HazardNode.spawn(parent, enemy.global_position, enemy.pending_cloud_radius, 3.5, 5.0 * enemy.difficulty_damage_mult)
+		VfxPresets.spore_burst_vfx(parent, enemy.global_position, enemy.pending_cloud_radius * 0.6)
+	AudioEngine.play_sfx("sporeHiss", 80.0)
+	enemy.pending_cloud_radius = 0.0
 
 ## A champion's shield just shattered (enemy.gd already flipped
 ## shield_broken before calling this). Spawns the 2 Blightbloat
@@ -531,9 +558,20 @@ func damage_enemy_to_player(player: PlayerCharacter, base_damage: float, opts: D
 	if knockback_force != 0.0:
 		player.velocity += opts.get("knockback_dir", Vector2.ZERO) * knockback_force
 	var hit_parent := player.get_parent()
-	if hit_parent != null:
-		VfxPresets.hit_impact(hit_parent, player.global_position, Palette.BLOOD_BRIGHT, false)
-	AudioEngine.play_sfx("playerHurt")
+	# A cloud tick is pressure, not a blow: quieter, greener, no big shake —
+	# same distinction the source's own `if (opts.hazard)` branch draws.
+	if opts.get("hazard", false):
+		if hit_parent != null:
+			FloatingText.spawn(hit_parent, player.global_position + Vector2(0.0, -player.radius), str(roundi(result["taken"])), Color(Palette.FUNGUS_BRIGHT), 13)
+			VfxPresets.spore_mote(hit_parent, player.global_position + Vector2(0.0, -6.0))
+		AudioEngine.play_sfx("sporeHiss", 200.0)
+		player.add_camera_shake(2.5, 0.12)
+	else:
+		if hit_parent != null:
+			FloatingText.spawn(hit_parent, player.global_position + Vector2(0.0, -player.radius), str(roundi(result["taken"])), Color(Palette.BLOOD_BRIGHT), 16)
+			VfxPresets.hit_impact(hit_parent, player.global_position, Palette.BLOOD_BRIGHT, false)
+		AudioEngine.play_sfx("playerHurt")
+		player.add_camera_shake(7.0, 0.2)
 	hit_landed.emit(null, player, result["taken"], false)
 	if not player.alive:
 		AudioEngine.play_sfx("playerDeath")

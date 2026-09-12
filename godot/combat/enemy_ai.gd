@@ -8,13 +8,11 @@ extends RefCounted
 ## Not ported this pass, on purpose: applyEnemySeparation (the soft
 ## push-apart between overlapping enemies — a polish/crowd-control pass,
 ## not core to whether combat works, and it wants a spatial grid this
-## project doesn't have yet either) and Hazards/spore clouds (Bloat's
-## detonation and the Warden champion's phase-2 bash both still deal their
-## direct-hit damage below; the lingering cloud they'd normally also leave
-## is a clearly separate, self-contained follow-up, not silently dropped).
-## `bounds`-clamped teleport-on-vanish (reappearAt's wall-inset) is
-## simplified to a plain teleport — there are no walls to inset from until
-## Room/LevelGenerator lands in build-order step 6.
+## project doesn't have yet either). Hazards/spore clouds are real now
+## (see combat_manager.gd's detonate_bloat()/consume_pending_cloud() and
+## world/hazard_node.gd). `bounds`-clamped teleport-on-vanish (reappearAt's
+## wall-inset) is simplified to a plain teleport — there are no walls to
+## inset from until Room/LevelGenerator lands in build-order step 6.
 
 ## BossCharacter is special-cased here rather than in the match below — its
 ## own tick() needs to keep running even after `alive` flips false (to

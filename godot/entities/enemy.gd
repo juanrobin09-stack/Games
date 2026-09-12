@@ -62,7 +62,9 @@ var combo_step: int = 0
 ## Set by the AI the frame a champion's shield shatters; consumed once by CombatManager.
 var phase_just_changed: bool = false
 ## Set by the AI when this warden should leave a spore cloud where it stands
-## (phase-2 champion) — the cloud itself is a deferred follow-up (see enemy_ai.gd).
+## (phase-2 champion) — consumed once per frame by CombatManager.
+## consume_pending_cloud() (called from this file's own _physics_process),
+## which spawns a real HazardNode there.
 var pending_cloud_radius: float = 0.0
 
 # ---- bloat (self-detonating) state
@@ -168,6 +170,7 @@ func _physics_process(delta: float) -> void:
 	StatusEffectRuntime.process(self, delta)
 	if pending_burst:
 		CombatManager.detonate_bloat(player, self)
+	CombatManager.consume_pending_cloud(self)
 	queue_redraw()
 	_update_light()
 
