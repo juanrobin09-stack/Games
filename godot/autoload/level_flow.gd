@@ -971,11 +971,12 @@ func spend_stat_point(stat_id: String) -> bool:
 	return true
 
 ## Ports Game.ts's private openInventory. Called from the global I-key
-## (_check_inventory_key above); PauseMenu's own "Your Build" entry point
-## (Game.ts's other call site, `openInventory('build')`) stays deferred
-## along with the rest of Phase B's meta-shell screens — nothing else
-## calls this with initial_tab yet, so it just keeps the parameter for
-## when that button exists.
+## (_check_inventory_key above) and PauseMenu's own "Your Build" entry
+## point (Game.ts's other call site, `openInventory('build')`) — both real
+## now (main.gd's own on_open_inventory callback, wired to PauseMenuUI's
+## build_btn). Neither passes initial_tab explicitly, so both land on the
+## default CHARACTER tab; the parameter stays for whenever a caller wants
+## to open straight to a specific one.
 func open_inventory_ui(initial_tab: InventoryUI.Tab = InventoryUI.Tab.CHARACTER) -> void:
 	if player == null or not is_instance_valid(player):
 		return

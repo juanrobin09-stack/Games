@@ -159,7 +159,7 @@ func _physics_process(delta: float) -> void:
 	EnemyAI.update(self, player, delta)
 	if phase_just_changed:
 		phase_just_changed = false
-		CombatManager.on_champion_shield_break(self)
+		CombatManager.on_champion_shield_break(self, player)
 	CombatManager.check_contact_damage(self, player)
 	CombatManager.check_bash_hit(self, player)
 

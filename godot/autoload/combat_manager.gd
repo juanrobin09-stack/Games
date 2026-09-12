@@ -269,11 +269,19 @@ func detonate_bloat(player: PlayerCharacter, enemy: EnemyCharacter) -> void:
 ## A champion's shield just shattered (enemy.gd already flipped
 ## shield_broken before calling this). Spawns the 2 Blightbloat
 ## reinforcements the Web build grants on this beat, plus the shield-shatter
-## stone chips and each new bloat's own spore-burst VFX. Camera shake/
-## hit-stop/SFX are still deferred (no camera-shake system ported at all).
-func on_champion_shield_break(enemy: EnemyCharacter) -> void:
+## stone chips and each new bloat's own spore-burst VFX, camera shake, and
+## hit-stop — Game.ts's own onChampionShieldBreak literal values
+## (camera.addShake(14, 0.5), hitStop.trigger(0.08, 0.05)), found still
+## unwired (the header comment here was stale — camera shake/hit-stop
+## exist project-wide since the "everything necessary" pass, this one
+## call site just never got updated) while auditing for what else was
+## left to migrate.
+func on_champion_shield_break(enemy: EnemyCharacter, player: PlayerCharacter) -> void:
 	AudioEngine.play_sfx("shieldShatter")
 	champion_shield_broken.emit(enemy)
+	if player != null:
+		player.add_camera_shake(14.0, 0.5)
+	trigger_hit_stop(0.08, 0.05)
 	var blightbloat_def: EnemyDefinition = DataRegistry.get_enemy("blightbloat")
 	var parent := enemy.get_parent()
 	if blightbloat_def == null or parent == null:

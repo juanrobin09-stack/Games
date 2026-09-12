@@ -36,10 +36,14 @@ extends Control
 ## when its sibling jumps past it — as the cause; it wasn't, which is
 ## exactly why that fix alone didn't resolve the symptom.
 ##
-## Deferred to a follow-up commit — NOT full step 9 yet, see godot/README.md:
-## the boss bar — its data, BossHudInfo, needs the boss attack-FSM gap
-## closed first (the boss currently fights as a generic enemy with no
-## boss-specific attacks for a health bar to telegraph against).
+## The boss bar (built below, `_build_boss_bar()`) was deferred past this
+## commit for a reason that turned out to be wrong: the note here used to
+## say it needed "the boss attack-FSM gap" closed first, reasoning from
+## `boss_state` having no visible driver yet. Re-checked while auditing
+## what else was left to migrate: `boss.gd` already had a complete attack
+## FSM, and this bar is in fact fully built and wired — main.gd's own
+## `_boss_hud_data()` feeds real `hp_ratio`/name/phase data into it every
+## frame, `update()` below shows/hides it accordingly. Nothing left here.
 ##
 ## The toast/phase-banner/synergy-banner system (below) uses Tween, not
 ## this file's usual _process()-driven manual interpolation
