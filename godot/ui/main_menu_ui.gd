@@ -58,17 +58,7 @@ func _build() -> void:
 	content.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(content)
 
-	var title := Label.new()
-	title.text = "EMBERFALL"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 56)
-	title.add_theme_color_override("font_color", Color(Palette.EMBER5))
-	title.add_theme_constant_override("shadow_offset_x", 0)
-	title.add_theme_constant_override("shadow_offset_y", 0)
-	title.add_theme_color_override("font_shadow_color", Color(Palette.EMBER3, 0.6))
-	title.add_theme_constant_override("shadow_outline_size", 18)
-	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	content.add_child(title)
+	content.add_child(_build_title())
 
 	var subtitle := Label.new()
 	subtitle.text = "Last Light"
@@ -156,6 +146,63 @@ func _add_nav_button(column: VBoxContainer, text: String, callback_key: String) 
 	)
 	column.add_child(btn)
 
+## Ports .game-title's crisp-text-plus-soft-glow look (`text-shadow: 0 0
+## 40px rgba(255,123,61,0.55), 0 4px 14px rgba(0,0,0,0.7)` — a wide blurred
+## halo behind solid letterforms, not an outline). A Label's theme shadow
+## is a single pass (offset + outline expansion, all one color) with no
+## blur, so shadow_outline_size alone can only fake a *hard* ring around
+## each glyph — an earlier draft pushed that ring to 18px for more "glow"
+## and it read as a thick cartoon outline instead (flagged against a real
+## screenshot). Stacking three Labels — two wide, faint, invisible-fill
+## "glow" passes at decreasing outline size and increasing alpha, plus a
+## crisp, tightly-outlined text pass on top — is a cheap way to approximate
+## a blurred falloff out of hard-edged rings without a shader: the same
+## "simplify the CSS effect to its identity-defining parts" call this
+## project already makes elsewhere (e.g. MenuUiKit.make_overlay's gradient
+## -> flattest-stop simplification), applied to a shadow effect instead of
+## a fill.
+##
+## The wrap is a MarginContainer (zero margins), not a plain Control: a
+## plain Control doesn't lay out its children at all, so overlapping the
+## layers would mean hand-computing the wrap's own minimum size to reserve
+## the right row height in the outer VBoxContainer — tried first, and
+## wrong, because a Label's `get_minimum_size()` reads back the
+## pre-override default (theme changes not yet propagated) when queried
+## before the node is inside the live tree, so the reserved row was too
+## short and the subtitle below overlapped into it (caught via a real
+## screenshot, not a guess). A Container computes and propagates its own
+## minimum size — the max of its children's — through the same tree
+## machinery every other screen already relies on, and fits every child
+## into that same content rect, which is exactly the overlap this needs.
+func _build_title() -> Control:
+	var wrap := MarginContainer.new()
+	wrap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# Widest/faintest first so the crisp front layer (added last) draws on
+	# top of both glow passes.
+	wrap.add_child(_make_title_layer(24, 0.14, false, 0))
+	wrap.add_child(_make_title_layer(11, 0.26, false, 0))
+	wrap.add_child(_make_title_layer(2, 0.55, true, 2))
+	return wrap
+
+## One layer of _build_title()'s stacked-Label glow. `filled` false makes
+## an invisible-text, shadow-only glow pass; true is the crisp front layer
+## (opaque EMBER5 fill, small outline, slight downward offset for a hint
+## of the source's separate `0 4px 14px` grounding drop-shadow — Label's
+## single shadow pass can't render that as a true second, differently-
+## colored shadow layer, so the offset alone stands in for it here).
+func _make_title_layer(outline_size: int, shadow_alpha: float, filled: bool, y_offset: int) -> Label:
+	var label := Label.new()
+	label.text = "EMBERFALL"
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 56)
+	label.add_theme_color_override("font_color", Color(Palette.EMBER5) if filled else Color(0.0, 0.0, 0.0, 0.0))
+	label.add_theme_constant_override("shadow_offset_x", 0)
+	label.add_theme_constant_override("shadow_offset_y", y_offset)
+	label.add_theme_color_override("font_shadow_color", Color(Palette.EMBER4, shadow_alpha))
+	label.add_theme_constant_override("shadow_outline_size", outline_size)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return label
+
 ## Ports the source's 46-mote rising-ember field: spawns at the bottom
 ## edge (and, once, scattered at random heights so the very first frame
 ## isn't empty), drifts upward with light horizontal jitter, and loops —
@@ -165,8 +212,26 @@ func _add_nav_button(column: VBoxContainer, text: String, callback_key: String) 
 func _build_ember_particles() -> void:
 	var particles := GPUParticles2D.new()
 	particles.amount = 46
-	particles.lifetime = 5.0
-	particles.preprocess = 5.0
+	# Motes need to travel the full CANVAS_HEIGHT + 40 (bottom spawn margin
+	# to top despawn margin) before recycling, the way the source's own
+	# tick() only respawns a mote once `mote.y < -20` — at the slowest
+	# initial_velocity_min (18 px/s) that's (648+40)/18 ≈ 38s. A first cut
+	# left this at 5.0 (a copy-paste from an early draft, never tuned
+	# against the actual travel distance) — confirmed via a real screenshot
+	# showing every ember dying out around a third of the way up, leaving
+	# the top ~80% of the screen completely empty. 24s is sized to the
+	# *average* of the 18-44 px/s velocity range instead of the slowest
+	# case: slow motes now reach comfortably past mid-screen and fast ones
+	# reach the very top before recycling — GPUParticles2D has no
+	# equivalent to the source's mid-flight "y < -20" cutoff, so a single
+	# fixed lifetime can't be exactly right for every speed in the range,
+	# and biasing toward the slowest one would just under-fill the top edge
+	# instead of the bottom. preprocess == lifetime keeps pre-warming the
+	# whole cycle (ages spread 0..lifetime) so frame 1 already shows motes
+	# distributed across the full height, matching the source's own
+	# `spawnMote(true)` random-Y seeding on init.
+	particles.lifetime = 24.0
+	particles.preprocess = 24.0
 	particles.local_coords = true
 	particles.position = Vector2(CANVAS_WIDTH / 2.0, CANVAS_HEIGHT + 20.0)
 

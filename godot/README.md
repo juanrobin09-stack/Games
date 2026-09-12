@@ -1935,3 +1935,72 @@ genuinely arbitrary custom size (3413×1920) round-tripped correctly —
 reopening Settings showed "Custom…" selected with 3413/1920 in the
 fields, confirming the round trip works in both directions, not just
 that saving a value doesn't crash.
+
+### Main menu: embers clustered at the bottom, title read as a thick cartoon outline
+
+Two complaints against one real screenshot of the main menu: the ember
+background looked "badly placed," and the "EMBERFALL" title's style was
+disliked outright. Both had real, separate root causes in
+`main_menu_ui.gd`.
+
+**Embers.** `_build_ember_particles()`'s `GPUParticles2D` had
+`lifetime = 5.0` — a value that was never actually tuned against the
+distance a mote needs to travel. Motes spawn just below the bottom edge
+and drift upward at 18-44 px/s (ported straight from the source's own
+`spawnMote()`); crossing the full canvas (648px, +40 for the spawn/
+despawn margins) takes 15-38s depending on speed, not 5. At a 5s
+lifetime every mote died having covered at most 220px — the screenshot
+showed the entire top ~80% of the screen completely empty, every ember
+crammed into a narrow band near the bottom. Retuned to `lifetime = 24.0`
+(`preprocess` kept matching it 1:1, same as before, so the whole cycle
+is still pre-warmed and frame 1 shows motes already spread across the
+full height rather than starting from nothing). 24s is sized to the
+*average* of the 18-44 px/s range rather than the slowest case:
+GPUParticles2D has no equivalent to the source's own mid-flight
+`if (mote.y < -20) respawn` cutoff, so a single fixed lifetime can't be
+exactly right for every speed in the range — slow motes now comfortably
+clear mid-screen and fast ones reach the very top before recycling,
+instead of every single one dying in the bottom third.
+
+**Title.** `shadow_outline_size = 18` on a 56px Label — a big enough
+outline that it stopped reading as a soft glow (the effect the source's
+own CSS actually uses: `text-shadow: 0 0 40px rgba(255,123,61,0.55)`, a
+*blurred* halo) and instead read as a thick, uniform, hard-edged ring
+around every letter, i.e. a cartoon outline, which is exactly what got
+flagged. Godot's Label shadow has no blur — `shadow_outline_size` just
+expands a hard-edged copy of the glyph outward, so one single pass at
+any size can only ever be a ring, never a soft falloff. Replaced the
+single Label with three stacked ones (`_build_title()` +
+`_make_title_layer()`): two wide, faint, invisible-fill "glow" passes
+(outline 24 at 0.14 alpha, outline 11 at 0.26 alpha) behind a crisp
+front layer (outline 2, opaque fill, a 2px downward offset standing in
+for the source's separate grounding drop-shadow). Stacked hard rings at
+decreasing size and increasing alpha approximate a blurred gradient
+without a shader — the same kind of "simplify the CSS effect to its
+identity-defining parts" call this project already made for
+`MenuUiKit.make_overlay`'s gradient background, applied to a shadow
+instead of a fill this time.
+
+The three-Label stack needed its own container: a plain `Control` can't
+lay out overlapping children, so the first attempt hand-set the wrap's
+`custom_minimum_size` from `title.get_minimum_size()` right after
+building it — and got a too-small value back, because a Label's
+minimum size doesn't reflect theme overrides applied before the node is
+inside the live tree. The outer `VBoxContainer` reserved too little
+height for the title row, and the "Last Light" subtitle rendered
+overlapping into the bottom of the title (caught on a real screenshot,
+not assumed). Switched the wrap to a `MarginContainer`, which computes
+its own minimum size — the max of its children's — through the normal
+container/tree machinery instead of a manual snapshot, and fits every
+child into that same content rect; the overlap was gone on the next
+screenshot with no other layout changes needed.
+
+Verified by rebuilding the main menu against a real headless run
+(Xvfb + `--rendering-driver opengl3`, no Vulkan device available in
+this sandbox) before and after: the "before" screenshot showed the
+empty-top-80%-of-the-screen ember clustering and the thick title
+outline exactly as reported; the "after" screenshot showed motes spread
+across the entire canvas height and a visibly softer, thinner title
+glow with the letters reading as crisp text with a halo rather than a
+cartoon outline, no subtitle overlap, and no script errors in the
+console.
