@@ -94,17 +94,17 @@ func _build() -> void:
 	button_box.add_theme_constant_override("separation", 10)
 	content.add_child(button_box)
 
-	var play_btn := MenuUiKit.make_button("Play", MenuUiKit.ButtonVariant.PRIMARY)
+	var play_btn := MenuUiKit.make_button(I18n.t("menu.play", "Play"), MenuUiKit.ButtonVariant.PRIMARY)
 	play_btn.pressed.connect(func():
 		var callback: Callable = _callbacks.get("on_play", Callable())
 		if callback.is_valid():
 			callback.call(_seed_input.text)
 	)
 	button_box.add_child(play_btn)
-	_add_nav_button(button_box, "Upgrades", "on_upgrades")
-	_add_nav_button(button_box, "Armory", "on_armory")
-	_add_nav_button(button_box, "Settings", "on_settings")
-	var credits_btn := MenuUiKit.make_button("Credits", MenuUiKit.ButtonVariant.GHOST)
+	_add_nav_button(button_box, I18n.t("menu.upgrades", "Upgrades"), "on_upgrades")
+	_add_nav_button(button_box, I18n.t("menu.armory", "Armory"), "on_armory")
+	_add_nav_button(button_box, I18n.t("menu.settings", "Settings"), "on_settings")
+	var credits_btn := MenuUiKit.make_button(I18n.t("menu.credits", "Credits"), MenuUiKit.ButtonVariant.GHOST)
 	credits_btn.pressed.connect(func():
 		var callback: Callable = _callbacks.get("on_credits", Callable())
 		if callback.is_valid():
@@ -113,7 +113,7 @@ func _build() -> void:
 	button_box.add_child(credits_btn)
 
 	_seed_input = LineEdit.new()
-	_seed_input.placeholder_text = "Seed (optional)"
+	_seed_input.placeholder_text = I18n.t("menu.seedPlaceholder", "Seed (optional)")
 	_seed_input.max_length = 12
 	_seed_input.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_seed_input.custom_minimum_size = Vector2(300.0, 0.0)
@@ -135,7 +135,7 @@ func _build() -> void:
 	content.add_child(_seed_input)
 
 	var footer := Label.new()
-	footer.text = "The Ember is dying. Someone must carry the last light."
+	footer.text = I18n.t("menu.tagline", "The Ember is dying. Someone must carry the last light.")
 	footer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	footer.add_theme_font_size_override("font_size", 12)
 	footer.add_theme_color_override("font_color", Color(Palette.TEXT_FAINT))

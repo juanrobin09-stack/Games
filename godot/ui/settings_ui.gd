@@ -14,21 +14,28 @@ extends Control
 ##   10, autoload/audio_engine.gd): each slider/toggle write reaches
 ##   AudioServer live via MetaProgression's own settings_changed signal —
 ##   no polling, no "apply on close" step.
-## - **Language** (en/fr) is stored but inert: this Godot port has NO i18n
-##   system at all. The French localization work referenced elsewhere in
-##   this project's history was TS-only (src/i18n/), never ported — every
-##   string in every Godot screen built so far, this one included, is
-##   hardcoded English. A real language switch needs a full translation
-##   pass across every screen this project has built, not a Settings-
-##   screen change; out of scope for this slice.
-## - **Everything else** (screen shake, particle/graphics quality, text
-##   scale, high contrast, reduced motion) has no quality-tier rendering
-##   path and no accessibility system to plug into yet — the exact same
-##   "camera shake/hit-stop" kind of honest, already-documented gap this
-##   project's own boss-fight work carries (combat_manager.gd's header),
-##   not a new one invented here. Storing the value now means the day one
-##   of those systems lands, it reads a real saved preference instead of
-##   needing its own migration.
+## - **Language** (en/fr) now has a real translation system behind it too
+##   — autoload/i18n.gd ports i18n/index.ts + i18n/fr.ts's own FR_UI/
+##   FR_CONTENT dictionaries verbatim, read through I18n.t()/I18n.tc(). Not
+##   reactive, matching the source's own explicit non-goal (it reloads the
+##   whole page after a language change rather than retranslating whatever
+##   TS already baked into the DOM) — this port's own screens are already
+##   rebuilt fresh each time they're shown, so a change takes effect next
+##   time each screen reopens, same practical result without needing a
+##   reload. MainMenuUI is wired as a first, real, verifiable case; every
+##   other screen (this one included) still builds its own strings as
+##   hardcoded English — converting the rest is a large, separate,
+##   mechanical sweep, not attempted alongside the infrastructure itself.
+## - **screen_shake, particle_quality, and reduced_motion are real now**
+##   too (see PlayerCharacter.add_camera_shake()/CombatManager.
+##   trigger_hit_stop()/VfxSystem.emit()'s own quality check, and hud.gd's
+##   _motion_scale()). **graphics_quality and high_contrast are still
+##   inert**, deliberately: this port has no quality-tier render path or
+##   alternate UI theme to plug into yet, the same honest, already-
+##   documented shape of gap the boss-fight work once carried for camera
+##   shake before this session closed it. Storing every value now means
+##   the day either of those two lands, it reads a real saved preference
+##   instead of needing its own migration.
 ##
 ## `embedded` mirrors the source's own SettingsMenu(container, settings,
 ## callbacks, embedded) 4th parameter exactly: false builds its own full
@@ -63,7 +70,7 @@ func _build(embedded: bool, on_close: Callable) -> void:
 	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	body.add_theme_constant_override("separation", 2)
 
-	body.add_child(_build_segmented_row("Language", "Not yet applied — no in-game translation system exists", ["en", "fr"], ["English", "Français"], "language"))
+	body.add_child(_build_segmented_row("Language", "Applies to the main menu now — most other screens, this one included, aren't translated yet", ["en", "fr"], ["English", "Français"], "language"))
 	body.add_child(_build_slider_row("Master Volume", "master_volume", 0.0, 1.0, 0.01))
 	body.add_child(_build_slider_row("Music Volume", "music_volume", 0.0, 1.0, 0.01))
 	body.add_child(_build_slider_row("SFX Volume", "sfx_volume", 0.0, 1.0, 0.01))
