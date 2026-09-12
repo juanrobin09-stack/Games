@@ -42,6 +42,19 @@ const BLOB_WOBBLE_SEEDS := [0.1, -0.06, 0.12, -0.09, 0.07, -0.11]
 ## synchronous, so there's no load-order reason to redo any of this
 ## processing on every launch the way the source's lazy `<img>` decode +
 ## canvas readback effectively forces in a browser.
+##
+## One more step past the source, added after real in-game screenshots
+## (not just the crop fix) still read as "pasted on": the source's own
+## sheet is a soft, painterly reference image, but every other visual in
+## this entire project is flat-shaded straight `Palette` colors with no
+## soft photographic gradients anywhere. Cleaning up the alpha edges wasn't
+## enough to close that gap — a technically-clean sprite in the wrong
+## rendering register still reads as foreign next to that flat style. RGB
+## (never alpha) is pushed toward that same register: +35% contrast, +45%
+## saturation, -8% brightness, then posterized to 5 levels/channel to
+## flatten lingering soft gradient banding — closer to graphic/flat-shaded
+## than photo-painted, without discarding the source's own shading
+## structure entirely.
 const STALL_TEXTURE := preload("res://assets/textures/shop_stall.png")
 
 var radius: float = 16.0

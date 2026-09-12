@@ -1453,13 +1453,34 @@ drifting as a side effect of the height change.
 **Verified** the same way the bug was found, not just "does it still
 render": re-sampled the regenerated PNG's own edge pixels with the exact
 same luminance formula and confirmed 0 maximum alpha anywhere on its
-border (not "looks clean" — measured), then a fresh headless screenshot at
-the real in-game radius (26px, `level_generator.gd`'s own value for a shop
-landmark, not an arbitrarily larger test radius) showing the stall fading
-cleanly into a dark background with its `PointLight2D` glow still layering
-correctly on top. Debug harness reverted after each check (verified via
-`git diff`) before committing.
+border (not "looks clean" — measured). A real headless screenshot dropped
+into an isolated test still looked clean at that point, but a *second*
+real-gameplay screenshot — a genuine generated shop room, entered through
+`LevelFlow._sync_active_room()` rather than an isolated obstacle, full HUD
+and room floor and ambient tint all present — was the one that actually
+mattered, and zooming into it confirmed the edges were real: clean,
+no seam, no box.
 
-**What's genuinely still open**: `graphics_quality` and `high_contrast`
+**A second round, this time about style, not transparency.** Edges clean
+didn't mean integrated. The sprite is a soft, painterly reference image;
+every other visual in this entire project — obstacles, entities, particles,
+UI — is flat-shaded straight `Palette` colors with no photographic
+gradients anywhere. Next to that, even a perfectly alpha-clean sprite still
+reads as pasted-on, because it's rendered in a different register
+entirely, not because anything is technically broken. Fixed by pushing the
+sprite's own RGB (never its alpha) toward that same flat-shaded register:
++35% contrast, +45% saturation, -8% brightness, then posterized to 5
+levels per channel to flatten lingering soft gradient banding. Re-verified
+the same two ways as the edge fix — re-sampled border alpha (still 0,
+confirming the color pass touched only RGB) and a fresh real-gameplay
+screenshot, this time showing visibly punchier, more graphic colors that
+sit together with the room's other flat-shaded elements (its chest,
+its own glow) rather than apart from them.
+
+**What's genuinely still open**: whether this reads as "integrated enough"
+is inherently a subjective call a human needs to make in real play, not
+something a screenshot diff alone can close out — this account is honest
+about that rather than declaring the aesthetic question settled by
+process. Beyond that: `graphics_quality` and `high_contrast`
 (named above, with why) and the pre-existing enemy silhouette rendering
 warning just noted — plus, as ever, actually playing it.
