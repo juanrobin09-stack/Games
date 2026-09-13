@@ -2282,3 +2282,71 @@ HP/Stamina/Energy to 36%/82%/3% before screenshotting — confirming
 `FILL_LEFT_TO_RIGHT` clips each bar's fill to the correct fraction with
 the frame still fully intact around it and the dark "empty" groove
 showing through the rest, not just that a full bar renders correctly.
+
+### HUD bars, round two: a lit end-cap gem that never turned off, and icons re-cropped denser
+
+Playing with a drained bar exposed what the earlier full-bar screenshot
+couldn't: the ornate arrow-shaped end-cap baked into each frame's
+`texture_over` carries its own small faceted gem, painted with a bright
+glowing core — and because `texture_over` always renders at full opacity
+regardless of `value` (the entire point of the layer, so the frame stays
+intact as the fill drains), that gem stayed lit at 100% brightness even
+with the bar down to a sliver. Next to an obviously-drained fill, a
+still-blazing gem at the tip reads as a leftover fixed piece rather than
+part of the frame — exactly what got reported.
+
+**Fix: darken the gem pixels directly in the source frame textures, not
+in a shader.** No per-frame runtime state exists to dim by by (`value`
+already drives the fill, not the frame), and this is a one-time asset
+defect, not a behavior — so the honest fix is repainting the three
+`hud_bar_frame_*.png` files themselves. Isolated the gem's actual
+brightness/saturation profile (its lit core is both brighter and more
+saturated than the surrounding metal, which stays warm and moderately
+saturated even at its brightest specular highlights) and pulled every
+pixel in that profile down toward the frame's own dark tone, scaled by
+how far over the threshold it sat — so the faceted diamond *shape*
+survives as a normal, unlit socket ornament (matching the other, already-
+unlit gems elsewhere on the same frame) instead of vanishing into a flat
+hole.
+
+**A second, less obvious fixed piece, found only by comparing all three
+bars side by side:** Stamina's frame carried a patch of fully-saturated
+green immediately left of its end-cap — the same structural element
+Health and Ability also have there, but baked much more opaque and far
+more saturated for Stamina specifically, so it alone read as a solid
+static chunk regardless of fill level (Health's and Ability's equivalent
+patches are faint enough to pass as shadow). A brightness-based mask
+couldn't isolate it — its pixels are individually fairly dark, just
+saturated — so this needed a hue-based mask instead (green channel
+clearly dominant over both red and blue), which is safe specifically
+*because* nothing else in any of the three frames' warm bronze/copper
+palette is ever green-dominant: the same mask fires on ~5,800 pixels for
+Stamina and exactly zero for Health or Ability, confirming it targets
+only the actual anomaly. Muted it toward the frame's own dark neutral and
+cut its opacity to match its siblings' faintness, rather than inventing a
+color for it.
+
+**The centering complaint, and what "recadrer" (re-crop) turned out to
+mean in practice.** Pixel-level investigation — alpha-weighted centroids,
+strict-alpha bounding boxes, grid overlays comparing icon extents against
+the bar's own extents in both the live screenshot and the original source
+sheet — found no single layout bug: icon and bar are both hard-set to the
+exact same `RESOURCE_BAR_HEIGHT` (30px) inside the same row, with no
+stray margin or misaligned anchor on either side. What the numbers didn't
+capture is that each icon (a heart, a chevron-stack, a sun) is a spiked
+medallion tapering to thin points at its own top and bottom, so even the
+tightest possible alpha-based crop spans nearly the icon's full slice
+height while carrying far less visual *mass* near those edges than the
+bar's uniformly-dense rectangle beside it — a real optical effect, not a
+measurement error. Re-cropped each icon tighter around its bold medallion
+core, deliberately trimming the thin spike extremities the original crop
+preserved, so the icon now reads as filling its row the way the bar does.
+This is a best-effort reading of an inherently fuzzy complaint rather
+than a confirmed root-cause fix — worth another look if it still doesn't
+land.
+
+Re-verified with the same kind of harness as the first HUD pass — a
+headless run forced to a partial, unequal fill on all three bars
+(≈33%/31%/25%) before screenshotting — specifically because the bug only
+shows up once a bar has visibly drained; a full-bar screenshot would have
+passed either version of the frame art.
