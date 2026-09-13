@@ -158,20 +158,15 @@ func _build() -> void:
 	_add_nav_button(button_box, I18n.t("menu.upgrades", "Upgrades"), "on_upgrades")
 	_add_nav_button(button_box, I18n.t("menu.armory", "Armory"), "on_armory")
 	_add_nav_button(button_box, I18n.t("menu.settings", "Settings"), "on_settings")
-	var credits_btn := MenuUiKit.make_button(I18n.t("menu.credits", "Credits"), MenuUiKit.ButtonVariant.GHOST)
-	credits_btn.pressed.connect(func():
-		var callback: Callable = _callbacks.get("on_credits", Callable())
-		if callback.is_valid():
-			callback.call()
-	)
-	button_box.add_child(credits_btn)
 
+	# Seed now takes Credits' old slot (end of the button column) and
+	# Credits takes Seed's old slot (its own row below the column) — a
+	# straight swap of the two rows' positions, nothing else about either
+	# one changed.
 	_seed_input = LineEdit.new()
 	_seed_input.placeholder_text = I18n.t("menu.seedPlaceholder", "Seed (optional)")
 	_seed_input.max_length = 12
 	_seed_input.alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_seed_input.custom_minimum_size = Vector2(300.0, 0.0)
-	_seed_input.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_seed_input.add_theme_font_size_override("font_size", 13)
 	_seed_input.add_theme_color_override("font_color", Color(Palette.TEXT_WARM))
 	_seed_input.add_theme_color_override("font_placeholder_color", Color(Palette.TEXT_FAINT))
@@ -186,7 +181,26 @@ func _build() -> void:
 	field_style.content_margin_bottom = 6.0
 	_seed_input.add_theme_stylebox_override("normal", field_style)
 	_seed_input.add_theme_stylebox_override("focus", field_style)
-	content.add_child(_seed_input)
+	button_box.add_child(_seed_input)
+
+	var credits_btn := MenuUiKit.make_button(I18n.t("menu.credits", "Credits"), MenuUiKit.ButtonVariant.GHOST)
+	credits_btn.pressed.connect(func():
+		var callback: Callable = _callbacks.get("on_credits", Callable())
+		if callback.is_valid():
+			callback.call()
+	)
+	# custom_minimum_size/SHRINK_CENTER: the width constraint button_box
+	# itself (its own custom_minimum_size(300, 0)) gave every button for
+	# free as a direct child now has to be set explicitly here instead,
+	# since content (credits_btn's new direct parent) spans the full
+	# 1152px canvas with no such constraint of its own — without this a
+	# plain Button's default SIZE_FILL would stretch Credits edge to edge
+	# instead of matching the column's own width, the same fixed-width-
+	# and-centered treatment the seed field used to need in this exact
+	# slot.
+	credits_btn.custom_minimum_size = Vector2(300.0, 0.0)
+	credits_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	content.add_child(credits_btn)
 
 	var footer := Label.new()
 	footer.text = I18n.t("menu.tagline", "The Ember is dying. Someone must carry the last light.")
