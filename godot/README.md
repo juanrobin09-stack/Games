@@ -2631,3 +2631,59 @@ bar-to-gem one. No texture changes — this is a container-nesting
 change only, so it also sidesteps round seven's own concern about
 fusing the gem back into the frame texture (which had tied its
 apparent size and position to the bar's own width and cropping).
+
+### Floor braziers: a real photo, keyed by diffing against this project's own floor texture
+
+A supplied reference — a top-down, lit brazier sitting on cracked stone
+— replaced `obstacle_node.gd`'s `_draw_brazier()`, previously pure
+procedural drawing (a flat trapezoid "bowl" plus a two-Bézier-arc flame
+silhouette, no real art at all).
+
+**The keying problem every other asset this project pulled from a
+generated image didn't have:** no clean solid-color or checkerboard
+background to threshold against — the brazier sits on a busy, natural
+stone-floor photo. What made this tractable: the reference (1254×1254)
+turned out to be pixel-dimension-identical to this project's own
+`floor_stone.png`, and diffing the two directly showed near-zero
+difference everywhere except the brazier's own silhouette (and its
+cast shadow) — strong evidence the reference was generated starting
+from this exact floor tile with the brazier composited on top, not a
+coincidence of matching canvas sizes. That difference map, not a
+brightness or color threshold, became the alpha mask: thresholded,
+kept only the largest connected region (dropping scattered unrelated
+floor-texture noise elsewhere in the frame), holes closed, a stray
+disconnected blob from a shadow/lighting difference manually trimmed,
+edges softened with a small Gaussian feather.
+
+The resulting silhouette is a little ragged rather than a clean traced
+outline — expected, given the mask comes from "how much did this pixel
+change" rather than "where does the object's edge fall." Composited
+onto this project's own floor tile at an offset (to confirm it wasn't
+just re-revealing the identical source pixels underneath), the ragged
+edge reads as scorched, uneven stone around a fire pit, not as a
+cutout error — left alone rather than smoothed.
+
+**Integration follows the `shop_stall.png`/`STALL_TEXTURE` precedent**
+already established in this same file (the one other painted-image
+obstacle, everything else here being `_draw()` procedural generation):
+`draw_texture_rect()` inside `_draw_brazier()`, sized off `radius`
+(`radius * 4.5`) and the texture's own aspect ratio, rather than a
+child `Sprite2D` node — consistent with every other visual this class
+draws. Centered on both axes, unlike the stall's own top-anchored
+placement: the stall is an angled structure standing on the floor, so
+its own comment describes measuring how far down its sprite to anchor
+against the ground; this brazier is a flat top-down photo of a round
+object, with no "which part touches the floor" question to answer —
+the ring's own center is the obstacle's true position. The old
+version's flicker (a sine-driven flame-height scale) has no silhouette
+left to redraw against, so it survives as a much subtler ±3% sprite
+scale pulse instead, just enough that the object doesn't read as a
+static decal. The real `PointLight2D` glow this file already sets up
+per-visual-type (`_set_light()`, unchanged) still lights the scene the
+same way regardless of what draws the silhouette underneath it.
+
+Verified with a temporary harness spawning a brazier directly next to
+the player (rather than navigating to a REST room, where this visual
+normally spawns, which headless input can't easily steer to) — the
+sprite renders, blends into the floor as intended, and the existing
+warm point light still glows around it.

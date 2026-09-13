@@ -44,6 +44,22 @@ const BLOB_WOBBLE_SEEDS := [0.1, -0.06, 0.12, -0.09, 0.07, -0.11]
 ## browser.
 const STALL_TEXTURE := preload("res://assets/textures/shop_stall.png")
 
+## A real top-down photo of a lit floor brazier, supplied directly for this
+## port. The source (a single ChatGPT-generated frame at a fixed camera
+## angle) put the object on what turned out to be this exact project's own
+## floor_stone.png — both 1254×1254, and diffing them pixel-for-pixel shows
+## near-zero difference everywhere except the brazier's own silhouette —
+## so the alpha mask here comes from that diff (thresholded, largest
+## connected component kept, small holes closed) rather than a brightness/
+## color key the way every other asset this project has extracted needed:
+## there was no clean solid background to key against, only a busy stone
+## texture near-identical to this game's own. The mask's edge is
+## consequently a little ragged rather than a clean silhouette outline —
+## left as is rather than smoothed, since it reads as scorched/uneven stone
+## around the fire once composited over this project's own floor, not as
+## an extraction artifact.
+const BRAZIER_TEXTURE := preload("res://assets/textures/brazier.png")
+
 var radius: float = 16.0
 var visual: Visual = Visual.ROCK
 var seed_value: float = 0.0
@@ -219,16 +235,6 @@ func _draw_filled_ellipse(center: Vector2, rx: float, ry: float, color: Color, r
 		pts.append(center + p)
 	draw_colored_polygon(pts, color)
 
-## Samples a quadratic Bézier curve into straight segments — Canvas2D's
-## `quadraticCurveTo` has no direct Godot draw-API equivalent.
-func _quad_bezier_points(p0: Vector2, control: Vector2, p1: Vector2, segments: int = 8) -> PackedVector2Array:
-	var pts := PackedVector2Array()
-	for i in range(segments + 1):
-		var t: float = float(i) / float(segments)
-		var mt: float = 1.0 - t
-		pts.append(p0 * (mt * mt) + control * (2.0 * mt * t) + p1 * (t * t))
-	return pts
-
 # --- Per-visual-type silhouettes, one function per Visual enum value. ---
 # --- Ports drawObstacle.ts's `switch (o.visual)` case bodies 1:1.      ---
 
@@ -259,24 +265,20 @@ func _draw_rubble() -> void:
 		var a: float = (float(i) / 3.0) * TAU + seed_value
 		_draw_filled_ellipse(Vector2(cos(a) * radius * 0.4, sin(a) * radius * 0.3), radius * 0.4, radius * 0.28, color, a)
 
+## A subtle scale pulse standing in for the old procedural version's own
+## bezier-flame flicker — BRAZIER_TEXTURE is a single static frame, not an
+## animated flame shape, so there's no silhouette to redraw per frame the
+## way the old version had; this is the cheapest way the sprite still
+## reads as a living fire rather than a painted decal. Centered on both
+## axes (unlike STALL_TEXTURE's own top-anchored placement) since this is
+## a flat top-down photo of a round object sitting on the floor, not an
+## angled structure standing on it — there's no "base" to anchor against,
+## the ring's own center is the obstacle's true position.
 func _draw_brazier(now: float) -> void:
-	draw_colored_polygon(PackedVector2Array([
-		Vector2(-radius * 0.5, radius * 0.6),
-		Vector2(-radius * 0.3, -radius * 0.2),
-		Vector2(radius * 0.3, -radius * 0.2),
-		Vector2(radius * 0.5, radius * 0.6),
-	]), Color("#2a241c"))
-	var flick: float = 0.85 + sin(now * 8.0 + seed_value) * 0.15
-	DrawUtils.draw_glow_circle(self, 0.0, -radius * 0.5, radius * 1.8 * flick, Palette.EMBER4, 0.6)
-	# Flame silhouette: two quadratic Bézier arcs between the same top/bottom points.
-	var flame_top := Vector2(0.0, -radius * 1.1 * flick)
-	var flame_bottom := Vector2(0.0, -radius * 0.1)
-	var side_a := _quad_bezier_points(flame_top, Vector2(radius * 0.3, -radius * 0.4), flame_bottom, 8)
-	var side_b := _quad_bezier_points(flame_bottom, Vector2(-radius * 0.3, -radius * 0.4), flame_top, 8)
-	var flame_pts := side_a
-	for i in range(1, side_b.size()):
-		flame_pts.append(side_b[i])
-	draw_colored_polygon(flame_pts, Color(Palette.EMBER5))
+	var flick: float = 0.97 + sin(now * 8.0 + seed_value) * 0.03
+	var sprite_w: float = radius * 4.5 * flick
+	var sprite_h: float = sprite_w * (BRAZIER_TEXTURE.get_height() / float(BRAZIER_TEXTURE.get_width()))
+	draw_texture_rect(BRAZIER_TEXTURE, Rect2(-sprite_w / 2.0, -sprite_h / 2.0, sprite_w, sprite_h), false)
 
 func _draw_crystal(now: float) -> void:
 	var flick: float = 0.8 + sin(now * 2.0 + seed_value) * 0.2
