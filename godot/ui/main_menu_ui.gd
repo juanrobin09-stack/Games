@@ -53,6 +53,50 @@ const TITLE_LOGO_WIDTH := 520.0
 ## size ever changes.
 const MAIN_MENU_BG_TEXTURE := preload("res://assets/textures/main_menu_bg.png")
 
+## A follow-up upload — the same ornate diamond-tipped button chrome the
+## full mockup above used for every row, sheeted as one tall PNG (Play's
+## ember-lit frame, then four repeats of a plain dark-stone frame, each
+## with its own French label baked in). Scoped to this screen only (not
+## folded into MenuUiKit.make_button, which every other screen's buttons
+## also use) — this specific stone/fire chrome is this mockup's identity,
+## not necessarily right for a Settings toggle row or a Pause menu Resume
+## button, and MenuUiKit's shared surface is exactly the wrong place to
+## find out.
+##
+## The baked labels aren't reusable any more than the logo mockup's were
+## (wrong language for an English default, and this project's Buttons
+## need real text for hover/pressed states and i18n) — but unlike the
+## logo, the ART underneath the text here needed to survive intact for
+## the frame to still look like a frame. Sampled a text-free strip from
+## the SAME frame (the plain stone version has one — visible above/below
+## where the letters sit) and stretched it over the letter band worked
+## cleanly (checked over a checkerboard first): stone is fairly uniform
+## noise, tolerant of a soft resize.
+##
+## Play's ember-fire frame is not that forgiving: the same trick left an
+## obvious lighter rectangle where "JOUER" used to be, and a second
+## attempt sourcing the fill from the sides of the SAME row (rather than
+## a different row entirely) still read as a patch — flame is directional
+## and high-contrast enough that no simple resample matches its
+## surroundings. What worked instead: isolating just the letter pixels
+## themselves (bright AND low-saturation — flame is bright but strongly
+## orange, so "white-ish text on orange fire" separates from its
+## background by saturation, not brightness alone, checked against a
+## rendered mask before trusting it) and running OpenCV's Telea inpaint
+## algorithm on only that mask, dilated a few pixels to reach the letters'
+## own drop-shadow edges too. Inpainting fills a small, letter-shaped gap
+## from its true local neighbors instead of importing texture from
+## somewhere else in the image, which is exactly why it succeeds here
+## where whole-region resampling didn't: there's no "somewhere else" in a
+## flame that looks right stretched over a rectangle, but there IS a
+## correct answer for what a few isolated letter-thin gaps should
+## probably contain. Both final frames were re-checked over a
+## checkerboard afterward with zero readable letter ghosting at normal
+## viewing size.
+const BUTTON_FRAME_PLAIN_TEXTURE := preload("res://assets/textures/button_frame_plain.png")
+const BUTTON_FRAME_PRIMARY_TEXTURE := preload("res://assets/textures/button_frame_primary.png")
+const BUTTON_FRAME_WIDTH := 300.0
+
 ## Keys: on_play (Callable(String) -> void, seed text or "" for random),
 ## on_upgrades/on_armory/on_settings/on_credits (Callable() -> void).
 var _callbacks: Dictionary = {}
@@ -149,6 +193,7 @@ func _build() -> void:
 	content.add_child(button_box)
 
 	var play_btn := MenuUiKit.make_button(I18n.t("menu.play", "Play"), MenuUiKit.ButtonVariant.PRIMARY)
+	_apply_frame_texture(play_btn, BUTTON_FRAME_PRIMARY_TEXTURE, 0.20, Color(Palette.EMBER6))
 	play_btn.pressed.connect(func():
 		var callback: Callable = _callbacks.get("on_play", Callable())
 		if callback.is_valid():
@@ -168,19 +213,8 @@ func _build() -> void:
 	_seed_input.max_length = 12
 	_seed_input.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_seed_input.add_theme_font_size_override("font_size", 13)
-	_seed_input.add_theme_color_override("font_color", Color(Palette.TEXT_WARM))
 	_seed_input.add_theme_color_override("font_placeholder_color", Color(Palette.TEXT_FAINT))
-	var field_style := StyleBoxFlat.new()
-	field_style.bg_color = Color(Palette.BG1)
-	field_style.border_color = Color(Palette.BORDER)
-	field_style.set_border_width_all(1)
-	field_style.set_corner_radius_all(6)
-	field_style.content_margin_left = 10.0
-	field_style.content_margin_right = 10.0
-	field_style.content_margin_top = 6.0
-	field_style.content_margin_bottom = 6.0
-	_seed_input.add_theme_stylebox_override("normal", field_style)
-	_seed_input.add_theme_stylebox_override("focus", field_style)
+	_apply_frame_texture(_seed_input, BUTTON_FRAME_PLAIN_TEXTURE, 0.08, Color(Palette.TEXT_WARM))
 	button_box.add_child(_seed_input)
 
 	var credits_btn := MenuUiKit.make_button(I18n.t("menu.credits", "Credits"), MenuUiKit.ButtonVariant.GHOST)
@@ -217,12 +251,64 @@ func _build() -> void:
 
 func _add_nav_button(column: VBoxContainer, text: String, callback_key: String) -> void:
 	var btn := MenuUiKit.make_button(text, MenuUiKit.ButtonVariant.PLAIN)
+	_apply_frame_texture(btn, BUTTON_FRAME_PLAIN_TEXTURE, 0.08, Color(Palette.TEXT_WARM))
 	btn.pressed.connect(func():
 		var callback: Callable = _callbacks.get(callback_key, Callable())
 		if callback.is_valid():
 			callback.call()
 	)
 	column.add_child(btn)
+
+## Re-skins a Button or LineEdit (both take stylebox theme overrides the
+## same way, through Control) with one of the two frame textures above.
+## Sized to BUTTON_FRAME_WIDTH with height computed from the source
+## texture's own aspect ratio, rather than a hardcoded number, so the
+## frame is never stretched off-model even if the source art is re-cropped
+## later — the same reasoning TITLE_LOGO_TEXTURE's own sizing already
+## uses. `cap_fraction` reserves left/right content margin for each
+## frame's ornate end-cap art (measured per source image: the plain
+## frame's caps taper in around 8% of its own width; the primary/ember
+## frame's glow-softened caps need closer to 20%) so real button text
+## can never render on top of the decorative diamond tips.
+##
+## Godot's Button has hover/pressed/disabled stylebox slots this asset
+## has no separate art for — duplicating the same StyleBoxTexture with a
+## different `modulate_color` per state (brighter on hover, dimmer when
+## pressed or disabled) gives real visual feedback without needing 4x the
+## source art. `duplicate()`'s default shallow copy is exactly right
+## here: each state gets its own StyleBoxTexture instance (so their
+## modulate_color don't collide) while still sharing the one Texture2D.
+func _apply_frame_texture(control: Control, texture: Texture2D, cap_fraction: float, font_color: Color) -> void:
+	var tex_size := texture.get_size()
+	var height := BUTTON_FRAME_WIDTH * tex_size.y / tex_size.x
+	control.custom_minimum_size = Vector2(BUTTON_FRAME_WIDTH, height)
+	var margin := BUTTON_FRAME_WIDTH * cap_fraction
+
+	var normal := StyleBoxTexture.new()
+	normal.texture = texture
+	normal.content_margin_left = margin
+	normal.content_margin_right = margin
+	normal.content_margin_top = 4.0
+	normal.content_margin_bottom = 4.0
+	control.add_theme_stylebox_override("normal", normal)
+	control.add_theme_color_override("font_color", font_color)
+
+	if control is Button:
+		var hover: StyleBoxTexture = normal.duplicate()
+		hover.modulate_color = Color(1.15, 1.15, 1.15)
+		var pressed: StyleBoxTexture = normal.duplicate()
+		pressed.modulate_color = Color(0.8, 0.8, 0.8)
+		var disabled: StyleBoxTexture = normal.duplicate()
+		disabled.modulate_color = Color(0.55, 0.55, 0.55, 0.8)
+		control.add_theme_stylebox_override("hover", hover)
+		control.add_theme_stylebox_override("pressed", pressed)
+		control.add_theme_stylebox_override("disabled", disabled)
+		control.add_theme_color_override("font_hover_color", font_color)
+		control.add_theme_color_override("font_pressed_color", font_color)
+	else:
+		var focus: StyleBoxTexture = normal.duplicate()
+		focus.modulate_color = Color(1.1, 1.1, 1.1)
+		control.add_theme_stylebox_override("focus", focus)
 
 ## Ports the source's 46-mote rising-ember field: spawns at the bottom
 ## edge (and, once, scattered at random heights so the very first frame

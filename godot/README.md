@@ -2100,3 +2100,96 @@ background art, the ember particles and logo both still read clearly
 on top, and the "Last Light"/footer contrast issue confirmed fixed on
 a follow-up screenshot rather than assumed fixed from the code change
 alone.
+
+### Main menu buttons: real button art, with real baked text removed first
+
+A follow-up upload delivered exactly what an earlier exchange had
+promised was possible: ornate diamond-tipped button chrome — Play's own
+ember-lit frame plus a plain dark-stone frame repeated for every other
+row — sheeted as one PNG. Same fake-transparency checkerboard as the
+logo and background uploads (an opaque RGB render, no alpha channel;
+confirmed by sampling — the "empty" squares were literal near-neutral
+gray pixels in the 238-255 range, not real transparency), but a harder
+version of it this time: the checkerboard's own color range overlaps
+almost exactly with the buttons' own white label text (`(255,253,254)`
+sampled directly off "JOUER"), so the brightness-threshold key that
+worked for the logo would have erased real text too.
+
+Fixed with connected-component labeling instead of a color threshold
+(`scipy.ndimage.label`): flood the near-neutral-colored pixels, then
+keep only whichever components actually touch the image border. The
+checkerboard is one contiguous region touching every edge; white text
+sits enclosed inside a dark button frame and can never be reached
+without crossing non-candidate (dark) pixels first, so it survives
+untouched no matter how close its color sits to the checkerboard's own.
+Confirmed on a real render: every baked label (Play included) came
+through fully intact while the surrounding checkerboard cleared to true
+alpha=0.
+
+The baked labels themselves still aren't reusable, for the same reason
+the logo mockup's weren't: wrong language for an English default, and
+this project's Buttons need live text for hover/pressed states and
+i18n, not a flattened raster in French. Unlike the logo, though, the
+art *underneath* the text had to survive intact for the frame to still
+read as a frame — this needed the equivalent of Photoshop's
+content-aware fill, not just a cutout.
+
+The plain stone frame made this easy: every row shows what its own
+text-free margins look like immediately above and below the letters, so
+stretching a clean strip from one of those margins over the letter band
+(PIL resize, not tiling — tiling a strip this thin at this stretch
+factor produced an obviously repeating pattern, confirmed by looking
+at it) filled the gap with matching material. Checked over a
+checkerboard afterward: no readable letter ghosting at any zoom level
+tried.
+
+Play's ember-fire frame resisted the same trick — confirmed by trying
+it twice. Flame is directional and high-contrast in a way stone isn't,
+so both a stretched vertical strip and a horizontally-sourced fill from
+the same row left a visible rectangle where "JOUER" used to be (a
+patch reads as a patch once its neighborhood has real texture to
+compare against, which the flame has and the stone barely does). What
+worked instead: isolating just the letter pixels by saturation, not
+brightness — flame is bright but strongly orange, so "white-ish text on
+orange fire" separates from its background on saturation the way it
+never could on brightness alone (checked by rendering the mask before
+trusting it: it caught "JOUER" precisely and nothing else) — then
+running OpenCV's Telea inpainting on only that mask, dilated a few
+pixels to reach the letters' own drop-shadow edges. Inpainting fills a
+small, letter-shaped gap from its own true local neighbors instead of
+importing texture from somewhere else in the image, which is exactly
+why it succeeds where whole-region resampling didn't: there's no
+"somewhere else" in a flame that looks right stretched over a
+rectangle, but there is a plausible local answer for a few isolated,
+letter-thin gaps. Re-checked over a checkerboard afterward with zero
+readable ghosting at normal viewing size — a very faint soft smudge
+survives at heavy digital zoom, in exactly the spot the real "PLAY"
+label now sits on top of anyway.
+
+Wired up through a new `_apply_frame_texture()` helper (`main_menu_ui.
+gd` only — deliberately not folded into `MenuUiKit.make_button()`,
+which every other screen's buttons also use; this specific stone/fire
+chrome is this mockup's identity, not necessarily right for a Settings
+toggle row or a Pause menu Resume button) that wraps a Button or
+LineEdit's stylebox in a `StyleBoxTexture`, sized to a fixed 300px
+width with height computed from each source texture's own aspect ratio
+— the same "derive from the real asset, don't hardcode a number"
+approach `TITLE_LOGO_TEXTURE` already established. `content_margin_
+left/right` reserve space for each frame's ornate end-caps (measured
+per source image — 8% of width for the plain frame's tighter caps, 20%
+for the primary frame's glow-softened ones) so real text can never
+render on top of the decorative diamond tips. Godot's Button exposes
+separate normal/hover/pressed/disabled stylebox slots this single
+static image has no separate art for; `StyleBoxTexture.duplicate()`
+(a shallow copy — same shared Texture2D, independent `modulate_color`)
+gives each state its own brightness tweak (brighter on hover, dimmer
+pressed/disabled) without needing 4x the source art.
+
+Applied to Play, the three plain nav buttons (Upgrades/Armory/
+Settings), and the Seed field — Credits kept its existing borderless
+GHOST styling, matching how the reference mockup itself gives Credits a
+lighter, no-full-box treatment rather than the same heavy frame.
+Verified against a real headless run: all five re-skinned rows render
+with legible, correctly-centered text and no visible artifacts from
+either text-removal technique, at both normal screenshot scale and a
+digital zoom crop of each one.
