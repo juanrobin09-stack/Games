@@ -72,11 +72,6 @@ const BRAZIER_FLAME_TEXTURES: Array[Texture2D] = [
 	preload("res://assets/textures/brazier_flame_7.png"),
 	preload("res://assets/textures/brazier_flame_8.png"),
 ]
-## Every flame frame was cropped to the identical box (same width, same
-## distance from the coal-line baseline to the box's bottom edge), so this
-## fraction — how far down from the TOP of that shared box the baseline
-## sits — is one constant good for all 8, not something computed per frame.
-const BRAZIER_FLAME_BASELINE_FRACTION := 118.0 / 126.0
 ## Flame width as a fraction of the ring's own on-screen width. Tuned by
 ## eye against a real headless render (the source sheet's own object and
 ## flame callouts aren't drawn to a shared scale — they're independent
@@ -293,15 +288,14 @@ func _draw_rubble() -> void:
 
 ## Real frame-by-frame flame animation, replacing the old scale-pulse hack
 ## that stood in for one when the only art available was a single static
-## photo frame. The ring is centered on both axes (unlike STALL_TEXTURE's
-## top-anchored placement) since this is a flat top-down object with no
-## "base" to anchor against — the ring's own center is the obstacle's true
-## position. The flame is centered horizontally on the same axis and
-## positioned so BRAZIER_FLAME_BASELINE_FRACTION down its own box lands
-## exactly on that center — since every frame shares that same fraction,
-## the fire's visual anchor stays put as frames cycle; only the flame
-## shape above it changes. `seed_value * 8.0` offsets each brazier's phase
-## so multiple instances in the same room don't flicker in lockstep.
+## photo frame. Both the ring and the flame are centered on both axes, at
+## the same point — this is a flat top-down object with no "base" to
+## anchor against the way STALL_TEXTURE's own top-anchored placement
+## needs, and every flame frame was cropped to the identical box, so
+## centering the box centers the fire itself the same way for all 8, with
+## no per-frame jitter as they cycle. `seed_value * 8.0` offsets each
+## brazier's phase so multiple instances in the same room don't flicker
+## in lockstep.
 func _draw_brazier(now: float) -> void:
 	var sprite_w: float = radius * 3.6
 	var sprite_h: float = sprite_w * (BRAZIER_RING_TEXTURE.get_height() / float(BRAZIER_RING_TEXTURE.get_width()))
@@ -312,8 +306,7 @@ func _draw_brazier(now: float) -> void:
 	var flame: Texture2D = BRAZIER_FLAME_TEXTURES[frame_index]
 	var flame_w: float = sprite_w * BRAZIER_FLAME_WIDTH_RATIO
 	var flame_h: float = flame_w * (flame.get_height() / float(flame.get_width()))
-	var flame_top: float = -flame_h * BRAZIER_FLAME_BASELINE_FRACTION
-	draw_texture_rect(flame, Rect2(-flame_w / 2.0, flame_top, flame_w, flame_h), false)
+	draw_texture_rect(flame, Rect2(-flame_w / 2.0, -flame_h / 2.0, flame_w, flame_h), false)
 
 func _draw_crystal(now: float) -> void:
 	var flick: float = 0.8 + sin(now * 2.0 + seed_value) * 0.2

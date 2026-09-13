@@ -583,8 +583,8 @@ func _draw() -> void:
 	var cape_pts := PackedVector2Array()
 	for p in cape_raw:
 		cape_pts.append(_body_xf(p.rotated(cape_local_angle), bob, squash, death_angle, death_offset_y))
-	# Gradient (bg1 -> near-black) simplified to its midpoint tone.
-	var cape_color: Color = DrawUtils.lerp_color_hex(Palette.BG1, "#0a0810", 0.5)
+	# Gradient (blood red -> near-black, warm-tinted to match) simplified to its midpoint tone.
+	var cape_color: Color = DrawUtils.lerp_color_hex(Palette.BLOOD, "#2c0a08", 0.5)
 	cape_color.a = death_alpha
 	draw_colored_polygon(cape_pts, cape_color)
 	var cape_outline := cape_pts.duplicate()
@@ -597,10 +597,20 @@ func _draw() -> void:
 	var body_pts := PackedVector2Array()
 	for p in _ellipse_points(0.0, 2.0, 13.0, 16.0):
 		body_pts.append(_body_xf(p, bob, squash, death_angle, death_offset_y))
-	# Radial gradient (small inner highlight -> bg1) simplified to its midpoint tone.
-	var body_color: Color = DrawUtils.lerp_color_hex("#3a3444", Palette.BG1, 0.5)
+	# Radial gradient (small inner highlight -> steel dim) simplified to its midpoint tone.
+	var body_color: Color = DrawUtils.lerp_color_hex(Palette.STEEL_DIM, Palette.BG1, 0.5)
 	body_color.a = death_alpha
 	draw_colored_polygon(body_pts, body_color)
+
+	# --- Pauldrons (shoulder armor, fixed to the body — unlike the head,
+	# they don't tilt with head_angle, since they sit on the torso itself) ---
+	for side in [-1.0, 1.0]:
+		var pauldron_pts := PackedVector2Array()
+		for p in _ellipse_points(side * 11.0, -6.0, 6.5, 7.5):
+			pauldron_pts.append(_body_xf(p, bob, squash, death_angle, death_offset_y))
+		var pauldron_color: Color = DrawUtils.lerp_color_hex(Palette.STEEL, Palette.STEEL_DIM, 0.35)
+		pauldron_color.a = death_alpha
+		draw_colored_polygon(pauldron_pts, pauldron_color)
 
 	# --- Chest ember (the light he guards) ---
 	var pulse: float = 0.75 + sin(run_time * 3.2) * 0.25
@@ -621,35 +631,51 @@ func _draw() -> void:
 	ember_dot_color.a = death_alpha
 	draw_colored_polygon(ember_dot_pts, ember_dot_color)
 
-	# --- Head + hood ---
+	# --- Head + helm ---
 	var head_angle: float = draw_facing * 0.18
 	var skull_pts := PackedVector2Array()
-	for p in _ellipse_points(0.0, -16.0, 9.0, 9.0):
+	for p in _ellipse_points(0.0, -16.0, 9.5, 9.0):
 		skull_pts.append(_body_xf(p.rotated(head_angle), bob, squash, death_angle, death_offset_y))
-	var skull_color := Color("#2a2632")
+	var skull_color: Color = DrawUtils.lerp_color_hex(Palette.STEEL, Palette.STEEL_DIM, 0.4)
 	skull_color.a = death_alpha
 	draw_colored_polygon(skull_pts, skull_color)
 
-	var hood_seg1 := _quad_bezier_points(Vector2(-9.0, -18.0), Vector2(0.0, -30.0), Vector2(9.0, -18.0), 8)
-	var hood_seg2 := _quad_bezier_points(Vector2(9.0, -18.0), Vector2(6.0, -12.0), Vector2(0.0, -10.0), 8)
-	var hood_seg3 := _quad_bezier_points(Vector2(0.0, -10.0), Vector2(-6.0, -12.0), Vector2(-9.0, -18.0), 8)
-	var hood_raw := hood_seg1
-	for i in range(1, hood_seg2.size()):
-		hood_raw.append(hood_seg2[i])
-	for i in range(1, hood_seg3.size()):
-		hood_raw.append(hood_seg3[i])
-	var hood_pts := PackedVector2Array()
-	for p in hood_raw:
-		hood_pts.append(_body_xf(p.rotated(head_angle), bob, squash, death_angle, death_offset_y))
-	var hood_color := Color(Palette.BG0)
-	hood_color.a = death_alpha
-	draw_colored_polygon(hood_pts, hood_color)
+	# Nasal guard: a small wedge riding the helm's edge, pointing the full
+	# `draw_facing` direction (not dampened by head_angle the way the crown
+	# itself is) so it still reads clearly as "which way the helm faces"
+	# once head_angle's own subtle tilt is layered on top of it below —
+	# the same two-part composition (a facing-driven offset, then the
+	# shared head_angle rotation) the old hood's eye-glow used for the
+	# same reason: readable facing at a glance, in a top-down view where a
+	# rigid helm can't just turn to face the camera.
+	var face_dir := Vector2(cos(draw_facing), sin(draw_facing))
+	var face_perp := Vector2(-face_dir.y, face_dir.x)
+	var nasal_raw := PackedVector2Array([
+		Vector2(0.0, -16.0) + face_dir * 3.0 + face_perp * 2.2,
+		Vector2(0.0, -16.0) + face_dir * 9.5,
+		Vector2(0.0, -16.0) + face_dir * 3.0 - face_perp * 2.2,
+	])
+	var nasal_pts := PackedVector2Array()
+	for p in nasal_raw:
+		nasal_pts.append(_body_xf(p.rotated(head_angle), bob, squash, death_angle, death_offset_y))
+	var nasal_color := Color(Palette.STEEL_BRIGHT)
+	nasal_color.a = death_alpha
+	draw_colored_polygon(nasal_pts, nasal_color)
+	# A flat highlight this close in tone to the crown underneath it all but
+	# disappears against it — an outline (same trick the cape already uses
+	# for its own edge against a similarly-toned background) keeps it a
+	# separate, visible ridge rather than blending into one grey mass.
+	var nasal_outline := nasal_pts.duplicate()
+	nasal_outline.append(nasal_pts[0])
+	var nasal_stroke := Color(Palette.STEEL_DIM)
+	nasal_stroke.a = 0.8 * death_alpha
+	draw_polyline(nasal_outline, nasal_stroke, 1.0, true)
 
-	# Eye glow (shadowBlur-based in the source) simplified to a flat fill.
+	# Visor-slit glow (shadowBlur-based in the source) simplified to a flat fill.
 	var eye_x: float = cos(draw_facing) * 4.0
 	var eye_y: float = -16.0 + sin(draw_facing) * 2.0
 	var eye_pts := PackedVector2Array()
-	for p in _ellipse_points(eye_x, eye_y, 2.6, 1.6):
+	for p in _ellipse_points(eye_x, eye_y, 2.4, 1.3):
 		eye_pts.append(_body_xf(p.rotated(head_angle), bob, squash, death_angle, death_offset_y))
 	var eye_color := Color(Palette.EMBER5)
 	eye_color.a = death_alpha
@@ -711,9 +737,23 @@ func _draw_weapon(w: WeaponDefinition, length: float, weapon_angle: float, arm_o
 	if w.kind == WeaponDefinition.Kind.MELEE:
 		var width: float = 9.0 if w.id == "voidScythe" else 6.0
 		var curve: float = 0.55 if w.id == "voidScythe" else 0.15
-		var raw := _quad_bezier_points(Vector2(6.0, 3.0), Vector2(length * 0.55, -width - length * curve), Vector2(length, -width * 0.4), 8)
+		# The base corners below are (6, -3)/(6, 3), the reverse of the more
+		# obvious (6, 3)/(6, -3) pairing with each curve's own control-point
+		# sign: traced actual rendered point data and found the "obvious"
+		# pairing crosses the two curves against each other partway down the
+		# blade (this edge starts on the wrong side of the other one near
+		# the base, swapping by the tip) — a self-intersecting polygon
+		# Godot's triangulator silently drops the fill for entirely
+		# (confirmed 1:1 against this project's own "Invalid polygon data,
+		# triangulation failed" log spam, one per weapon redraw), unlike the
+		# source's Canvas2D fill() this ported from, which fills a bowtie
+		# path fine via its own winding rule. Anchoring each curve's start/
+		# end to the same side its control point already pulls it toward
+		# keeps the two curves apart for the whole span, meeting only at
+		# the tip and at this shared base edge.
+		var raw := _quad_bezier_points(Vector2(6.0, -3.0), Vector2(length * 0.55, -width - length * curve), Vector2(length, -width * 0.4), 8)
 		raw.append(Vector2(length + 4.0, 0.0))
-		var raw_seg2 := _quad_bezier_points(Vector2(length + 4.0, 0.0), Vector2(length * 0.55, width * 0.7 + length * curve * 0.6), Vector2(6.0, -3.0), 8)
+		var raw_seg2 := _quad_bezier_points(Vector2(length + 4.0, 0.0), Vector2(length * 0.55, width * 0.7 + length * curve * 0.6), Vector2(6.0, 3.0), 8)
 		for i in range(1, raw_seg2.size()):
 			raw.append(raw_seg2[i])
 		var blade_pts := PackedVector2Array()
@@ -749,6 +789,15 @@ func _draw_weapon(w: WeaponDefinition, length: float, weapon_angle: float, arm_o
 		var grip_color := Color(Palette.BG2)
 		grip_color.a = death_alpha
 		draw_colored_polygon(grip_pts, grip_color)
+
+	# Small ember glow at the guard, same light the chest carries reaching
+	# out to the hand that bears it. draw_glow_circle takes one plain
+	# center point with no per-point transform hook, so — same workaround
+	# _draw()'s own chest-ember center uses — the arm_offset/rotate/
+	# _body_xf chain above is replayed manually just for this one point.
+	var hilt_center := (Vector2(arm_offset - 2.0, 0.0)).rotated(weapon_angle)
+	hilt_center = _body_xf(hilt_center, bob, squash, death_angle, death_offset_y)
+	DrawUtils.draw_glow_circle(self, hilt_center.x, hilt_center.y, 4.0, Palette.EMBER5, 0.85 * death_alpha)
 
 ## Applies drawPlayer.ts's outer per-shape transform stack to a point
 ## already expressed in the character's own undistorted local draw space:

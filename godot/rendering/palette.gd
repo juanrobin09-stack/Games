@@ -24,6 +24,18 @@ const GOLD := "#d4af6a"
 const GOLD_DIM := "#8a7248"
 const GOLD_BRIGHT := "#f2d38f"
 
+## Deliberately as dark as BG0-3 (10-50-per-channel), not the lighter,
+## more neutral grey a real steel swatch would suggest in isolation:
+## LevelFlow's per-room CanvasModulate multiplies every canvas-polygon fill
+## down first, then the room's own warm PointLight2D sources add back on
+## top of that — confirmed against a real headless render, where a
+## brighter, more neutral grey input read as a washed-out warm tan rather
+## than steel once both of those landed on it. Only STEEL_BRIGHT stays
+## lighter, reserved for the nasal guard's small highlight accent.
+const STEEL := "#3a3d47"
+const STEEL_DIM := "#232530"
+const STEEL_BRIGHT := "#6b6f7d"
+
 const BLOOD := "#c0392b"
 const BLOOD_BRIGHT := "#e74c3c"
 

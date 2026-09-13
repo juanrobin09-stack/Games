@@ -2813,3 +2813,115 @@ threshold technique as before) — leaving both ends within about half
 their original worst-case offset rather than trading one asymmetry for
 an equal-and-opposite one. Re-verified both close-up and at normal
 size with the same two harnesses.
+
+One more follow-up, after the horizontal fix above: asked to center
+the flame on the ring's own middle instead. Every flame frame had been
+positioned by its baseline (`BRAZIER_FLAME_BASELINE_FRACTION`, a fixed
+fraction down from the top of its shared crop box) landing on the
+ring's center, so the fire read as rising up out of the coal bed —
+correct for a literal photo of a fire, but here it left most of the
+flame floating above the ring's rim rather than filling the bowl.
+Dropped that baseline anchor entirely and centered the flame's own box
+on the ring's center instead, the same way the ring itself is
+centered — one less constant to maintain, and the fire now reads as
+sitting in the bowl rather than hovering over it.
+
+### The player: from a hooded wraith to an armored knight, and a real bug the redesign exposed
+
+A supplied reference — a full mockup of the in-game HUD with a knight
+character mid-room next to a torch — asked for the character's own
+look, not the torch (already covered above; the one in this reference
+turned out to be the same design, just shown in context). Where the
+player had been a procedural hooded, cloaked figure with a single
+glowing eye (a "wraith guarding an ember" reading), the reference
+showed an armored knight: a pointed steel helm, rounded pauldrons, a
+flowing dark red cape, and a sword with a small amber gem set into its
+guard.
+
+**Redesigning the procedural silhouette, not replacing it with a
+sprite.** The player's `_draw()` is pure code — ellipses, Bézier blobs,
+and polygons composed through a shared bob/squash/death-rotation
+transform (`_body_xf`) that every other animation state (movement,
+attack swings, dodge, death) already depends on. A single static
+reference image is one pose from one angle; swapping in a real sprite
+would only be correct facing that one way, breaking every other
+facing, the attack swing, and the death tumble. Redesigning the same
+procedural pieces to read as this new silhouette keeps all of that
+working unchanged, the same tradeoff already made for the brazier
+above (spec sheet → real texture) doesn't apply here — there, an
+unlit object and a flame just have to look right; a character has to
+move.
+
+**New pieces, ported one-for-one from the old hood/eye:**
+- The old hood's 3-segment Bézier cone (a dome pointing up, away from
+  the body) is gone; the skull ellipse itself is now the helm's crown,
+  recolored to steel. A small wedge — `face_dir`-oriented, not damped
+  by `head_angle` the way the crown itself is, with a thin outline so
+  it doesn't disappear into the same-toned crown behind it — stands in
+  for a nasal guard, riding the front edge and swinging to point
+  wherever the character currently faces.
+- The old single round eye-glow is now a narrower slit (same position
+  formula, `eye_x`/`eye_y`, just flattened), reading as a visor rather
+  than a hood-gap.
+- Two new pauldron ellipses, fixed to the body (not `head_angle`-
+  rotated — shoulders don't turn with a subtle head tilt the way a
+  hood's peaked point plausibly would), give the torso an armored
+  silhouette the old plain robe-ellipse body didn't have.
+- The cape's own geometry (three Bézier segments, trailing opposite
+  whichever way the character is moving or facing) is untouched —
+  only its color changed, purple-grey to blood red.
+- A small ember glow now sits at the weapon's guard (`_draw_weapon`,
+  reusing the same manual arm_offset/rotate/`_body_xf` replay the
+  chest ember's own center already needed, since `draw_glow_circle`
+  takes one plain point with no per-point transform hook) — the same
+  light the chest carries, reaching out to the hand that bears it.
+
+**A new `STEEL`/`STEEL_DIM`/`STEEL_BRIGHT` palette family, deliberately
+darker than a real steel swatch would suggest.** First attempt used a
+mid-light neutral grey (a believable "steel" color read in isolation)
+and it rendered as a washed-out warm tan in-game. Traced why:
+`LevelFlow`'s per-room `CanvasModulate` darkens every canvas-polygon
+fill first (`_update_ambient()`'s zone-darkness lerp toward a near-
+black tint), then the room's own warm `PointLight2D` sources add
+brightness back on top of that — and a flat color fill, unlike a
+painted texture with its own baked-in shading, has no contrast of its
+own to survive that round trip with its hue intact. Every other color
+this file already uses for the player (`BG0`-`BG3`, the old hood's
+literal `"#2a2632"`) sits in the same 10-50-per-channel range for
+exactly this reason; the new steel family was re-darkened to match
+once a real headless render showed why.
+
+**A genuine, previously-unnoticed rendering bug, found while checking
+the sword rendered at all:** it didn't. `_draw_weapon()`'s melee blade
+is built from two quadratic Bézier curves — one from the grip out to
+the tip, one back — meant to trace a simple lens/blade outline. Tracing
+the actual point data, the two curves cross each other partway down
+the blade's length: the "top" curve starts on the shape's lower side
+and ends on its upper side, while the "bottom" curve does the reverse,
+each swapping sides only somewhere in the middle. That makes the
+result a self-intersecting ("bowtie") polygon, and Godot's
+`draw_colored_polygon` — unlike the Canvas2D `fill()` this file ports
+from, which fills a bowtie path fine under its own winding rule —
+silently drops the fill when its triangulator can't handle one,
+logging `Invalid polygon data, triangulation failed` and moving on.
+That exact error had been showing up in this project's own headless
+verification output for other rounds this session, dismissed each
+time as unrelated to whatever was actually being checked; instrumenting
+`_draw_weapon()` directly and counting lines confirmed a 1:1 match
+between the error and every single weapon redraw — every melee
+weapon's blade has silently never rendered, only its grip has. Fixed
+by swapping which curve's base corner gets `+3` vs. `-3`: each curve
+now starts and ends on the same side its own control point already
+pulls it toward, so the two stay apart along the whole span and meet
+only at the tip and at the shared base edge, the same silhouette the
+math was always meant to produce.
+
+Verified with a temporary harness: a real run, the camera zoomed onto
+the player in place (`Camera2D.zoom`, cheaper than inflating geometry
+the way the brazier close-up used `radius` — the player has no such
+scale-everything knob) to inspect the design at a size actual gameplay
+never renders it at, across facing right, facing up-left, mid-attack-
+swing, and the death tumble — confirming the helm's nasal guard and
+visor track facing correctly, the cape and blade both swing with it,
+the blade itself is now visible, and death's rotation/fade still reads
+correctly with the new colors.
