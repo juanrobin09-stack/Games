@@ -2470,3 +2470,37 @@ symptom of the underlying column misalignment, not a defect in the
 diamond shape or size — restoring it changes nothing about that
 alignment, since it only affects `texture_over`'s own pixels, not the
 `TextureProgressBar` control's size or position.
+
+### HUD bars, round six: the colored fill itself bled past the box into the connector
+
+With the diamond back and correctly aligned, one more thing still read
+as wrong: the coloured fill (`texture_progress`) isn't clipped to the
+frame's own decorated "box" region — `FILL_LEFT_TO_RIGHT` clips it to a
+fraction of the *entire* 300px control, and every `hud_bar_fill_*.png`
+had real, opaque color data across its full width, box and connector and
+all. At 100% that's invisible only where the frame happens to be opaque
+on top of it; in the thin, mostly-transparent connector strip between
+the box's right border and the diamond (a ~2px bottom line with
+transparency above and below it — the same region round four traced
+while fixing the alignment), the raw fill color showed through those
+transparent gaps instead of the frame's own dark metal tone, so the
+"meaningful" colored bar never had a clean right edge — it just trailed
+off into that connector strip before the diamond swallowed it. Asked
+directly, the request was exactly this: the bar should stop precisely
+where the gem starts, not fade through the gap first.
+
+Fixed at the fill-texture level, matching the boundary already
+established for the frame's own diamond removal: made every
+`hud_bar_fill_*.png` transparent from x=260 onward (the same cutoff
+Stamina's and Ability's frames used, and Health's was re-cut to match
+in round four), so `texture_progress` has no color left to reveal past
+that point regardless of `value` — a 33% bar and a 100% bar both now
+stop their color at the identical x, they just differ in how much of
+the 0-260 range is filled in. `texture_under`'s flat dark track color
+shows through the connector's transparent gaps instead, reading as the
+frame's own inert metal groove rather than an extension of the resource
+bar. Verified at both 100% and a mixed partial fill (56/73/43 —
+deliberately uneven, so a stray per-bar regression in the clip math
+wouldn't hide behind three identical numbers): all three now show a
+clean, snapped-off color edge with a visible dark gap before the
+diamond, at any fill level.
