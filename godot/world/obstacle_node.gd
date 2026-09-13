@@ -303,7 +303,7 @@ func _draw_rubble() -> void:
 ## shape above it changes. `seed_value * 8.0` offsets each brazier's phase
 ## so multiple instances in the same room don't flicker in lockstep.
 func _draw_brazier(now: float) -> void:
-	var sprite_w: float = radius * 4.5
+	var sprite_w: float = radius * 3.6
 	var sprite_h: float = sprite_w * (BRAZIER_RING_TEXTURE.get_height() / float(BRAZIER_RING_TEXTURE.get_width()))
 	draw_texture_rect(BRAZIER_RING_TEXTURE, Rect2(-sprite_w / 2.0, -sprite_h / 2.0, sprite_w, sprite_h), false)
 

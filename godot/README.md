@@ -2772,3 +2772,11 @@ spawning a brazier directly next to the player, two screenshots ~0.3s
 apart confirming the flame frame actually advances (not just present),
 `brazier.png` (the now-superseded single-frame texture) removed from
 the project entirely rather than left as dead weight.
+
+Follow-up from that same verification screenshot: next to the player,
+the new two-texture brazier read noticeably larger than the old
+single-frame one had at the same `radius * 4.5` sizing — the flame
+overflowing above the ring adds visual bulk the flat baked composite
+never had. Cut the multiplier to `radius * 3.6` (ring and flame both
+scale off it, so the two stay in proportion) and re-verified with the
+same harness.
