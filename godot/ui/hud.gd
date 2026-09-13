@@ -89,12 +89,15 @@ const ICON_SLOT_WIDTH := 52.0
 const HP_ICON_TEXTURE := preload("res://assets/textures/hud_icon_health.png")
 const HP_BAR_FRAME_TEXTURE := preload("res://assets/textures/hud_bar_frame_health.png")
 const HP_BAR_FILL_TEXTURE := preload("res://assets/textures/hud_bar_fill_health.png")
+const HP_GEM_TEXTURE := preload("res://assets/textures/hud_gem_health.png")
 const STAMINA_ICON_TEXTURE := preload("res://assets/textures/hud_icon_stamina.png")
 const STAMINA_BAR_FRAME_TEXTURE := preload("res://assets/textures/hud_bar_frame_stamina.png")
 const STAMINA_BAR_FILL_TEXTURE := preload("res://assets/textures/hud_bar_fill_stamina.png")
+const STAMINA_GEM_TEXTURE := preload("res://assets/textures/hud_gem_stamina.png")
 const ABILITY_ICON_TEXTURE := preload("res://assets/textures/hud_icon_ability.png")
 const ABILITY_BAR_FRAME_TEXTURE := preload("res://assets/textures/hud_bar_frame_ability.png")
 const ABILITY_BAR_FILL_TEXTURE := preload("res://assets/textures/hud_bar_fill_ability.png")
+const ABILITY_GEM_TEXTURE := preload("res://assets/textures/hud_gem_ability.png")
 const SYNERGY_BANNER_REST_TOP := 18.0
 ## rgb(150,15,10) — the danger vignette's own edge color. No exact Palette
 ## match (checked); the corruption vignette's rgb(74,61,99) IS an exact
@@ -243,7 +246,7 @@ static func _set_bar_ratio(fill: ColorRect, ratio: float) -> void:
 ## color texture (_solid_texture(), matching _make_bar_row()'s own
 ## BAR_TRACK_BG) standing in for this art's missing "empty" state, since
 ## every reference bar shows 100/100 full with nothing to crop instead.
-func _make_resource_bar_row(col: Control, icon_texture: Texture2D, frame_texture: Texture2D, fill_texture: Texture2D) -> Dictionary:
+func _make_resource_bar_row(col: Control, icon_texture: Texture2D, frame_texture: Texture2D, fill_texture: Texture2D, gem_texture: Texture2D) -> Dictionary:
 	var row := HBoxContainer.new()
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_theme_constant_override("separation", 6)
@@ -275,6 +278,22 @@ func _make_resource_bar_row(col: Control, icon_texture: Texture2D, frame_texture
 	bar.custom_minimum_size = Vector2(RESOURCE_BAR_HEIGHT * bar_size.x / bar_size.y, RESOURCE_BAR_HEIGHT)
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(bar)
+
+	## A separate element, not baked into `frame_texture` — the reference
+	## sheet draws it as its own ornament with real dark space between it
+	## and the bar's own box, matching the icon's own bookend treatment on
+	## the row's other end. Baking it into the frame (this reskin's first
+	## attempt) tied its apparent size and position to the bar's own
+	## alignment, which is what every earlier "something sticks out at the
+	## end" report traced back to.
+	var gem := TextureRect.new()
+	gem.texture = gem_texture
+	gem.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	gem.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
+	var gem_size := gem_texture.get_size()
+	gem.custom_minimum_size = Vector2(RESOURCE_BAR_HEIGHT * gem_size.x / gem_size.y, RESOURCE_BAR_HEIGHT)
+	gem.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(gem)
 
 	var label := Label.new()
 	label.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -383,7 +402,7 @@ func _build_top_left() -> void:
 	col.offset_bottom = 14.0 + 200.0
 	add_child(col)
 
-	var hp := _make_resource_bar_row(col, HP_ICON_TEXTURE, HP_BAR_FRAME_TEXTURE, HP_BAR_FILL_TEXTURE)
+	var hp := _make_resource_bar_row(col, HP_ICON_TEXTURE, HP_BAR_FRAME_TEXTURE, HP_BAR_FILL_TEXTURE, HP_GEM_TEXTURE)
 	_hp_fill = hp["fill"]
 	_hp_label = hp["label"]
 	_shield_row = HBoxContainer.new()
@@ -391,11 +410,11 @@ func _build_top_left() -> void:
 	_shield_row.add_theme_constant_override("separation", 3)
 	(hp["row"] as HBoxContainer).add_child(_shield_row)
 
-	var stamina := _make_resource_bar_row(col, STAMINA_ICON_TEXTURE, STAMINA_BAR_FRAME_TEXTURE, STAMINA_BAR_FILL_TEXTURE)
+	var stamina := _make_resource_bar_row(col, STAMINA_ICON_TEXTURE, STAMINA_BAR_FRAME_TEXTURE, STAMINA_BAR_FILL_TEXTURE, STAMINA_GEM_TEXTURE)
 	_stamina_fill = stamina["fill"]
 	_stamina_label = stamina["label"]
 
-	var energy := _make_resource_bar_row(col, ABILITY_ICON_TEXTURE, ABILITY_BAR_FRAME_TEXTURE, ABILITY_BAR_FILL_TEXTURE)
+	var energy := _make_resource_bar_row(col, ABILITY_ICON_TEXTURE, ABILITY_BAR_FRAME_TEXTURE, ABILITY_BAR_FILL_TEXTURE, ABILITY_GEM_TEXTURE)
 	_energy_fill = energy["fill"]
 	_energy_label = energy["label"]
 

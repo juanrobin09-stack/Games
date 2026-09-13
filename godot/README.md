@@ -2504,3 +2504,71 @@ deliberately uneven, so a stray per-bar regression in the clip math
 wouldn't hide behind three identical numbers): all three now show a
 clean, snapped-off color edge with a visible dark gap before the
 diamond, at any fill level.
+
+### HUD bars, round seven: the end-cap gem becomes its own element, from a cleaner reference
+
+The user resolved the ambiguity every earlier round had been guessing
+at by posting the original ChatGPT-generated reference sheet directly
+(re-uploaded to the repo's `main` branch, `ChatGPT Image 13 sept. 2026,
+13_58_44.png`) and asking for the bars to match it. At full resolution
+this settled a question none of the prior rounds had actually asked:
+in the source art, the end-cap gem is not part of the bar at all — it's
+a separate ornament with real dark space between it and the box's own
+right border, the same bookend relationship the icon already has on
+the row's other end. Every round through six had instead kept it fused
+to the frame texture, connected by a thin metal line with no true gap —
+structurally different from the reference regardless of how well its
+brightness or alignment was tuned, which is why "something at the end
+doesn't look right" kept resurfacing under different descriptions.
+
+**Extracting the gem as its own texture, from source material worth
+re-deriving from.** This upload is the same subject at meaningfully
+higher fidelity than the sheet the original HUD reskin worked from —
+2125×740 against the old crop's 1774×602 — so re-extracting the gem
+fresh from it, rather than continuing to patch the lower-resolution
+asset, was worth the redo. Keying was the easy part (solid black
+background, same brightness-ramp approach as the original HUD sheet).
+Finding the gem's own left boundary wasn't: a naive crop caught the
+tail end of the bar's own crack-fill color bleeding in, since the gem
+sits close enough to the bar that any generous bounding box overlaps
+it. Fixed by scanning for each row's own saturated fill-color signature
+(high red for Health, high green for Stamina, same idea for Ability)
+across a full column instead of eyeballing an x-coordinate — the
+fraction of "real fill color" per column holds steady near the bar's
+own color for its whole length, then collapses sharply over a handful
+of pixels at almost exactly the same x for all three (≈1790-1798, out
+of 2125), which is the actual gap the reference draws between box and
+gem. Cropping from there instead of an earlier guess left a clean
+ornament with only a faint, plausible ember-glow bleeding in from the
+left — feathered its last ~14px anyway as a safety margin against
+whatever of that is still bar rather than ambient light.
+
+**Wiring it in as a true sibling, not a patch on the frame.** Cropped
+`hud_bar_frame_*.png` and `hud_bar_fill_*.png` down to 260px (from
+300) — an actual canvas crop, not another alpha-zeroing pass like
+rounds three and six's — removing the connector line and old baked-in
+diamond entirely, so `TextureProgressBar.custom_minimum_size` (derived
+from the frame texture's own size, same pattern as everywhere else in
+this reskin) shrinks with it instead of leaving 40px of invisible
+reserved space that would have pushed the new gem too far right.
+`_make_resource_bar_row()` takes a new `gem_texture` parameter and adds
+a `TextureRect` as the row's third child (after icon-slot and bar),
+sized the same way the icon already is (aspect-derived width at
+`RESOURCE_BAR_HEIGHT`) — the row's own `HBoxContainer` separation (6px)
+now does double duty as the gap on both sides of the bar, for free,
+without a special case.
+
+One side effect worth naming rather than silently accepting: the gem
+is now always fully lit, matching the reference, which never shows a
+depleted state to design against. Round two's argument for dimming it
+— that a lit gem next to a drained bar read as "a fixed piece left
+behind" — doesn't obviously disappear just because the gem moved. What
+does change is the visual grouping: a gem fused to the bar via a
+connector line reads as part of the same element the fill belongs to,
+so a viewer expects it to react to fill state the way the color does;
+a gem separated by real dark space reads as its own bookend ornament,
+the same way the icon on the row's other end was never expected to
+react to fill state either. Left it lit on that basis rather than
+re-applying round two's dimming preemptively — worth a real partial-
+fill screenshot in front of the user rather than assuming either
+reading is right from here.
