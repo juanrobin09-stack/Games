@@ -2396,3 +2396,54 @@ independent of resource level): Stamina's icon now sits at the same
 visual scale as its neighbors, and all three rows show a clear dark
 margin above and below their ornamental edges, not just their plain
 rectangles.
+
+### HUD bars, round four: the actual root cause — three bars that were never the same width on screen
+
+Two more rounds of "something still sticks out at the end of the bar"
+kept pointing at the same spot, and neither a gridline-verified check
+(no vertical overflow) nor removing the right-end diamond ornament
+outright made it go away. The user's own read of the follow-up
+screenshot is what actually found it: the three bars are not the same
+length on screen, and the "overflow" was always that mismatch, not the
+diamond's shape.
+
+**Root cause: the bar starts right after its own icon, and the icons
+aren't the same width.** `_make_resource_bar_row()` packs icon then bar
+into one `HBoxContainer` with fixed separation — so even though every
+`TextureProgressBar` control is sized identically (all three frame
+textures are 300×30, giving identical `custom_minimum_size`), each row's
+bar starts at a different x because it's placed immediately after
+whatever width that row's *icon* happens to be. Ability's icon (46px,
+from the previous round's own re-crop) is 6px narrower than Health's and
+Stamina's (52px each), so Ability's whole row — icon and bar both — sits
+6px further left, and an identically-*sized* bar ending 6px further left
+reads as a *shorter* one next to its neighbors. Three individually
+correct bars that still didn't line up as a column.
+
+Fixed by giving every icon a fixed-width slot instead of letting it pack
+at its own native width: a `CenterContainer` (`ICON_SLOT_WIDTH := 52.0`,
+matching the widest icon already in use) now sits between the row and
+the icon, so Health's and Stamina's icons fill it exactly as before and
+Ability's is centered inside it with a few pixels of margin either side.
+All three bars now start — and, being the same width, end — at the same
+x. Verified by measuring the actual on-screen right edge of each bar's
+own fill color (not a raw brightness threshold, which turned out to
+false-positive on the stone floor's own background texture variation at
+exactly the wrong x once): Health, Stamina and Ability all now end
+within a single pixel of each other, confirmed against a cyan guide line
+drawn across all three in the same screenshot.
+
+**The previous round's diamond removal turned out to have quietly made
+this worse, not better.** Trimming each frame's right-end ornament used
+a per-image cutoff picked from where that specific image's own diamond
+happened to start (x=270 for Health, x=260 for Stamina/Ability, out of
+each 300px-wide frame) — a reasonable per-image call at the time, but it
+meant Health's frame kept 10 more pixels of visible width than the other
+two's, adding a second, independent misalignment on top of the icon-slot
+one above. Re-cut Health at the same x=260 the other two already used
+once this was caught, rather than leaving three assets that no longer
+agreed on where "the end of the bar" is.
+
+The right-end diamond ornament itself stays removed for now (this round
+didn't re-litigate that call) — the left end, against the icon, still
+has its matching decorative arrow.

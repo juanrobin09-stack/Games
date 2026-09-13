@@ -76,6 +76,16 @@ const SMALL_ICON_SIZE := 14.0
 ## and _apply_frame_texture() already established — self-corrects if any
 ## of these nine files is ever re-cropped.
 const RESOURCE_BAR_HEIGHT := 30.0
+## Fixed width every icon is centered within (rather than each row packing
+## its bar immediately after its own icon's actual width) — Health's and
+## Stamina's icons render at 52px wide but Ability's at 46px, and without
+## a shared slot that 6px difference shifted Ability's whole row 6px
+## left, so its same-width (300px) bar ended 6px short of the other two's
+## right edge: three individually-correct bars that still didn't line up
+## as a column. 52 matches the widest icon currently in use (Health/
+## Stamina) so neither needs any inset; only Ability picks up ~3px of
+## centering margin on each side.
+const ICON_SLOT_WIDTH := 52.0
 const HP_ICON_TEXTURE := preload("res://assets/textures/hud_icon_health.png")
 const HP_BAR_FRAME_TEXTURE := preload("res://assets/textures/hud_bar_frame_health.png")
 const HP_BAR_FILL_TEXTURE := preload("res://assets/textures/hud_bar_fill_health.png")
@@ -239,6 +249,11 @@ func _make_resource_bar_row(col: Control, icon_texture: Texture2D, frame_texture
 	row.add_theme_constant_override("separation", 6)
 	col.add_child(row)
 
+	var icon_slot := CenterContainer.new()
+	icon_slot.custom_minimum_size = Vector2(ICON_SLOT_WIDTH, RESOURCE_BAR_HEIGHT)
+	icon_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(icon_slot)
+
 	var icon := TextureRect.new()
 	icon.texture = icon_texture
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -246,7 +261,7 @@ func _make_resource_bar_row(col: Control, icon_texture: Texture2D, frame_texture
 	var icon_size := icon_texture.get_size()
 	icon.custom_minimum_size = Vector2(RESOURCE_BAR_HEIGHT * icon_size.x / icon_size.y, RESOURCE_BAR_HEIGHT)
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_child(icon)
+	icon_slot.add_child(icon)
 
 	var bar := TextureProgressBar.new()
 	bar.min_value = 0.0
