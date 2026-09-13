@@ -2687,3 +2687,20 @@ the player (rather than navigating to a REST room, where this visual
 normally spawns, which headless input can't easily steer to) — the
 sprite renders, blends into the floor as intended, and the existing
 warm point light still glows around it.
+
+### The brazier, replaced again: a cleaner reference, same extraction technique
+
+A second reference — visually similar (still a top-down lit brazier
+on cracked stone) but a cleaner, more symmetric design: 8 evenly-
+spaced spikes around a perfectly circular ring rather than the first
+image's 4 larger, less regular ones — replaced `brazier.png` outright,
+same filename, no code changes.
+
+Same extraction technique as the first (diff against this project's
+own `floor_stone.png`, largest connected component, holes closed,
+edges feathered) worked again without modification: this second
+upload was also generated from that exact floor tile (confirmed the
+same way — near-zero difference everywhere except the object's own
+silhouette). The resulting mask came out cleaner and closer to a true
+circle than the first attempt's, matching this design's own more
+regular geometry.
