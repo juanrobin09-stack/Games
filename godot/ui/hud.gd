@@ -360,7 +360,7 @@ func _make_vignette(stop_offset: float, end_color: Color) -> TextureRect:
 func _build_top_left() -> void:
 	var col := VBoxContainer.new()
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	col.add_theme_constant_override("separation", 6)
+	col.add_theme_constant_override("separation", 11)
 	col.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	col.offset_left = 14.0
 	col.offset_top = 14.0

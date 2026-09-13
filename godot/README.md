@@ -2350,3 +2350,49 @@ headless run forced to a partial, unequal fill on all three bars
 (≈33%/31%/25%) before screenshotting — specifically because the bug only
 shows up once a bar has visibly drained; a full-bar screenshot would have
 passed either version of the frame art.
+
+### HUD bars, round three: a genuinely oversized icon, and more breathing room between rows
+
+A follow-up screenshot at the *default* 100/100/100 state (rather than
+the partial fill the previous round tested with) surfaced what a drained
+bar hadn't: the Stamina icon read as visibly larger and less contained
+than Health's and Ability's next to it, and none of the three rows had
+much room between them.
+
+**The Stamina icon was a real, measurable outlier, not an optical
+illusion this time.** Every icon is sized off its own texture's aspect
+ratio at a shared height (`RESOURCE_BAR_HEIGHT`, `hud.gd`'s
+`_make_resource_bar_row()`), so a wider source texture directly becomes a
+wider on-screen icon. Stamina's dense crop from the previous round
+(195×90, a 2.17:1 aspect — a chevron core flanked by two horizontally-
+splayed gem ornaments) is meaningfully wider relative to its height than
+Health's (195×112, 1.74:1) or Ability's (195×127, 1.54:1), so at the same
+render height it came out 65px wide against their 52px and 46px —
+confirmed by direct measurement, not just by eye. Rather than re-crop the
+source horizontally (risking an asymmetric cut through one of the two
+gem ornaments, which sit at slightly different distances from center),
+padded its canvas vertically instead — 195×90 centered inside a new,
+transparent 195×112 canvas, matching Health's own aspect ratio exactly.
+Since on-screen width is derived from height × aspect, and the padding
+lowers the aspect ratio without touching a single content pixel, the
+whole icon now renders at 52×30 (down from 65×30) with a few pixels of
+natural breathing room top and bottom — smaller *and* better centered,
+from one change, with the source art itself untouched.
+
+**Separately, gave every row more room to begin with.** Pixel-sampling
+the previous build's screenshot column-by-column showed the three rows'
+own rectangular fills were already cleanly separated by a dark gap — but
+each row's *ornamental* edges (the icon's flanking gem tips, the frame's
+jagged top/bottom trim) sit close enough to their own row's boundary that
+they had almost no margin against the neighboring row, reading as
+crowding even without literally crossing into it. Raised the HUD column's
+`VBoxContainer` separation from 6px to 11px (`hud.gd`'s
+`_build_top_left()`) — cheap, low-risk, and it helps regardless of which
+element a future re-skin makes wider or spikier again.
+
+Verified against the same default-100% state the report screenshot used
+(rather than a forced partial fill, since both of this round's fixes are
+independent of resource level): Stamina's icon now sits at the same
+visual scale as its neighbors, and all three rows show a clear dark
+margin above and below their ornamental edges, not just their plain
+rectangles.
