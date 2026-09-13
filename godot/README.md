@@ -2193,3 +2193,92 @@ Verified against a real headless run: all five re-skinned rows render
 with legible, correctly-centered text and no visible artifacts from
 either text-removal technique, at both normal screenshot scale and a
 digital zoom crop of each one.
+
+### In-game HUD: real Health/Stamina/Ability bar art via TextureProgressBar
+
+A further upload delivered the same ornate treatment for the in-game
+resource bars — one icon (heart/chevron/sun-and-compass) and one frame
+per bar, sheeted together with each bar shown at a baked "100"/"100/100"
+to demonstrate the look.
+
+**Keying, harder than the previous two uploads.** Same fake-transparency
+checkerboard as before (an opaque RGB render — confirmed no alpha
+channel), but this one was a genuinely clean solid black background
+(every sampled pixel exactly `(0,0,0)`, not the near-neutral-gray
+checkerboard tiles the logo/button uploads had), so a plain brightness
+ramp keyed it perfectly on the first attempt — no connected-component
+trick needed this time, since there was no ambiguity with bright
+low-saturation content to protect.
+
+**Removing the baked numbers took four attempts, not one.** The
+technique that cleanly erased "JOUER" against Play's flame frame
+(saturation-based masking + OpenCV inpainting) came back to bite here:
+bold numeral strokes are much thicker than script-font letters, and
+raising the mask dilation to compensate just traded one artifact for
+another — `cv2.inpaint`'s TELEA algorithm fills a wide hole by
+propagating smoothly from its edges, and a smooth fill is exactly wrong
+against a fill texture whose whole identity is a busy, high-frequency
+crack pattern: even with perfect color matching, the inpainted region's
+un-cracked smoothness silently retraced the numerals' own shape. A
+local-contrast mask (median-blur deviation, catching both a numeral's
+bright highlight AND its dark bevel edge, rather than a plain brightness
++ saturation threshold) fixed the mask's own coverage but not this
+underlying smoothness problem. What actually worked: cloning a same-
+height patch of real, already-cracked texture from elsewhere in the same
+bar directly over the number, feathered at the edges — real texture
+detail transplanted wholesale, not resynthesized, so there's no
+smoothness mismatch left for the eye to catch. Re-verified over a
+checkerboard afterward with the numerals completely gone, not just
+faded.
+
+**Architecture: `TextureProgressBar`, introduced to this project for the
+first time.** Every other bar in `hud.gd` (`_make_bar_row()`) is a flat
+`ColorRect` whose `anchor_right` gets animated 0→1 — fine for a flat
+fill, but with no way to also show a fixed frame on top regardless of
+fill level. `TextureProgressBar` is Godot's own purpose-built answer:
+`texture_over` (the frame) always draws at full opacity no matter what
+`value` is, `texture_progress` (the cleaned crack fill) is clipped to
+just its own left `value` fraction via `FILL_LEFT_TO_RIGHT`, and
+`texture_under` shows through the unfilled remainder — a small generated
+solid-color texture standing in for this art's own missing "empty"
+state, since every reference bar shows 100/100 full with no depleted
+version to crop from. Added as `_make_resource_bar_row()`, a second,
+parallel bar builder used only for HP/Stamina/Energy — `_make_bar_row()`
+and `_set_bar_ratio()` are untouched and still drive XP/corruption/boss,
+which this art was never scoped to.
+
+**A real Godot gotcha, caught by an actual screenshot, not assumed
+away:** the first working build rendered each bar at its *source
+texture's own pixel width* (up to 1579px!) instead of the intended
+~300px, blowing out across the whole top of the screen and covering the
+top-right HUD entirely. `custom_minimum_size` alone doesn't win here —
+`TextureProgressBar.get_minimum_size()` reports the texture's own native
+size unless told otherwise, and Godot's actual effective minimum is
+`max(custom_minimum_size, get_minimum_size())`, so the huge native-
+resolution source silently overruled every explicit size set in code.
+Fixed by pre-resizing the actual PNG assets to their real on-screen
+target size (a clean downscale — LANCZOS, never blurry, per this
+project's own established upscale-vs-downscale rule) rather than fighting
+the node's sizing rules at runtime; the code's own aspect-ratio-derived
+`custom_minimum_size` computation was kept as a self-correcting safety
+net rather than removed, since it's now provably harmless (texture
+height already equals `RESOURCE_BAR_HEIGHT`, so the formula reduces to
+the texture's own already-correct size) and still protects against a
+future re-crop.
+
+One more alignment pass once real sizes were on screen: Health's own
+source frame carries extra glow padding the Stamina/Ability frames
+don't, giving it a visibly different aspect ratio (8.9:1 vs the other
+two's 10.0:1) — at a shared height that put its right edge ~30px short
+of the other two, an obvious jog in an otherwise-aligned three-bar
+stack. Resized Health's frame and fill to the same 300×30 as the other
+two (a mild ~12% horizontal stretch, invisible against the frame's own
+asymmetric ornament) rather than leaving the mismatch or trying to
+crop Health's source tighter.
+
+Verified end to end against a real run, not just the main menu: a
+temporary harness started a run headlessly and force-set
+HP/Stamina/Energy to 36%/82%/3% before screenshotting — confirming
+`FILL_LEFT_TO_RIGHT` clips each bar's fill to the correct fraction with
+the frame still fully intact around it and the dark "empty" groove
+showing through the rest, not just that a full bar renders correctly.

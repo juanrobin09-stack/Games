@@ -61,6 +61,30 @@ const BAR_TRACK_BG := Color(8.0 / 255.0, 6.0 / 255.0, 10.0 / 255.0, 0.65)
 const ABILITY_SLOT_SIZE := 46.0
 const BAR_ICON_SIZE := 26.0
 const SMALL_ICON_SIZE := 14.0
+
+## HP/Stamina/Ability reskin — a real ornate icon+frame+fill sheet uploaded
+## on GitHub, cropped into 9 files (one icon, one hollow "socket" frame,
+## one text-erased fill per bar; see hud_bar_fill_*.png's own comment
+## below for how the baked "100"/"100/100" numbers were removed without
+## damaging the crack texture underneath). Scoped to exactly these three
+## bars — _make_bar_row()/_set_bar_ratio() below are untouched and still
+## drive XP/corruption/boss, which this art was never meant for.
+##
+## Every icon and bar frame gets sized off its OWN texture's aspect ratio
+## at this shared height, the same "derive from the real asset, don't
+## hardcode a guessed number" approach main_menu_ui.gd's TITLE_LOGO_TEXTURE
+## and _apply_frame_texture() already established — self-corrects if any
+## of these nine files is ever re-cropped.
+const RESOURCE_BAR_HEIGHT := 30.0
+const HP_ICON_TEXTURE := preload("res://assets/textures/hud_icon_health.png")
+const HP_BAR_FRAME_TEXTURE := preload("res://assets/textures/hud_bar_frame_health.png")
+const HP_BAR_FILL_TEXTURE := preload("res://assets/textures/hud_bar_fill_health.png")
+const STAMINA_ICON_TEXTURE := preload("res://assets/textures/hud_icon_stamina.png")
+const STAMINA_BAR_FRAME_TEXTURE := preload("res://assets/textures/hud_bar_frame_stamina.png")
+const STAMINA_BAR_FILL_TEXTURE := preload("res://assets/textures/hud_bar_fill_stamina.png")
+const ABILITY_ICON_TEXTURE := preload("res://assets/textures/hud_icon_ability.png")
+const ABILITY_BAR_FRAME_TEXTURE := preload("res://assets/textures/hud_bar_frame_ability.png")
+const ABILITY_BAR_FILL_TEXTURE := preload("res://assets/textures/hud_bar_fill_ability.png")
 const SYNERGY_BANNER_REST_TOP := 18.0
 ## rgb(150,15,10) — the danger vignette's own edge color. No exact Palette
 ## match (checked); the corruption vignette's rgb(74,61,99) IS an exact
@@ -80,14 +104,13 @@ const VIGNETTE_RADIUS := 0.70710678
 
 var _danger_vignette: TextureRect
 var _corruption_vignette: TextureRect
-var _hp_fill: ColorRect
+var _hp_fill: TextureProgressBar
 var _hp_label: Label
 var _shield_row: HBoxContainer
 var _buff_row: HBoxContainer
-var _stamina_fill: ColorRect
+var _stamina_fill: TextureProgressBar
 var _stamina_label: Label
-var _stamina_track_bg: ColorRect
-var _energy_fill: ColorRect
+var _energy_fill: TextureProgressBar
 var _energy_label: Label
 var _embers_label: Label
 var _timer_label: Label
@@ -195,6 +218,74 @@ func _make_bar_row(col: Control, icon_id: String, icon_color: Color, fill_color:
 static func _set_bar_ratio(fill: ColorRect, ratio: float) -> void:
 	fill.anchor_right = clampf(ratio, 0.0, 1.0)
 
+## Builds one icon+bar(+label) row from real artwork (RESOURCE_BAR_HEIGHT
+## and the *_ICON/_FRAME/_FILL textures above) rather than _make_bar_row()'s
+## flat ColorRects — used for HP/Stamina/Energy only. Returns the same
+## {"row", "fill", "label"} shape _make_bar_row() does (minus "bg", which
+## has no equivalent here) so the caller side barely changes.
+##
+## TextureProgressBar — unused anywhere else in this project until now —
+## is the natural fit for "real art, dynamic fill" in a way ColorRect+
+## anchor_right isn't: `texture_over` draws the ornate frame at full
+## opacity no matter what `value` is, `texture_progress` is clipped to
+## just its own left `value` fraction (FILL_LEFT_TO_RIGHT), and
+## `texture_under` shows through the unfilled remainder — a small solid-
+## color texture (_solid_texture(), matching _make_bar_row()'s own
+## BAR_TRACK_BG) standing in for this art's missing "empty" state, since
+## every reference bar shows 100/100 full with nothing to crop instead.
+func _make_resource_bar_row(col: Control, icon_texture: Texture2D, frame_texture: Texture2D, fill_texture: Texture2D) -> Dictionary:
+	var row := HBoxContainer.new()
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_theme_constant_override("separation", 6)
+	col.add_child(row)
+
+	var icon := TextureRect.new()
+	icon.texture = icon_texture
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
+	var icon_size := icon_texture.get_size()
+	icon.custom_minimum_size = Vector2(RESOURCE_BAR_HEIGHT * icon_size.x / icon_size.y, RESOURCE_BAR_HEIGHT)
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(icon)
+
+	var bar := TextureProgressBar.new()
+	bar.min_value = 0.0
+	bar.max_value = 1.0
+	bar.step = 0.0
+	bar.fill_mode = TextureProgressBar.FILL_LEFT_TO_RIGHT
+	bar.texture_under = _solid_texture(BAR_TRACK_BG)
+	bar.texture_progress = fill_texture
+	bar.texture_over = frame_texture
+	var bar_size := frame_texture.get_size()
+	bar.custom_minimum_size = Vector2(RESOURCE_BAR_HEIGHT * bar_size.x / bar_size.y, RESOURCE_BAR_HEIGHT)
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(bar)
+
+	var label := Label.new()
+	label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 12)
+	label.add_theme_color_override("font_color", Color(Palette.TEXT_WARM))
+	label.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.8))
+	label.add_theme_constant_override("shadow_offset_x", 0)
+	label.add_theme_constant_override("shadow_offset_y", 1)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.add_child(label)
+
+	return {"row": row, "fill": bar, "label": label}
+
+static func _set_texture_bar_ratio(fill: TextureProgressBar, ratio: float) -> void:
+	fill.value = clampf(ratio, 0.0, 1.0)
+
+## A flat generated texture for _make_resource_bar_row()'s texture_under —
+## see that function's own comment for why a generated solid fills in for
+## a genuine "empty" art state this upload never provided.
+static func _solid_texture(color: Color, size: int = 8) -> ImageTexture:
+	var image := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	image.fill(color)
+	return ImageTexture.create_from_image(image)
+
 func _make_small_icon(icon_id: String, color: Color) -> HudIcon:
 	var icon := HudIcon.new()
 	icon.icon_id = icon_id
@@ -273,11 +364,11 @@ func _build_top_left() -> void:
 	col.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	col.offset_left = 14.0
 	col.offset_top = 14.0
-	col.offset_right = 14.0 + 260.0
-	col.offset_bottom = 14.0 + 170.0
+	col.offset_right = 14.0 + 360.0
+	col.offset_bottom = 14.0 + 200.0
 	add_child(col)
 
-	var hp := _make_bar_row(col, "heart", Color(Palette.EMBER5), Color(Palette.BLOOD_BRIGHT))
+	var hp := _make_resource_bar_row(col, HP_ICON_TEXTURE, HP_BAR_FRAME_TEXTURE, HP_BAR_FILL_TEXTURE)
 	_hp_fill = hp["fill"]
 	_hp_label = hp["label"]
 	_shield_row = HBoxContainer.new()
@@ -285,12 +376,11 @@ func _build_top_left() -> void:
 	_shield_row.add_theme_constant_override("separation", 3)
 	(hp["row"] as HBoxContainer).add_child(_shield_row)
 
-	var stamina := _make_bar_row(col, "stamina", Color(Palette.TOXIC), Color(Palette.TOXIC))
-	_stamina_track_bg = stamina["bg"]
+	var stamina := _make_resource_bar_row(col, STAMINA_ICON_TEXTURE, STAMINA_BAR_FRAME_TEXTURE, STAMINA_BAR_FILL_TEXTURE)
 	_stamina_fill = stamina["fill"]
 	_stamina_label = stamina["label"]
 
-	var energy := _make_bar_row(col, "ability", Color(Palette.EMBER5), Color(Palette.EMBER4))
+	var energy := _make_resource_bar_row(col, ABILITY_ICON_TEXTURE, ABILITY_BAR_FRAME_TEXTURE, ABILITY_BAR_FILL_TEXTURE)
 	_energy_fill = energy["fill"]
 	_energy_label = energy["label"]
 
@@ -803,7 +893,7 @@ func update(data: Dictionary) -> void:
 		_points_hint.visible = false
 
 	var hp_ratio: float = clampf(player.hp / maxf(1.0, player.stats.max_hp), 0.0, 1.0)
-	_set_bar_ratio(_hp_fill, hp_ratio)
+	_set_texture_bar_ratio(_hp_fill, hp_ratio)
 	_hp_label.text = "%d / %d" % [ceili(player.hp), ceili(player.stats.max_hp)]
 
 	# Danger vignette: opacity climbs as hp_ratio drops below DANGER_START,
@@ -837,14 +927,18 @@ func update(data: Dictionary) -> void:
 		_shield_row.add_child(pip)
 
 	var energy_ratio: float = clampf(player.energy / maxf(1.0, player.stats.energy_max), 0.0, 1.0)
-	_set_bar_ratio(_energy_fill, energy_ratio)
+	_set_texture_bar_ratio(_energy_fill, energy_ratio)
 	_energy_label.text = "%d" % floori(player.energy)
 
 	var stamina_ratio: float = clampf(player.stamina / maxf(1.0, player.stats.stamina_max), 0.0, 1.0)
-	_set_bar_ratio(_stamina_fill, stamina_ratio)
+	_set_texture_bar_ratio(_stamina_fill, stamina_ratio)
 	_stamina_label.text = "%d" % floori(player.stamina)
 	var denied: bool = data.get("stamina_denied", false)
-	_stamina_track_bg.color = Color(0.75, 0.23, 0.17, 0.55) if denied else BAR_TRACK_BG
+	# No separate track-background ColorRect to flash red anymore (the
+	# frame/fill textures ARE the whole bar) — tinting the bar's own
+	# modulate achieves the same "denied" feedback across all three
+	# texture layers at once.
+	_stamina_fill.modulate = Color(1.8, 0.4, 0.35) if denied else Color.WHITE
 
 	for child in _buff_row.get_children():
 		child.queue_free()
