@@ -44,21 +44,47 @@ const BLOB_WOBBLE_SEEDS := [0.1, -0.06, 0.12, -0.09, 0.07, -0.11]
 ## browser.
 const STALL_TEXTURE := preload("res://assets/textures/shop_stall.png")
 
-## A real top-down photo of a lit floor brazier, supplied directly for this
-## port. The source (a single ChatGPT-generated frame at a fixed camera
-## angle) put the object on what turned out to be this exact project's own
-## floor_stone.png — both 1254×1254, and diffing them pixel-for-pixel shows
-## near-zero difference everywhere except the brazier's own silhouette —
-## so the alpha mask here comes from that diff (thresholded, largest
-## connected component kept, small holes closed) rather than a brightness/
-## color key the way every other asset this project has extracted needed:
-## there was no clean solid background to key against, only a busy stone
-## texture near-identical to this game's own. The mask's edge is
-## consequently a little ragged rather than a clean silhouette outline —
-## left as is rather than smoothed, since it reads as scorched/uneven stone
-## around the fire once composited over this project's own floor, not as
-## an extraction artifact.
-const BRAZIER_TEXTURE := preload("res://assets/textures/brazier.png")
+## Third brazier reference, superseding the photo-extracted BRAZIER_TEXTURE
+## from earlier rounds: not a single flat photo but a real spec sheet (an
+## object callout, an 8-frame flame animation, a glow sample, a composited
+## result, and an in-game placement preview against this project's own
+## floor_stone.png). That in-game panel confirms the painted-icon style
+## reads correctly against this game's actual floor, and — unlike the old
+## photo, which had no background to key at all and needed a floor-diff
+## mask — every panel here sits on a plain near-black field, so a normal
+## brightness threshold works: candidate-dark pixels are labeled with
+## `scipy.ndimage.label`, only components NOT touching the crop border
+## count as background (the ring's coal bed is dark too, but fully
+## enclosed by brighter metal, so it survives), remaining holes filled,
+## edges feathered. The ring (BRASERO (OBJET), unlit coals, no flame) is
+## the always-visible base; the 8 FLAMME frames are cropped to one shared
+## box per animation frame (same center-x, same coal-line baseline-y) so
+## the fire's anchor point never jitters when frames swap — see
+## _draw_brazier() for the actual per-frame compositing.
+const BRAZIER_RING_TEXTURE := preload("res://assets/textures/brazier_ring.png")
+const BRAZIER_FLAME_TEXTURES: Array[Texture2D] = [
+	preload("res://assets/textures/brazier_flame_1.png"),
+	preload("res://assets/textures/brazier_flame_2.png"),
+	preload("res://assets/textures/brazier_flame_3.png"),
+	preload("res://assets/textures/brazier_flame_4.png"),
+	preload("res://assets/textures/brazier_flame_5.png"),
+	preload("res://assets/textures/brazier_flame_6.png"),
+	preload("res://assets/textures/brazier_flame_7.png"),
+	preload("res://assets/textures/brazier_flame_8.png"),
+]
+## Every flame frame was cropped to the identical box (same width, same
+## distance from the coal-line baseline to the box's bottom edge), so this
+## fraction — how far down from the TOP of that shared box the baseline
+## sits — is one constant good for all 8, not something computed per frame.
+const BRAZIER_FLAME_BASELINE_FRACTION := 118.0 / 126.0
+## Flame width as a fraction of the ring's own on-screen width. Tuned by
+## eye against a real headless render (the source sheet's own object and
+## flame callouts aren't drawn to a shared scale — they're independent
+## close-ups — so this can't be derived from the sheet directly): big
+## enough that the fire reads as overflowing the coal bed like the sheet's
+## own "RÉSULTAT FINAL" composite, not a small flame lost inside the ring.
+const BRAZIER_FLAME_WIDTH_RATIO := 0.62
+const BRAZIER_FLAME_FPS := 10.0
 
 var radius: float = 16.0
 var visual: Visual = Visual.ROCK
@@ -265,20 +291,29 @@ func _draw_rubble() -> void:
 		var a: float = (float(i) / 3.0) * TAU + seed_value
 		_draw_filled_ellipse(Vector2(cos(a) * radius * 0.4, sin(a) * radius * 0.3), radius * 0.4, radius * 0.28, color, a)
 
-## A subtle scale pulse standing in for the old procedural version's own
-## bezier-flame flicker — BRAZIER_TEXTURE is a single static frame, not an
-## animated flame shape, so there's no silhouette to redraw per frame the
-## way the old version had; this is the cheapest way the sprite still
-## reads as a living fire rather than a painted decal. Centered on both
-## axes (unlike STALL_TEXTURE's own top-anchored placement) since this is
-## a flat top-down photo of a round object sitting on the floor, not an
-## angled structure standing on it — there's no "base" to anchor against,
-## the ring's own center is the obstacle's true position.
+## Real frame-by-frame flame animation, replacing the old scale-pulse hack
+## that stood in for one when the only art available was a single static
+## photo frame. The ring is centered on both axes (unlike STALL_TEXTURE's
+## top-anchored placement) since this is a flat top-down object with no
+## "base" to anchor against — the ring's own center is the obstacle's true
+## position. The flame is centered horizontally on the same axis and
+## positioned so BRAZIER_FLAME_BASELINE_FRACTION down its own box lands
+## exactly on that center — since every frame shares that same fraction,
+## the fire's visual anchor stays put as frames cycle; only the flame
+## shape above it changes. `seed_value * 8.0` offsets each brazier's phase
+## so multiple instances in the same room don't flicker in lockstep.
 func _draw_brazier(now: float) -> void:
-	var flick: float = 0.97 + sin(now * 8.0 + seed_value) * 0.03
-	var sprite_w: float = radius * 4.5 * flick
-	var sprite_h: float = sprite_w * (BRAZIER_TEXTURE.get_height() / float(BRAZIER_TEXTURE.get_width()))
-	draw_texture_rect(BRAZIER_TEXTURE, Rect2(-sprite_w / 2.0, -sprite_h / 2.0, sprite_w, sprite_h), false)
+	var sprite_w: float = radius * 4.5
+	var sprite_h: float = sprite_w * (BRAZIER_RING_TEXTURE.get_height() / float(BRAZIER_RING_TEXTURE.get_width()))
+	draw_texture_rect(BRAZIER_RING_TEXTURE, Rect2(-sprite_w / 2.0, -sprite_h / 2.0, sprite_w, sprite_h), false)
+
+	var frame_count := BRAZIER_FLAME_TEXTURES.size()
+	var frame_index: int = int(fmod(now * BRAZIER_FLAME_FPS + seed_value * 8.0, float(frame_count)))
+	var flame: Texture2D = BRAZIER_FLAME_TEXTURES[frame_index]
+	var flame_w: float = sprite_w * BRAZIER_FLAME_WIDTH_RATIO
+	var flame_h: float = flame_w * (flame.get_height() / float(flame.get_width()))
+	var flame_top: float = -flame_h * BRAZIER_FLAME_BASELINE_FRACTION
+	draw_texture_rect(flame, Rect2(-flame_w / 2.0, flame_top, flame_w, flame_h), false)
 
 func _draw_crystal(now: float) -> void:
 	var flick: float = 0.8 + sin(now * 2.0 + seed_value) * 0.2

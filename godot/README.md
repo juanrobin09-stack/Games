@@ -2704,3 +2704,71 @@ same way — near-zero difference everywhere except the object's own
 silhouette). The resulting mask came out cleaner and closer to a true
 circle than the first attempt's, matching this design's own more
 regular geometry.
+
+### The brazier, replaced a third time: a spec sheet instead of a single frame, enabling a real flame animation
+
+Where the first two references were each a single flat "final result"
+image, the third upload was a full spec sheet: a callout of the
+brazier object alone (unlit coals, no flame), an 8-frame flame
+animation strip, a glow/light sample, a composited "final result," an
+in-game top-down preview against this exact project's own
+`floor_stone.png`, and a character-scale reference. That in-game panel
+is what justified switching art direction rather than treating this as
+just another same-style swap: it showed the painted-icon ring reading
+cleanly against this game's real floor, at a scale similar to what was
+already placed.
+
+**A much easier keying problem than the first two rounds.** Those had
+no clean background at all — the object sat directly on a busy
+stone-floor photo, forcing the floor-diff technique described above.
+Every panel on this new sheet, by contrast, sits on a plain near-black
+field (peak brightness in the low 20s outside the artwork itself), so
+a normal brightness threshold works — with one wrinkle: the ring's own
+coal bed is dark too (some pixels in the single digits), close enough
+to the background's own brightness that a flat threshold alone would
+punch transparent holes through it. Fixed the same way this project's
+button-sheet checkerboard was: `scipy.ndimage.label` on the
+"candidate dark" mask, keep only the components that DON'T touch the
+crop's border (the coal bed is fully enclosed by brighter metal and
+gems; true background always has a path out to the border),
+`binary_fill_holes` to close what's left, then a soft distance-
+transform feather on the final edge.
+
+**Cropping the 8 flame frames to one shared box, not each one's own
+tight bounding box.** Each frame's own silhouette is a slightly
+different flame shape and width, and cropping every frame tightly to
+its own content would make the fire appear to jump left/right/up/down
+as frames swap — visible jitter, not flicker. Instead, every frame was
+cropped to an identical 96×126 box, positioned per-frame only by its
+own horizontal center and the y-coordinate where it meets the coal
+line (both measured directly off the sheet, consistent within a couple
+of pixels across all 8 frames), so the same fixed point within that
+box — `BRAZIER_FLAME_BASELINE_FRACTION` down from its top — is the
+fire's anchor in every frame, and only the flame shape above that
+point changes.
+
+**`_draw_brazier()` now draws two textures instead of one.**
+`BRAZIER_RING_TEXTURE` (the unlit object, always visible, same
+`draw_texture_rect()`-off-`radius` sizing as before) underneath, then
+whichever of the 8 `BRAZIER_FLAME_TEXTURES` the current time picked
+(`BRAZIER_FLAME_FPS = 10.0`, phase-offset per instance by
+`seed_value` so multiple braziers in the same room don't flicker in
+lockstep) on top, scaled to `BRAZIER_FLAME_WIDTH_RATIO` of the ring's
+own on-screen width and positioned so its baseline lands on the ring's
+center. That ratio (0.62) isn't something the sheet states directly —
+its object and flame callouts are independent close-ups, not drawn to
+a shared scale — so it was tuned by eye against a real headless render
+until the fire read as overflowing the coal bed the way the sheet's
+own "RÉSULTAT FINAL" composite does, rather than looking lost inside
+the ring. The old single-texture version's flame-height scale pulse is
+gone entirely: with 8 real hand-drawn frames doing the animating, a
+synthetic scale wobble on top would be redundant rather than
+additive. The `PointLight2D` glow (`_set_light()`, unchanged) still
+lights the scene the same way regardless of which texture(s) draw the
+silhouette underneath it.
+
+Verified the same way as the first two rounds: a temporary harness
+spawning a brazier directly next to the player, two screenshots ~0.3s
+apart confirming the flame frame actually advances (not just present),
+`brazier.png` (the now-superseded single-frame texture) removed from
+the project entirely rather than left as dead weight.
