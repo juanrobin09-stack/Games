@@ -2572,3 +2572,42 @@ react to fill state either. Left it lit on that basis rather than
 re-applying round two's dimming preemptively — worth a real partial-
 fill screenshot in front of the user rather than assuming either
 reading is right from here.
+
+### HUD bars, round eight: the icons themselves were the ones actually cut off
+
+A zoomed-in screenshot of just the three icons finally made a much
+older decision visible for what it was: round one's "recadre" fix
+(the very first response to "pas bien centré") had deliberately
+trimmed each icon tighter around its bold medallion core, cutting off
+the thin outer spike tips the original crop preserved, reasoning that
+the tighter crop would read as denser and better-filling its row. It
+did — but "denser" and "cut off" are the same edit described by two
+different viewers, and a full-resolution look at the reference this
+round already had on hand (the same sheet round seven re-extracted the
+gem from) settled which reading was right: every icon's outer spikes
+are a real, deliberate part of the design, not incidental padding
+around a "true" dense core.
+
+**Re-extracted all three icons from the same high-fidelity source,
+this time keeping the full housing.** Same keying approach as the gem
+(clean solid-black background), same bar-bleed problem on the edge
+facing the bar (icon and bar sit close enough here that, unlike the
+gem's clearly-separated right side, there's no wide gap to crop
+into) — handled the same way, with a feathered fade on that edge
+rather than a hard cut, rather than the gem's fill-color-signature
+scan, since the icon-to-bar boundary here runs across a much fuzzier,
+closer transition than the bar-to-gem one did. Sized the same way
+every asset in this reskin has been since round one — height locked to
+`RESOURCE_BAR_HEIGHT`, width derived from each icon's own aspect ratio
+— which is why this didn't need a code change, only new source files:
+`hud_icon_health/stamina/ability.png` at the same filenames `hud.gd`
+already preloads.
+
+The three now render at 35/42/43px wide (up from the deliberately
+trimmed 52/52/46) with their full spiked-diamond silhouette intact —
+visibly denser than before despite being smaller in raw pixels,
+because a complete spike crown reads as more solid than the same
+crown with its points sawn off, confirming that round one's fix was
+solving a real complaint with the wrong tool: crop for density is a
+lossy trade against the source art, when the actual fix was always to
+use a truer copy of it.
