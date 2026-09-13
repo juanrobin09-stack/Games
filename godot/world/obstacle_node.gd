@@ -80,12 +80,10 @@ const BRAZIER_FLAME_BASELINE_FRACTION := 118.0 / 126.0
 ## Flame width as a fraction of the ring's own on-screen width. Tuned by
 ## eye against a real headless render (the source sheet's own object and
 ## flame callouts aren't drawn to a shared scale — they're independent
-## close-ups — so this can't be derived from the sheet directly): the
-## flame's own height (fixed by its aspect ratio once this width is
-## picked) should reach roughly another half-ring-height above the
-## ring's own top edge, a tall bonfire-like plume rather than a flame
-## that just barely pokes up over the rim.
-const BRAZIER_FLAME_WIDTH_RATIO := 0.85
+## close-ups — so this can't be derived from the sheet directly): big
+## enough that the fire reads as overflowing the coal bed like the sheet's
+## own "RÉSULTAT FINAL" composite, not a small flame lost inside the ring.
+const BRAZIER_FLAME_WIDTH_RATIO := 0.62
 const BRAZIER_FLAME_FPS := 10.0
 
 var radius: float = 16.0

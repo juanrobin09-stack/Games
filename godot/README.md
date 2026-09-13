@@ -2788,3 +2788,28 @@ instead of just poking over it. `BRAZIER_FLAME_WIDTH_RATIO` alone
 controls that (flame height follows from its fixed aspect ratio once
 its width is picked): raised from 0.62 to 0.85, re-verified with the
 same harness.
+
+Final follow-up: asked to revert that last size bump and instead
+recenter the flame. `BRAZIER_FLAME_WIDTH_RATIO` went back to 0.62, but
+reverting size alone wouldn't have fixed what the bigger flame had
+actually made visible — a real, previously-unnoticed asymmetry. A
+close-up render (a temporary huge `radius`, not a camera change, is
+the cheapest way to blow up a `_draw()`-based sprite for inspection)
+showed the fire's tip leaning right of the ring's own axis in 6 of the
+8 frames, by as much as 11% of the frame's own width — invisible at
+normal HUD-bar-icon-sized rendering but obvious once the flame was
+tall enough to stand apart from the ring. Measuring precisely (an
+alpha-weighted centroid over just the top 15% of each frame's content,
+vs. the same centroid over the whole frame) showed why a single global
+fix couldn't perfectly satisfy both ends: the tip leans one way while
+the wider body near the coal line was already close to centered, so
+shifting each frame far enough to zero out the tip's lean pushes the
+body off by a comparable amount in the other direction — the flame
+shapes themselves aren't laterally symmetric top-to-bottom, so no
+horizontal shift can center both. Split the difference — each frame
+shifted by half its measured tip offset, re-extracted from the
+original sheet at that adjusted crop position (same border-safe
+threshold technique as before) — leaving both ends within about half
+their original worst-case offset rather than trading one asymmetry for
+an equal-and-opposite one. Re-verified both close-up and at normal
+size with the same two harnesses.
