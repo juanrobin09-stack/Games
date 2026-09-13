@@ -2611,3 +2611,23 @@ crown with its points sawn off, confirming that round one's fix was
 solving a real complaint with the wrong tool: crop for density is a
 lossy trade against the source art, when the actual fix was always to
 use a truer copy of it.
+
+### HUD bars, round nine: the gem glued flush against the bar, overriding the reference
+
+Explicit request this round, overriding round seven's own reference-
+matching choice: glue the gem directly against the bar with zero gap,
+rather than the dark space the source sheet actually draws there. Not
+a rediscovery of a missed detail this time — a deliberate stylistic
+departure from the reference, stated as one.
+
+`_make_resource_bar_row()`'s row previously held icon-slot, bar and
+gem as three siblings in one `HBoxContainer`, so a single `separation`
+value set the gap on both sides of the bar identically — no way to
+close one gap while keeping the other. Nested the bar and gem inside
+their own inner `HBoxContainer` (`separation = 0`), itself the row's
+second child after the icon slot: the outer row's 6px separation still
+opens the icon-to-bar gap, the inner container's zero closes the
+bar-to-gem one. No texture changes — this is a container-nesting
+change only, so it also sidesteps round seven's own concern about
+fusing the gem back into the frame texture (which had tied its
+apparent size and position to the bar's own width and cropping).
