@@ -2780,3 +2780,11 @@ overflowing above the ring adds visual bulk the flat baked composite
 never had. Cut the multiplier to `radius * 3.6` (ring and flame both
 scale off it, so the two stay in proportion) and re-verified with the
 same harness.
+
+One more follow-up: the shrink above also shrank the flame along with
+the ring, and the flame itself was asked to read bigger, not smaller —
+reaching roughly another half-ring-height above the ring's own rim
+instead of just poking over it. `BRAZIER_FLAME_WIDTH_RATIO` alone
+controls that (flame height follows from its fixed aspect ratio once
+its width is picked): raised from 0.62 to 0.85, re-verified with the
+same harness.
