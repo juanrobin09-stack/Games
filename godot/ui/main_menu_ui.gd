@@ -34,7 +34,7 @@ const CANVAS_HEIGHT := 648.0
 ## content's own bounding box so TITLE_LOGO_TEXTURE.get_size() reflects
 ## real art bounds, not the source frame's empty margins.
 const TITLE_LOGO_TEXTURE := preload("res://assets/textures/title_logo.png")
-const TITLE_LOGO_WIDTH := 640.0
+const TITLE_LOGO_WIDTH := 520.0
 
 ## Keys: on_play (Callable(String) -> void, seed text or "" for random),
 ## on_upgrades/on_armory/on_settings/on_credits (Callable() -> void).
