@@ -2050,3 +2050,53 @@ no console errors, no layout overlap with the "Last Light" subtitle or
 button column below it, and the surrounding ember particles (from the
 fix above) now read as thematically reinforcing the logo's own fire
 motif rather than an unrelated background effect.
+
+### Main menu background: a real illustrated scene in place of the flat wash
+
+A follow-up upload was a full menu mockup — the same logo, French
+button labels, and a rich illustrated dungeon corridor (stone arches,
+a lit torch, a torn banner, a sword and shield leaning against a
+pillar) all composited together as one flat image. Not directly usable
+as-is: the baked French button labels aren't the real, functional,
+already-i18n'd buttons this screen builds (wrong language for an
+English default, wrong position, no click handling), so using the
+whole composite as the background would have drawn a second, fake,
+misaligned button list behind the real one. What the upload actually
+contributes is the illustration itself.
+
+Cropped to the region clear of every baked letter and button edge —
+checked visually, not assumed: a first attempt at the seam left stray
+glyph fragments bleeding in from the left edge, so the crop moved
+further right until a recheck showed a completely clean edge — all the
+way out to the source frame's right border. That crop (`main_menu_bg.
+png`, a portrait-ish 772×940 in its own right) replaces the flat
+`ColorRect("#120c10")` wash entirely, via a `TextureRect` with
+`stretch_mode = STRETCH_KEEP_ASPECT_COVERED`: it scales the art up
+uniformly until it covers the full 1152×648 canvas and crops whatever
+overflows, the same idea as CSS's `background-size: cover`, rather
+than distorting the architecture's proportions to force an exact
+aspect-ratio match (which a plain stretch-to-fit would have done, and
+which the title logo's own `STRETCH_KEEP_ASPECT` deliberately avoids
+too, just solving the opposite problem — sizing the *element* to the
+art instead of the *canvas* to the art).
+
+One legibility issue showed up on the first real screenshot: the art's
+own torch flame sits close to screen-center, right behind the "Last
+Light" subtitle and the footer tagline — both plain Labels with no
+opaque panel behind them, unlike the buttons (which carry their own
+solid fill regardless of what's under them). Text was still technically
+readable but noticeably lower-contrast against the bright fire than it
+had ever been against the old flat backdrop. Added a flat `Color(0, 0,
+0, 0.4)` scrim over the whole scene — the same fix the reference upload
+itself already uses (its own baked text sits on a darkened gradient
+over this identical art) — rather than patching a panel behind each
+affected Label individually; a re-screenshot confirmed the subtitle
+reads clearly against the flame now, with the rest of the illustration
+still clearly visible through it.
+
+Verified against the same real headless run as everything else in this
+project: no console errors, no distortion or visible seam in the
+background art, the ember particles and logo both still read clearly
+on top, and the "Last Light"/footer contrast issue confirmed fixed on
+a follow-up screenshot rather than assumed fixed from the code change
+alone.

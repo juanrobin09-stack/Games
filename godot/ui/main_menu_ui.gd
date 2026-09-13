@@ -36,6 +36,23 @@ const CANVAS_HEIGHT := 648.0
 const TITLE_LOGO_TEXTURE := preload("res://assets/textures/title_logo.png")
 const TITLE_LOGO_WIDTH := 520.0
 
+## Same reference upload as TITLE_LOGO_TEXTURE, one crop further:
+## the mockup was a full menu composite (logo + French button labels
+## baked as flat pixels over an illustrated dungeon-corridor scene), not
+## a directly usable asset on its own — those baked buttons aren't the
+## real, functional, i18n'd ones this screen already builds, and would
+## sit at the wrong position/size/language under them. What IS reusable
+## is the illustration itself: cropped to the region clear of every
+## baked letter and button edge (verified visually — a first cut at the
+## seam still had stray glyph fragments bleeding in from the left, so
+## the crop moved right until a full recheck showed none), all the way
+## to the source frame's right edge. Left as a portrait-ish crop rather
+## than pre-fit to the canvas's own 16:9 — STRETCH_KEEP_ASPECT_COVERED
+## below does that fit at draw time, uniformly scaled with no distortion
+## to the architecture, so this file doesn't need updating if the canvas
+## size ever changes.
+const MAIN_MENU_BG_TEXTURE := preload("res://assets/textures/main_menu_bg.png")
+
 ## Keys: on_play (Callable(String) -> void, seed text or "" for random),
 ## on_upgrades/on_armory/on_settings/on_credits (Callable() -> void).
 var _callbacks: Dictionary = {}
@@ -56,16 +73,37 @@ func _build() -> void:
 	offset_right = 0.0
 	offset_bottom = 0.0
 
-	var bg := ColorRect.new()
-	# Simplified flat wash standing in for the source's own top-to-bottom
-	# linear gradient (#0b0910 -> #120c10 -> #1a0f0a) — same "gradient ->
-	# flattest identity-defining stop" convention as MenuUiKit.make_overlay,
-	# picked at the gradient's own middle stop (the tone that dominates
-	# most of the frame).
-	bg.color = Color("#120c10")
+	var bg := TextureRect.new()
+	bg.texture = MAIN_MENU_BG_TEXTURE
+	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	# COVERED, not the plain KEEP_ASPECT this file's other texture (the
+	# title logo) uses: that one sizes ITSELF to fit a target width, but
+	# this one must fill the whole 1152x648 rect with no gaps, the way a
+	# background always has to — COVERED scales up until both dimensions
+	# are satisfied and crops the overflow, same idea as CSS's own
+	# `background-size: cover`, rather than distorting the art's aspect
+	# ratio to force an exact fit.
+	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
+
+	# The illustration's own torch flame sits close to screen-center —
+	# right behind the "Last Light" subtitle and footer tagline, both
+	# plain Labels with no opaque panel behind them (unlike the buttons,
+	# which carry their own solid StyleBoxFlat fill regardless of what's
+	# under them). Checked directly against a screenshot: text there was
+	# still technically legible but noticeably lower-contrast against the
+	# bright fire than it ever was against the old flat backdrop. A flat
+	# dark scrim over the whole scene — the same fix the reference mockup
+	# itself uses (its own baked UI sits on a darkened gradient over the
+	# identical art) — restores that contrast everywhere at once rather
+	# than patching a panel behind each affected Label individually.
+	var scrim := ColorRect.new()
+	scrim.color = Color(0.0, 0.0, 0.0, 0.4)
+	scrim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	scrim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(scrim)
 
 	_build_ember_particles()
 
