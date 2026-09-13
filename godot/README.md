@@ -2447,3 +2447,26 @@ agreed on where "the end of the bar" is.
 The right-end diamond ornament itself stays removed for now (this round
 didn't re-litigate that call) — the left end, against the icon, still
 has its matching decorative arrow.
+
+### HUD bars, round five: restoring the diamond now that alignment is fixed
+
+With the icon-slot alignment fix in, the natural next question was
+whether the right-end diamond ever actually needed to go — or whether it
+only ever looked wrong *because* it was riding on top of three
+inconsistently-positioned bars. Restored the full ornament (gem-dimmed,
+per round two, but not cut off) on all three frames from the same
+pre-cut source the round-three removal started from, re-resized fresh to
+300×30, and re-checked.
+
+It holds up: with every bar now starting and ending at the same x,
+the diamond tip lands at the same relative position on all three,
+confirmed the same way as the alignment fix itself — a guide line drawn
+across all three rows in one screenshot, which now clears each
+diamond's tip by the same margin on Health, Stamina and Ability alike,
+instead of Health's sitting further right than the other two's the way
+it did before round four's fix. What had looked like "the ornament
+itself is the problem" across three separate rounds was consistently a
+symptom of the underlying column misalignment, not a defect in the
+diamond shape or size — restoring it changes nothing about that
+alignment, since it only affects `texture_over`'s own pixels, not the
+`TextureProgressBar` control's size or position.
