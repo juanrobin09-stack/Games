@@ -2004,3 +2004,49 @@ across the entire canvas height and a visibly softer, thinner title
 glow with the letters reading as crisp text with a halo rather than a
 cartoon outline, no subtitle overlap, and no script errors in the
 console.
+
+### Main menu title, take two: a real logo asset, keyed out of its own black backdrop
+
+The three-Label glow approximation above was a same-session follow-up
+to a real reference asset showing up on GitHub: a proper carved-stone/
+ember-fire "EMBERFALL" wordmark, the kind of hand-authored logo art no
+amount of Label theme-shadow stacking was ever going to match. It
+replaces `_build_title()`/`_make_title_layer()` outright — both deleted,
+not kept around as a fallback.
+
+The source PNG was an opaque RGB render (no alpha channel) on a solid
+near-black backdrop — every corner sampled at RGB(4-7), confirming it's
+genuinely flat, not a subtle gradient — which is exactly the "there's
+still a background" problem flagged when it showed up. Rather than
+asking for a re-export, it gets keyed to real transparency directly:
+per pixel, `alpha = ramp(max(r,g,b), low=10, high=34)` — fully
+transparent at/below 10, fully opaque at/above 34, linear in between.
+A soft ramp instead of a hard cutoff matters here specifically because
+the art's own fire glow fades gradually into the black; a boolean
+threshold would have turned that gradual bloom into a hard-edged ring,
+the same "thick outline" problem the Label version had just been fixed
+for. Verified two ways before it ever reached the project: composited
+over a checkerboard (letter counters — the inside of B, R — punch
+through to transparent, correctly indistinguishable from the true
+background; no dark fringe at any letter edge) and over the menu's own
+`#120c10` backdrop color (seamless — no visible rectangle boundary).
+Cropped to the keyed result's own bounding box afterward, so the
+in-repo asset carries no dead transparent margin and
+`TITLE_LOGO_TEXTURE.get_size()` reflects real art bounds.
+
+Wired up as a plain `TextureRect` (`expand_mode = EXPAND_IGNORE_SIZE`,
+`stretch_mode = STRETCH_KEEP_ASPECT`) in place of the old title Label,
+`custom_minimum_size` computed from the texture's own real aspect ratio
+at a fixed 640px display width rather than a hardcoded height — self-
+corrects if the source art is ever re-cropped. `size_flags_horizontal =
+SIZE_SHRINK_CENTER` keeps it from being stretched to the VBoxContainer's
+full width the way a centered-text Label needs to be; a texture centers
+by sizing itself and letting the container center *that*, not by
+stretching to fill and centering content within.
+
+Verified against the same real headless run as every other screen this
+project ships: the logo renders with no visible background rectangle,
+no console errors, no layout overlap with the "Last Light" subtitle or
+button column below it, and the surrounding ember particles (from the
+fix above) now read as thematically reinforcing the logo's own fire
+motif rather than an unrelated background effect.

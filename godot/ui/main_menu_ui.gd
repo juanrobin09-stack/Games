@@ -18,6 +18,24 @@ extends Control
 const CANVAS_WIDTH := 1152.0
 const CANVAS_HEIGHT := 648.0
 
+## A real reference logo (carved-stone/ember-fire "EMBERFALL" wordmark),
+## replacing an earlier from-scratch attempt at approximating this look
+## out of Label theme shadows — no amount of stacked shadow passes gets
+## close to hand-authored stone/fire art. Source came in as an opaque
+## RGB render on a solid near-black backdrop (~4-7 out of 255, sampled
+## at every corner); keyed to real alpha with a brightness ramp
+## (fully transparent at/below 10, fully opaque at/above 34, linear
+## between) rather than a hard cutoff, so the art's own soft glow
+## bloom fades out naturally instead of ending in a hard-edged ring —
+## verified by compositing over both a checkerboard (letter counters
+## like B/R punch through to transparent, same as the true background;
+## no dark fringe at any edge) and the menu's own #120c10 backdrop
+## (seamless, no visible rectangle boundary). Pre-cropped to the keyed
+## content's own bounding box so TITLE_LOGO_TEXTURE.get_size() reflects
+## real art bounds, not the source frame's empty margins.
+const TITLE_LOGO_TEXTURE := preload("res://assets/textures/title_logo.png")
+const TITLE_LOGO_WIDTH := 640.0
+
 ## Keys: on_play (Callable(String) -> void, seed text or "" for random),
 ## on_upgrades/on_armory/on_settings/on_credits (Callable() -> void).
 var _callbacks: Dictionary = {}
@@ -58,7 +76,15 @@ func _build() -> void:
 	content.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(content)
 
-	content.add_child(_build_title())
+	var title := TextureRect.new()
+	title.texture = TITLE_LOGO_TEXTURE
+	title.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	title.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
+	var logo_size := TITLE_LOGO_TEXTURE.get_size()
+	title.custom_minimum_size = Vector2(TITLE_LOGO_WIDTH, TITLE_LOGO_WIDTH * logo_size.y / logo_size.x)
+	title.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	content.add_child(title)
 
 	var subtitle := Label.new()
 	subtitle.text = "Last Light"
@@ -145,63 +171,6 @@ func _add_nav_button(column: VBoxContainer, text: String, callback_key: String) 
 			callback.call()
 	)
 	column.add_child(btn)
-
-## Ports .game-title's crisp-text-plus-soft-glow look (`text-shadow: 0 0
-## 40px rgba(255,123,61,0.55), 0 4px 14px rgba(0,0,0,0.7)` — a wide blurred
-## halo behind solid letterforms, not an outline). A Label's theme shadow
-## is a single pass (offset + outline expansion, all one color) with no
-## blur, so shadow_outline_size alone can only fake a *hard* ring around
-## each glyph — an earlier draft pushed that ring to 18px for more "glow"
-## and it read as a thick cartoon outline instead (flagged against a real
-## screenshot). Stacking three Labels — two wide, faint, invisible-fill
-## "glow" passes at decreasing outline size and increasing alpha, plus a
-## crisp, tightly-outlined text pass on top — is a cheap way to approximate
-## a blurred falloff out of hard-edged rings without a shader: the same
-## "simplify the CSS effect to its identity-defining parts" call this
-## project already makes elsewhere (e.g. MenuUiKit.make_overlay's gradient
-## -> flattest-stop simplification), applied to a shadow effect instead of
-## a fill.
-##
-## The wrap is a MarginContainer (zero margins), not a plain Control: a
-## plain Control doesn't lay out its children at all, so overlapping the
-## layers would mean hand-computing the wrap's own minimum size to reserve
-## the right row height in the outer VBoxContainer — tried first, and
-## wrong, because a Label's `get_minimum_size()` reads back the
-## pre-override default (theme changes not yet propagated) when queried
-## before the node is inside the live tree, so the reserved row was too
-## short and the subtitle below overlapped into it (caught via a real
-## screenshot, not a guess). A Container computes and propagates its own
-## minimum size — the max of its children's — through the same tree
-## machinery every other screen already relies on, and fits every child
-## into that same content rect, which is exactly the overlap this needs.
-func _build_title() -> Control:
-	var wrap := MarginContainer.new()
-	wrap.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# Widest/faintest first so the crisp front layer (added last) draws on
-	# top of both glow passes.
-	wrap.add_child(_make_title_layer(24, 0.14, false, 0))
-	wrap.add_child(_make_title_layer(11, 0.26, false, 0))
-	wrap.add_child(_make_title_layer(2, 0.55, true, 2))
-	return wrap
-
-## One layer of _build_title()'s stacked-Label glow. `filled` false makes
-## an invisible-text, shadow-only glow pass; true is the crisp front layer
-## (opaque EMBER5 fill, small outline, slight downward offset for a hint
-## of the source's separate `0 4px 14px` grounding drop-shadow — Label's
-## single shadow pass can't render that as a true second, differently-
-## colored shadow layer, so the offset alone stands in for it here).
-func _make_title_layer(outline_size: int, shadow_alpha: float, filled: bool, y_offset: int) -> Label:
-	var label := Label.new()
-	label.text = "EMBERFALL"
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.add_theme_font_size_override("font_size", 56)
-	label.add_theme_color_override("font_color", Color(Palette.EMBER5) if filled else Color(0.0, 0.0, 0.0, 0.0))
-	label.add_theme_constant_override("shadow_offset_x", 0)
-	label.add_theme_constant_override("shadow_offset_y", y_offset)
-	label.add_theme_color_override("font_shadow_color", Color(Palette.EMBER4, shadow_alpha))
-	label.add_theme_constant_override("shadow_outline_size", outline_size)
-	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return label
 
 ## Ports the source's 46-mote rising-ember field: spawns at the bottom
 ## edge (and, once, scattered at random heights so the very first frame
