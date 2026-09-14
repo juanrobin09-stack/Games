@@ -10,8 +10,6 @@ extends Control
 ## TS source's own render()/renderList() split, every state-changing
 ## action here just rebuilds the offer list instead of closing.
 
-const PANEL_HALF_WIDTH := 450.0
-const PANEL_HALF_HEIGHT := 270.0
 const ICON_BADGE_SIZE := 38.0
 
 var offers: Array[ShopOffer] = []
@@ -51,50 +49,14 @@ func _build() -> void:
 	offset_right = 0.0
 	offset_bottom = 0.0
 
-	var backdrop := ColorRect.new()
-	backdrop.color = Color(0.02, 0.016, 0.031, 0.72)
-	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
-	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
-	add_child(backdrop)
-
-	var panel_bg := PanelContainer.new()
-	panel_bg.mouse_filter = Control.MOUSE_FILTER_STOP
-	panel_bg.set_anchors_preset(Control.PRESET_CENTER)
-	panel_bg.offset_left = -PANEL_HALF_WIDTH
-	panel_bg.offset_right = PANEL_HALF_WIDTH
-	panel_bg.offset_top = -PANEL_HALF_HEIGHT
-	panel_bg.offset_bottom = PANEL_HALF_HEIGHT
-	var panel_style := StyleBoxFlat.new()
-	panel_style.bg_color = Color(Palette.PANEL_SOLID)
-	panel_style.border_color = Color(Palette.BORDER)
-	panel_style.set_border_width_all(1)
-	panel_style.set_corner_radius_all(16)
-	panel_style.set_content_margin_all(28.0)
-	panel_style.shadow_color = Color(0.0, 0.0, 0.0, 0.5)
-	panel_style.shadow_size = 16
-	panel_bg.add_theme_stylebox_override("panel", panel_style)
-	add_child(panel_bg)
+	add_child(MenuUiKit.make_overlay(false))
 
 	var content := VBoxContainer.new()
 	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	content.add_theme_constant_override("separation", 14)
-	panel_bg.add_child(content)
 
-	var title := Label.new()
-	title.text = I18n.t("shop.title", "The Forgotten Merchant")
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 24)
-	title.add_theme_color_override("font_color", Color(Palette.EMBER6))
-	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	content.add_child(title)
-
-	var subtitle := Label.new()
-	subtitle.text = I18n.t("shop.subtitle", "\"Everything has a price, Warden. Choose wisely.\"")
-	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	subtitle.add_theme_font_size_override("font_size", 13)
-	subtitle.add_theme_color_override("font_color", Color(Palette.TEXT_DIM))
-	subtitle.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	content.add_child(subtitle)
+	content.add_child(MenuUiKit.make_title(I18n.t("shop.title", "The Forgotten Merchant")))
+	content.add_child(MenuUiKit.make_subtitle(I18n.t("shop.subtitle", "\"Everything has a price, Warden. Choose wisely.\"")))
 
 	var embers_row := HBoxContainer.new()
 	embers_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -118,18 +80,16 @@ func _build() -> void:
 	_list_col.add_theme_constant_override("separation", 8)
 	content.add_child(_list_col)
 
-	var button_row := HBoxContainer.new()
-	button_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	button_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	button_row.add_theme_constant_override("separation", 10)
+	var button_row := MenuUiKit.make_button_row()
 	content.add_child(button_row)
-	_reroll_button = _make_button("%s (%d)" % [I18n.t("shop.reroll", "Reroll"), Shop.REROLL_COST], false, true)
+	_reroll_button = MenuUiKit.make_button("%s (%d)" % [I18n.t("shop.reroll", "Reroll"), Shop.REROLL_COST], MenuUiKit.ButtonVariant.PLAIN)
 	_reroll_button.pressed.connect(_on_reroll_pressed)
 	button_row.add_child(_reroll_button)
-	var leave_button := _make_button(I18n.t("shop.leave", "Leave"), true, false)
+	var leave_button := MenuUiKit.make_button(I18n.t("shop.leave", "Leave"), MenuUiKit.ButtonVariant.PRIMARY)
 	leave_button.pressed.connect(_close)
 	button_row.add_child(leave_button)
 
+	add_child(MenuUiKit.make_panel(content, true))
 	_render_list()
 
 func _render_list() -> void:
@@ -215,7 +175,7 @@ func _make_offer_row(offer: ShopOffer) -> Control:
 	cost_row.add_child(cost_label)
 
 	var affordable: bool = RunState.embers >= offer.cost and not offer.purchased
-	var buy_btn := _make_button(I18n.t("shop.sold", "Sold") if offer.purchased else I18n.t("shop.buy", "Buy"), false, true)
+	var buy_btn := MenuUiKit.make_button(I18n.t("shop.sold", "Sold") if offer.purchased else I18n.t("shop.buy", "Buy"), MenuUiKit.ButtonVariant.PLAIN)
 	buy_btn.disabled = not affordable
 	buy_btn.pressed.connect(func(): _buy(offer))
 	hbox.add_child(buy_btn)
@@ -240,40 +200,3 @@ func _on_reroll_pressed() -> void:
 	AudioEngine.play_sfx("uiClick")
 	_render_list()
 
-func _button_stylebox(bg: Color, border: Color, small: bool) -> StyleBoxFlat:
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = bg
-	sb.border_color = border
-	sb.set_border_width_all(1)
-	sb.set_corner_radius_all(6)
-	sb.content_margin_left = 10.0 if small else 18.0
-	sb.content_margin_right = sb.content_margin_left
-	sb.content_margin_top = 6.0
-	sb.content_margin_bottom = 6.0
-	return sb
-
-## `primary` mirrors .btn.primary (the Leave button); every other button
-## (Buy/Sold, Reroll) is the plain/`small` .btn.small look.
-func _make_button(label_text: String, primary: bool, small: bool) -> Button:
-	var btn := Button.new()
-	btn.text = label_text.to_upper()
-	btn.focus_mode = Control.FOCUS_NONE
-	btn.add_theme_font_size_override("font_size", 12 if small else 14)
-	if primary:
-		btn.add_theme_stylebox_override("normal", _button_stylebox(Color(Palette.EMBER3), Color(Palette.EMBER4), small))
-		btn.add_theme_stylebox_override("hover", _button_stylebox(Color(Palette.EMBER4), Color(Palette.EMBER5), small))
-		btn.add_theme_stylebox_override("pressed", _button_stylebox(Color(Palette.EMBER2), Color(Palette.EMBER4), small))
-		btn.add_theme_stylebox_override("disabled", _button_stylebox(Color(Palette.EMBER1), Color(Palette.BORDER), small))
-		btn.add_theme_color_override("font_color", Color("#180a04"))
-		btn.add_theme_color_override("font_hover_color", Color("#180a04"))
-		btn.add_theme_color_override("font_pressed_color", Color("#180a04"))
-	else:
-		btn.add_theme_stylebox_override("normal", _button_stylebox(Color(Palette.BG2), Color(Palette.BORDER), small))
-		btn.add_theme_stylebox_override("hover", _button_stylebox(Color(Palette.BG3), Color(Palette.BORDER_LIT), small))
-		btn.add_theme_stylebox_override("pressed", _button_stylebox(Color(Palette.BG1), Color(Palette.BORDER_LIT), small))
-		btn.add_theme_stylebox_override("disabled", _button_stylebox(Color(Palette.BG1), Color(Palette.BORDER), small))
-		btn.add_theme_color_override("font_color", Color(Palette.TEXT_WARM))
-		btn.add_theme_color_override("font_hover_color", Color(Palette.EMBER6))
-		btn.add_theme_color_override("font_pressed_color", Color(Palette.EMBER5))
-	btn.add_theme_color_override("font_disabled_color", Color(Palette.TEXT_FAINT))
-	return btn

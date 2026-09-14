@@ -15,15 +15,11 @@ extends Control
 ## rebuilds that body — mirrors the source's own render()-on-every-change
 ## pattern (ShopUI's renderList() did the same for a smaller case).
 
-const PANEL_HALF_WIDTH := 450.0
-const PANEL_HALF_HEIGHT := 290.0
-
 enum Tab { CHARACTER, BUILD }
 
 var _tab: Tab = Tab.CHARACTER
 var _on_spend: Callable
 var _tab_body: VBoxContainer
-var _tab_buttons: Dictionary = {}
 ## The only screen so far whose tab builders need live Player/RunState
 ## access rather than pre-baked-in data (every other screen's content is
 ## fixed at build time) — set by the static factory below, read by both
@@ -56,57 +52,43 @@ func _build() -> void:
 	offset_right = 0.0
 	offset_bottom = 0.0
 
-	var backdrop := ColorRect.new()
-	backdrop.color = Color(0.02, 0.016, 0.031, 0.72)
-	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
-	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
-	add_child(backdrop)
-
-	var panel_bg := PanelContainer.new()
-	panel_bg.mouse_filter = Control.MOUSE_FILTER_STOP
-	panel_bg.set_anchors_preset(Control.PRESET_CENTER)
-	panel_bg.offset_left = -PANEL_HALF_WIDTH
-	panel_bg.offset_right = PANEL_HALF_WIDTH
-	panel_bg.offset_top = -PANEL_HALF_HEIGHT
-	panel_bg.offset_bottom = PANEL_HALF_HEIGHT
-	var panel_style := StyleBoxFlat.new()
-	panel_style.bg_color = Color(Palette.PANEL_SOLID)
-	panel_style.border_color = Color(Palette.BORDER)
-	panel_style.set_border_width_all(1)
-	panel_style.set_corner_radius_all(16)
-	panel_style.set_content_margin_all(24.0)
-	panel_style.shadow_color = Color(0.0, 0.0, 0.0, 0.5)
-	panel_style.shadow_size = 16
-	panel_bg.add_theme_stylebox_override("panel", panel_style)
-	add_child(panel_bg)
+	add_child(MenuUiKit.make_overlay(false))
 
 	var content := VBoxContainer.new()
 	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	content.add_theme_constant_override("separation", 12)
-	panel_bg.add_child(content)
 
-	var title := Label.new()
-	title.text = I18n.t("inventory.title", "Character")
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 22)
-	title.add_theme_color_override("font_color", Color(Palette.EMBER6))
-	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	content.add_child(title)
+	content.add_child(MenuUiKit.make_title(I18n.t("inventory.title", "Character")))
 
-	var tab_row := HBoxContainer.new()
-	tab_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	tab_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	tab_row.add_theme_constant_override("separation", 8)
+	# make_segmented() (Tab.CHARACTER/BUILD as its two options) replaces this
+	# screen's own former _make_tab_button()/_update_tab_button_styles()
+	# pair — a plain rectangular 2-way toggle sharing the same shared
+	# component ArmoryUI's own Upgrades/Armory tab switch could use too,
+	# rather than a second, pill-shaped, private reimplementation of
+	# "exactly one of these buttons is active" with its own bespoke
+	# corner_radius=999 styling.
+	var tab_row := MenuUiKit.make_segmented(
+		["character", "build"],
+		[I18n.t("inventory.tabCharacter", "Character"), I18n.t("inventory.tabBuild", "Build")],
+		"character" if _tab == Tab.CHARACTER else "build",
+		func(value: String):
+			_tab = Tab.CHARACTER if value == "character" else Tab.BUILD
+			AudioEngine.play_sfx("uiClick")
+			_render_tab()
+	)
 	content.add_child(tab_row)
-	_tab_buttons[Tab.CHARACTER] = _make_tab_button(I18n.t("inventory.tabCharacter", "Character"), Tab.CHARACTER)
-	_tab_buttons[Tab.BUILD] = _make_tab_button(I18n.t("inventory.tabBuild", "Build"), Tab.BUILD)
-	tab_row.add_child(_tab_buttons[Tab.CHARACTER])
-	tab_row.add_child(_tab_buttons[Tab.BUILD])
 
+	# Fixed-height scroll region, not size_flags_vertical = EXPAND_FILL — that
+	# relied on the panel's own now-removed fixed PANEL_HALF_HEIGHT box to
+	# have any leftover space to expand into; make_panel()'s auto-height
+	# panel has none, so an EXPAND_FILL scroll body would just report its
+	# own full natural content size (up to 25+ upgrade cards on the Build
+	# tab) and grow the whole panel past the viewport, same failure mode
+	# LoadoutSelectUI's wrapped card rows hit.
 	var scroll := ScrollContainer.new()
 	scroll.mouse_filter = Control.MOUSE_FILTER_STOP
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.custom_minimum_size = Vector2(0.0, 320.0)
 	content.add_child(scroll)
 	_tab_body = VBoxContainer.new()
 	_tab_body.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -114,50 +96,14 @@ func _build() -> void:
 	_tab_body.add_theme_constant_override("separation", 10)
 	scroll.add_child(_tab_body)
 
-	var button_row := HBoxContainer.new()
-	button_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	button_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	var button_row := MenuUiKit.make_button_row()
 	content.add_child(button_row)
-	var back_button := _make_button(I18n.t("pause.back", "Back"), true, false)
+	var back_button := MenuUiKit.make_button(I18n.t("pause.back", "Back"), MenuUiKit.ButtonVariant.PRIMARY)
 	back_button.pressed.connect(_close)
 	button_row.add_child(back_button)
 
+	add_child(MenuUiKit.make_panel(content, true))
 	_render_tab()
-
-func _make_tab_button(label_text: String, tab: Tab) -> Button:
-	var btn := Button.new()
-	btn.text = label_text.to_upper()
-	btn.focus_mode = Control.FOCUS_NONE
-	btn.add_theme_font_size_override("font_size", 12)
-	btn.pressed.connect(func():
-		if _tab == tab:
-			return
-		_tab = tab
-		AudioEngine.play_sfx("uiClick")
-		_update_tab_button_styles()
-		_render_tab()
-	)
-	return btn
-
-func _update_tab_button_styles() -> void:
-	for tab in _tab_buttons.keys():
-		var btn: Button = _tab_buttons[tab]
-		var active: bool = tab == _tab
-		var bg: Color = Color(Palette.EMBER3) if active else Color(0, 0, 0, 0)
-		var border: Color = Color(Palette.EMBER4) if active else Color(Palette.BORDER)
-		for key in ["normal", "hover", "pressed"]:
-			var sb := StyleBoxFlat.new()
-			sb.bg_color = bg
-			sb.border_color = border
-			sb.set_border_width_all(1)
-			sb.set_corner_radius_all(999)
-			sb.content_margin_left = 16.0
-			sb.content_margin_right = 16.0
-			sb.content_margin_top = 6.0
-			sb.content_margin_bottom = 6.0
-			btn.add_theme_stylebox_override(key, sb)
-		btn.add_theme_color_override("font_color", Color("#180a04") if active else Color(Palette.TEXT_DIM))
-		btn.add_theme_color_override("font_hover_color", Color("#180a04") if active else Color(Palette.EMBER6))
 
 func _render_tab() -> void:
 	for child in _tab_body.get_children():
@@ -167,7 +113,6 @@ func _render_tab() -> void:
 		_build_character_tab(_tab_body)
 	else:
 		_build_build_tab(_tab_body)
-	_update_tab_button_styles()
 
 # ---------------------------------------------------------------- Character tab
 
@@ -436,47 +381,7 @@ func _make_value_badge(text: String) -> Control:
 	return _make_badge_pill(text, Color(Palette.EMBER4))
 
 func _make_plus_button(enabled: bool, on_press: Callable) -> Button:
-	var btn := _make_button("+", false, true)
+	var btn := MenuUiKit.make_button("+", MenuUiKit.ButtonVariant.PLAIN)
 	btn.disabled = not enabled
 	btn.pressed.connect(on_press)
-	return btn
-
-func _button_stylebox(bg: Color, border: Color, small: bool) -> StyleBoxFlat:
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = bg
-	sb.border_color = border
-	sb.set_border_width_all(1)
-	sb.set_corner_radius_all(6)
-	sb.content_margin_left = 10.0 if small else 18.0
-	sb.content_margin_right = sb.content_margin_left
-	sb.content_margin_top = 6.0
-	sb.content_margin_bottom = 6.0
-	return sb
-
-## Same recipe as ShopUI's own _make_button (duplicated rather than
-## shared — this project's usual per-file builder convention): `primary`
-## mirrors .btn.primary (the Back button), everything else the plain/
-## `small` .btn.small look (the per-row "+" buttons).
-func _make_button(label_text: String, primary: bool, small: bool) -> Button:
-	var btn := Button.new()
-	btn.text = label_text.to_upper()
-	btn.focus_mode = Control.FOCUS_NONE
-	btn.add_theme_font_size_override("font_size", 12 if small else 14)
-	if primary:
-		btn.add_theme_stylebox_override("normal", _button_stylebox(Color(Palette.EMBER3), Color(Palette.EMBER4), small))
-		btn.add_theme_stylebox_override("hover", _button_stylebox(Color(Palette.EMBER4), Color(Palette.EMBER5), small))
-		btn.add_theme_stylebox_override("pressed", _button_stylebox(Color(Palette.EMBER2), Color(Palette.EMBER4), small))
-		btn.add_theme_stylebox_override("disabled", _button_stylebox(Color(Palette.EMBER1), Color(Palette.BORDER), small))
-		btn.add_theme_color_override("font_color", Color("#180a04"))
-		btn.add_theme_color_override("font_hover_color", Color("#180a04"))
-		btn.add_theme_color_override("font_pressed_color", Color("#180a04"))
-	else:
-		btn.add_theme_stylebox_override("normal", _button_stylebox(Color(Palette.BG2), Color(Palette.BORDER), small))
-		btn.add_theme_stylebox_override("hover", _button_stylebox(Color(Palette.BG3), Color(Palette.BORDER_LIT), small))
-		btn.add_theme_stylebox_override("pressed", _button_stylebox(Color(Palette.BG1), Color(Palette.BORDER_LIT), small))
-		btn.add_theme_stylebox_override("disabled", _button_stylebox(Color(Palette.BG1), Color(Palette.BORDER), small))
-		btn.add_theme_color_override("font_color", Color(Palette.TEXT_WARM))
-		btn.add_theme_color_override("font_hover_color", Color(Palette.EMBER6))
-		btn.add_theme_color_override("font_pressed_color", Color(Palette.EMBER5))
-	btn.add_theme_color_override("font_disabled_color", Color(Palette.TEXT_FAINT))
 	return btn

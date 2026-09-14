@@ -9,10 +9,10 @@ extends Control
 ## before any run exists), not an in-run modal like Shop/Inventory.
 ##
 ## Row layout mirrors InventoryUI's own _make_meta_row (icon badge + name/
-## desc + trailing widget) without sharing it — this project's usual
-## per-file builder convention (see e.g. ShopUI/InventoryUI's own near-
-## identical _make_button/_button_stylebox, each kept local rather than
-## factored out).
+## desc + trailing widget) without sharing it — content-level card styling
+## stays a per-file builder here, same as ShopUI's offer rows and EventUI's
+## option rows; only the outer chrome (overlay/panel/title/buttons) moved
+## to MenuUiKit.
 
 enum Mode { UPGRADES, ARMORY }
 

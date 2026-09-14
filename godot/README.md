@@ -3387,3 +3387,170 @@ now-bigger sprite. Confirmed directly: the collision rect's printed
 the entry above stopped the player at exactly the new predicted contact
 point (`292.55 + 15 = 307.55`) — the fit held after scaling, not just
 before it.
+
+### A shared dark-fantasy frame for every secondary menu
+
+The ask: every screen that opens over gameplay (Settings, Armory,
+Shop, Upgrade Select, Inventory, Loadout, Event, confirmation dialogs,
+...) should share one visual identity — a dark, ornate, gothic
+bronze/copper frame supplied as a reference image — instead of each
+one drawing its own flat `StyleBoxFlat` rectangle, and it had to come
+from one shared component so a future frame change applies everywhere
+at once, not fifteen files at a time.
+
+**The image.** Fetched from the disconnected `main` branch (the user's
+usual file-drop path), 1624x969 RGB, no alpha channel needed — corner
+pixels a pure `(0,0,0)` and the center a near-black warm brown-grey
+close enough to `Palette.VOID` that the image drops in as opaque RGB
+with no chroma-keying. Downscaled 50% (LANCZOS, 812x484) before
+`preload()`, matching this project's usual "resize to real display
+scale, don't ship the oversized original" asset convention. Content:
+an ornate gothic border, glowing bronze/copper trim, diamond ornaments
+at all four corners plus top-center and bottom-center, dark red
+tattered banners hanging from the top border near the left/right
+corners, and a faint carved cross/sword watermark in the plain center
+field.
+
+**Why `StyleBoxTexture`, not a `NinePatchRect` node.** Every screen
+already builds its panel as a `PanelContainer` with a `StyleBoxFlat`
+theme override; `StyleBoxTexture` is Godot's own 9-slice mechanism for
+exactly this — `texture_margin_left/top/right/bottom` mark the fixed,
+never-stretched border regions in source-texture pixels, the four
+corner cells never stretch at all, the four edge cells stretch along
+their one long axis, and the center cell stretches both ways to fill
+whatever panel size `make_panel()` is asked for. Swapping the
+`StyleBoxFlat` for a `StyleBoxTexture` on the same `PanelContainer`
+needed zero new nodes and zero screen-level restructuring.
+
+**Margins, measured not guessed.** A first pass tried to find the
+border/interior boundary with an automated brightness-threshold scan —
+it failed silently, because the image is dark enough everywhere
+(including the center watermark, which stays at brightness 4-11 well
+into the "should be safe" interior) that no clean threshold separated
+"ornate border" from "plain center." Abandoned in favor of directly
+cropping and viewing each corner and the left banner at 3x zoom: the
+corner diamonds bottom out around 75-80px from the top/bottom edge,
+the top-center diamond's spike around 60-70px, and the solid banner
+cloth — the widest element on the left/right sides, wider than the
+corner diamonds alone — reaches to about 115-120px from each side.
+Landed on `texture_margin_left/right = 120`, `texture_margin_top =
+85`, `texture_margin_bottom = 80`; `content_margin_*` left at its
+Godot default (-1, "same as texture_margin") rather than padded
+further, since every screen using this frame already loses a lot of
+raw content width to it compared to the old flat 28px margin.
+
+**One accepted tradeoff.** The top/bottom-center diamond ornaments sit
+inside the top/bottom *edge* cells of the 9-slice, so they do stretch
+horizontally when a panel's width departs from the source texture's
+812px, the same as any 9-slice art asset used this way. Kept mild in
+practice — every real panel width in this project (620px narrow /
+960px wide, see below) is within about 30% of that source width, and
+the ornament itself is a soft, symmetric glyph rather than a sharp
+repeating pattern that would show it. The four actual corners — the
+thing the reference explicitly called out as must-never-deform — are
+a structural guarantee of the technique, not a visual approximation of
+one: a 9-slice corner cell is, by construction, never stretched.
+
+**`MenuUiKit.make_panel()`.** The `chrome=true` branch's `StyleBoxFlat`
+(flat `Palette.PANEL_SOLID` fill, 1px border, 16px corner radius, drop
+shadow) became one `_panel_frame_stylebox()` call building the
+`StyleBoxTexture` above; `chrome=false` (PauseMenu's embedded Settings,
+which deliberately has no separate frame of its own since PauseMenu's
+own backdrop already provides context) is untouched. `wide`'s half-
+width also moved `450 -> 480`: part of the same change, since the new
+frame's much wider margins eat far more into a fixed-width panel's
+usable content than the old flat 28px ever did, and every wide screen
+benefits from a little of that room back.
+
+Every screen that already called `MenuUiKit.make_panel()` — Credits,
+Victory/Defeat, AdminMenu, PauseMenu (both its main view and its
+confirm-abandon dialog), Settings (both standalone and embedded inside
+Pause), LoadoutSelect, and Armory (both tabs) — picked up the new
+frame with no code change of its own, verified with a real headless
+render of every one of them. Two screens were deliberately left out
+and are still on their own bespoke visuals: `MainMenuUI` (the game's
+distinct front door, with its own full-bleed background and button-
+frame art — never calls `make_panel()` at all, and isn't a "secondary
+interface opening over gameplay" the way the request framed it) and
+`RewardPopup` (a small, transient, non-modal notification with no
+backdrop or pause — the ornate frame would visually overwhelm
+something meant to be glanced at for under 3 seconds).
+
+**A real regression, found by rendering, not assumed away.**
+`LoadoutSelectUI`'s weapon/ability rows are a plain `HBoxContainer`
+sized to each `UpgradeCard`-style card's own 220px width — fine inside
+the *old* panel's 844px content width for up to 3 cards, but once
+every weapon is unlocked (which every returning player eventually
+reaches) a 4-card row needs 916px, wider even than the old content
+area, and strictly worse against the new frame's narrower ~740px. A
+render with all 4 weapons unlocked showed the 4th card clipped past
+the panel's right edge — not a hypothetical, an actual pixel overflow
+on screen. Fixed by switching those rows from `HBoxContainer` to
+`HFlowContainer` (wraps to a second line instead of overflowing;
+`FlowContainer.ALIGNMENT_CENTER`, `h_separation`/`v_separation` 12)
+plus wrapping both rows in a bounded `ScrollContainer`
+(`custom_minimum_size.y = 380`) sized to fit the common 1-row case
+without ever showing a scrollbar, so the rare wrapped-to-2-rows case
+scrolls internally instead of pushing the whole panel — title and
+Begin button both — past the 648px viewport top and bottom. Verified
+at the worst case (all 4 weapons, all 3 abilities) via render, not
+just the common case.
+
+**Four screens migrated from private panel code to `MenuUiKit`,**
+preserving every callback/data path exactly and touching only the
+visual layer:
+
+- **ShopUI** — private `PANEL_HALF_WIDTH`/`HEIGHT` (a fixed 900x540
+  box) and a near-duplicate `_button_stylebox()`/`_make_button()` pair
+  replaced with `make_overlay(false)` + `make_panel(content, true)` +
+  `make_button(..., PRIMARY/PLAIN)` for Reroll/Leave/Buy. Auto-height
+  is safe here without any scroll-bounding work: `Shop.generate_shop_
+  offers()` always returns exactly 3 upgrades + 1 heal offer, never a
+  growing list, so content height is bounded by construction.
+- **UpgradeSelectUI** — same private-panel pattern, replaced the same
+  way; always exactly 3 `UpgradeCard`s (`roll_upgrade_choices(rng, 3,
+  ...)`, both call sites), so no wrapping or scrolling risk existed
+  here either — one row always fits.
+- **EventUI** — same migration; also let one line of vestigial code
+  go with it: `content.alignment = ALIGNMENT_CENTER`, which existed
+  only to distribute a *fixed*-height panel's leftover slack evenly
+  above/below a variable 2-3-option list. `make_panel()`'s auto-height
+  panel has no slack to distribute, so the line no longer did
+  anything.
+- **InventoryUI** — the largest migration. Its own pill-shaped tab
+  toggle (`_make_tab_button()` + `_update_tab_button_styles()`, ~35
+  lines, `corner_radius(999)`) was replaced outright with
+  `MenuUiKit.make_segmented()` — a shared primitive already built for
+  exactly "a row of buttons where one is active," previously unused by
+  any screen in this project. Its Back button and per-row "+" buttons
+  moved to `make_button(..., PRIMARY/PLAIN)`. Its scroll body — the
+  Character tab's 7 stat rows and the Build tab's 0-to-25+ upgrade-
+  card grid, this project's only genuinely open-ended screen content —
+  used to be `size_flags_vertical = SIZE_EXPAND_FILL` inside the old
+  *fixed* `PANEL_HALF_HEIGHT` box, expanding to whatever space that
+  fixed box left over. With no fixed box left to expand into, that
+  flag alone would have let a 25+-card Build tab report its own full
+  natural height and grow the panel arbitrarily tall — so it became a
+  bounded `custom_minimum_size.y = 320` scroll region instead, the
+  same fix pattern as LoadoutSelectUI above. Verified at its own worst
+  case too: a synthetic player holding all 28 upgrades in the game
+  rendered correctly, scrollbar visible, panel still fully inside the
+  viewport.
+
+**Verification.** A temporary harness (`debug_ui_render.gd` /
+`.tscn`, an alternate `run/main_scene` swapped in only for the
+duration of each render and always reverted immediately after — never
+left pointed anywhere but `scenes/main/main.tscn` between renders)
+called each screen's real static entry point (`show_shop`,
+`show_choices`, `show_event`, `show_inventory`, etc.) with real
+`DataRegistry`-sourced data, the same code path gameplay itself uses,
+then saved a real headless-but-GPU-rendered screenshot (Xvfb :99 +
+`--display-driver x11 --rendering-driver opengl3`, the same
+Mesa/llvmpipe software-GL path every earlier render in this project
+used). Every one of the 13 screens/states this task touches or claims
+unaffected was rendered and inspected this way — including corner-
+zoom crops to confirm pixel-for-pixel that the 9-slice corners really
+don't deform, not just that they look fine at a glance — before
+calling any part of this done. The real game scene was also booted
+once after all four migrations to confirm the project still compiles
+and boots clean end to end, not just each screen in isolation.

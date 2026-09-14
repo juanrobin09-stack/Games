@@ -16,9 +16,6 @@ extends Control
 
 signal chosen(option: EventOption)
 
-const PANEL_HALF_WIDTH := 310.0
-const PANEL_HALF_HEIGHT := 240.0
-
 ## Spawns the screen as a child of `parent`, pauses the tree, and calls
 ## `on_choose(option)` once the player picks an affordable option — after
 ## which the screen tears itself down and unpauses.
@@ -43,43 +40,17 @@ func _build(def: WorldEventDefinition) -> void:
 	offset_right = 0.0
 	offset_bottom = 0.0
 
-	var backdrop := ColorRect.new()
-	backdrop.color = Color(0.02, 0.016, 0.031, 0.72)
-	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
-	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
-	add_child(backdrop)
+	add_child(MenuUiKit.make_overlay(false))
 
-	var panel_bg := PanelContainer.new()
-	panel_bg.mouse_filter = Control.MOUSE_FILTER_STOP
-	panel_bg.set_anchors_preset(Control.PRESET_CENTER)
-	panel_bg.offset_left = -PANEL_HALF_WIDTH
-	panel_bg.offset_right = PANEL_HALF_WIDTH
-	panel_bg.offset_top = -PANEL_HALF_HEIGHT
-	panel_bg.offset_bottom = PANEL_HALF_HEIGHT
-	var panel_style := StyleBoxFlat.new()
-	panel_style.bg_color = Color(Palette.PANEL_SOLID)
-	panel_style.border_color = Color(Palette.BORDER)
-	panel_style.set_border_width_all(1)
-	panel_style.set_corner_radius_all(16)
-	panel_style.set_content_margin_all(28.0)
-	panel_style.shadow_color = Color(0.0, 0.0, 0.0, 0.5)
-	panel_style.shadow_size = 16
-	panel_bg.add_theme_stylebox_override("panel", panel_style)
-	add_child(panel_bg)
-
-	# `alignment` (not just gap/separation) also governs a VBoxContainer's
-	# own primary (vertical) axis: CENTER distributes any slack the fixed
-	# panel height leaves beyond this content's natural size evenly above
-	# and below, rather than the default top-packed stack leaving it all
-	# as dead space underneath the last option row (events range from 2 to
-	# 3 options with descriptions of very different lengths, so there's
-	# often real slack — this is what makes it degrade gracefully instead
-	# of looking unfinished).
+	# Panels size to content now (make_panel(), not a fixed PANEL_HALF_HEIGHT
+	# box) so the old `content.alignment = ALIGNMENT_CENTER` trick — which
+	# existed only to distribute a fixed box's leftover slack evenly above/
+	# below a variable 2-3-option list instead of leaving it all as dead
+	# space underneath — has nothing left to do: there is no slack to
+	# distribute when the panel just sizes to fit.
 	var content := VBoxContainer.new()
 	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	content.alignment = BoxContainer.ALIGNMENT_CENTER
 	content.add_theme_constant_override("separation", 14)
-	panel_bg.add_child(content)
 
 	var title := Label.new()
 	title.text = I18n.tc(def.id, "title", def.title)
@@ -105,6 +76,8 @@ func _build(def: WorldEventDefinition) -> void:
 
 	for option in def.options:
 		options_col.add_child(_make_option_row(option))
+
+	add_child(MenuUiKit.make_panel(content, false))
 
 func _make_option_row(option: EventOption) -> Control:
 	var affordable: bool = option.cost <= 0.0 or RunState.embers >= int(option.cost)
