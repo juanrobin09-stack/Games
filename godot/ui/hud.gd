@@ -110,11 +110,14 @@ const ICON_SLOT_WIDTH := 43.0
 ## below, once, after every row is added — the single knob that shrinks
 ## the entire HP/Stamina/Ability block (see RESOURCE_BAR_HEIGHT's own
 ## comment for why a transform here rather than resized constants
-## everywhere). 0.4 keeps the same overall footprint the third resize
-## pass landed on (RESOURCE_BAR_HEIGHT 12/30 measured the HP bar's real
-## on-screen fill at 104px of an original 260px, a ratio this reproduces
-## exactly): 260 * 0.4 = 104.
-const HUD_BAR_SCALE := 0.4
+## everywhere). Was 0.4 (HP bar's real on-screen fill: 104px of an
+## original 260px) — the numeric labels read fine on the bar art itself
+## at that size, but scaling already-rendered text down that far softens
+## it, and asked to prioritize legibility over how small the block gets:
+## bumped up 35-40% (0.4 * 1.375 ≈ 0.55) rather than picked fresh, so the
+## increase is the specific amount actually asked for, not a new guess at
+## an absolute size. HP bar's real on-screen fill at 0.55: 260*0.55=143px.
+const HUD_BAR_SCALE := 0.55
 const HP_ICON_TEXTURE := preload("res://assets/textures/hud_icon_health.png")
 const HP_BAR_FRAME_TEXTURE := preload("res://assets/textures/hud_bar_frame_health.png")
 const HP_BAR_FILL_TEXTURE := preload("res://assets/textures/hud_bar_fill_health.png")

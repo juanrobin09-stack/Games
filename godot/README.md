@@ -3263,3 +3263,20 @@ text out at a smaller point size, the literal cost of the "resize a
 flattened image" model this was explicitly asked to match. Left for the
 user to weigh against the alternative (independent, error-prone
 per-piece sizing) rather than deciding it for them again.
+
+### ...and bumped back up 35-40% once that tradeoff was weighed
+
+The tradeoff above got weighed, and legibility won: `HUD_BAR_SCALE` goes
+from 0.4 to 0.55 — a 37.5% increase (0.4 * 1.375), the middle of the
+requested 35-40%, rather than a fresh guess at an absolute size. Nothing
+else about the mechanism changes; this is the entire value of building
+it as one constant behind one transform last pass — the fix is a single
+number, with the same structural proportionality guarantee (nothing can
+end up scaled differently from anything else) automatically carried
+forward. HP bar's real on-screen fill: 260 * 0.55 = 143px, up from 104.
+
+Confirmed visually (a real render, cropped to the bar block and scaled
+4x with nearest-neighbor for pixel-level inspection, same as the check
+that first surfaced the softness): "100/100", "100", "100" all read
+cleanly now, borders and gem detail sharper too — the whole block scaled
+up together, exactly as guaranteed.
