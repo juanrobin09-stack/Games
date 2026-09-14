@@ -61,6 +61,14 @@ const STALL_TEXTURE := preload("res://assets/textures/shop_stall.png")
 ## box per animation frame (same center-x, same coal-line baseline-y) so
 ## the fire's anchor point never jitters when frames swap — see
 ## _draw_brazier() for the actual per-frame compositing.
+## Visual-only size multiplier on `radius` — kept separate from `radius`
+## itself because that field also sizes the physics CircleShape2D
+## (setup(), below), so scaling it down would shrink the collision
+## hitbox along with the sprite. 3.6 was the size settled on earlier in
+## this same tuning history; 3.06 (3.6 * 0.85) is a further -15% on the
+## whole ring+flame composite (flame_w in _draw_brazier() derives from
+## sprite_w, so both shrink together, same ratio to each other as before).
+const BRAZIER_SPRITE_SCALE := 3.06
 const BRAZIER_RING_TEXTURE := preload("res://assets/textures/brazier_ring.png")
 const BRAZIER_FLAME_TEXTURES: Array[Texture2D] = [
 	preload("res://assets/textures/brazier_flame_1.png"),
@@ -334,7 +342,7 @@ func _draw_rubble() -> void:
 ## brazier's phase so multiple instances in the same room don't flicker
 ## in lockstep.
 func _draw_brazier(now: float) -> void:
-	var sprite_w: float = radius * 3.6
+	var sprite_w: float = radius * BRAZIER_SPRITE_SCALE
 	var sprite_h: float = sprite_w * (BRAZIER_RING_TEXTURE.get_height() / float(BRAZIER_RING_TEXTURE.get_width()))
 	draw_texture_rect(BRAZIER_RING_TEXTURE, Rect2(-sprite_w / 2.0, -sprite_h / 2.0, sprite_w, sprite_h), false)
 

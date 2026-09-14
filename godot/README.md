@@ -3287,3 +3287,29 @@ up together, exactly as guaranteed.
 the previous pass, same guarantee carried forward automatically. HP
 bar's real on-screen fill: 260 * 0.6325 ≈ 164px. Confirmed the same way
 (cropped, 4x-scaled render) — still reads cleanly.
+
+### Brazier -15% (`obstacle_node.gd`, unrelated to the HUD work above)
+
+A pasted image (the ring+ember disc, no filename or other context)
+turned out to be `brazier_ring.png` itself, confirmed by opening the
+file directly and comparing — same object the "réduit la taille" /
+flame-size/flame-centering rounds earlier in this project's history
+already tuned. `_draw_brazier()`'s `sprite_w` was `radius * 3.6`, where
+`radius` is ALSO the physics `CircleShape2D`'s own radius (`setup()`,
+same file) — so this couldn't be a `radius` cut the way the HUD passes
+cut a shared constant: that would shrink the collision hitbox along
+with the sprite, which wasn't asked for. New `BRAZIER_SPRITE_SCALE`
+constant (extracted from the inline `3.6`, matching this file's existing
+pattern of named `BRAZIER_*` tuning constants) holds `3.06` (`3.6 *
+0.85`) instead — a visual-only cut. `flame_w` inside the same function
+already derives from `sprite_w`, so the flame shrinks in step with the
+ring at the same ratio as before, no separate change needed there.
+
+Verified with a real render — not the generated level (tried ~8 seeds
+hunting for a room that happened to roll a brazier via REST-room
+placement or zone-0 scatter, none did) but a brazier instantiated
+directly next to the player the same way `level_generator.gd`'s own
+REST-room branch does it (`OBSTACLE_SCENE.instantiate()` →
+`room.add_obstacle()` → `setup()`), which is both more reliable and
+exactly the "close-up" harness pattern this exact object's earlier
+tuning rounds already used.
