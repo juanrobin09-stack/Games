@@ -15,6 +15,56 @@ extends RefCounted
 
 enum ButtonVariant { PRIMARY, PLAIN, GHOST, DANGER }
 
+## Shared dark-fantasy frame every chrome=true panel below renders with —
+## a single reference image (bronze/copper gothic border, corner + top/
+## bottom-center diamond ornaments, tattered banners) applied as a
+## StyleBoxTexture so it 9-slices instead of stretching as one flat image:
+## the four TEXTURE_MARGIN_* below mark where the ornate border art ends
+## and the plain, low-contrast, safely-stretchable interior begins, in the
+## source texture's own pixels. Godot's 9-slice then keeps the 4 corner
+## cells completely unstretched (this is what actually satisfies "corners
+## must never be deformed" — not a visual approximation of it), stretches
+## the 4 edge cells along their one long axis, and stretches the center
+## cell both ways to fill whatever panel size make_panel() is asked for.
+## The one accepted tradeoff of the technique: the top/bottom-center
+## diamond ornaments sit inside the top/bottom edge cells, so they do
+## stretch horizontally along with that edge when a panel's width departs
+## from the source texture's 812px — kept mild in practice since every
+## real chrome=true panel width (620px narrow / 900px wide) is within
+## ~30% of that source width, and the ornament itself is a soft,
+## symmetric glyph rather than a hard-edged pattern that would show it.
+##
+## Margins were measured directly off the source image (menu_frame.png,
+## downscaled 50% from the 1624x969 original supplied via GitHub) by
+## cropping and visually inspecting each corner/banner at 3x zoom, not
+## guessed: the corner diamonds bottom out around y=75-80px from the
+## top/bottom edge, the top-center diamond's spike around y=60-70px, and
+## the solid banner cloth (the widest element on the left/right sides,
+## wider than the corner diamonds alone) reaches to about x=115-120px —
+## a first attempt at these margins via an automated brightness-threshold
+## scan failed silently (the image is dark enough everywhere, including
+## the faint center watermark, that no clean "safe" threshold existed)
+## and was abandoned in favor of this direct visual measurement.
+const PANEL_FRAME_TEXTURE := preload("res://assets/textures/menu_frame.png")
+const TEXTURE_MARGIN_LEFT := 120.0
+const TEXTURE_MARGIN_RIGHT := 120.0
+const TEXTURE_MARGIN_TOP := 85.0
+const TEXTURE_MARGIN_BOTTOM := 80.0
+
+static func _panel_frame_stylebox() -> StyleBoxTexture:
+	var style := StyleBoxTexture.new()
+	style.texture = PANEL_FRAME_TEXTURE
+	style.texture_margin_left = TEXTURE_MARGIN_LEFT
+	style.texture_margin_right = TEXTURE_MARGIN_RIGHT
+	style.texture_margin_top = TEXTURE_MARGIN_TOP
+	style.texture_margin_bottom = TEXTURE_MARGIN_BOTTOM
+	# content_margin_* left at its default (-1 == "same as texture_margin"):
+	# child content starts exactly where the plain, stretchable interior
+	# starts, no extra buffer — every chrome=true panel already lost a lot
+	# of raw content width to this frame's fairly wide ornate border versus
+	# the old flat 28px margin, so this avoids shrinking it further.
+	return style
+
 ## Ports .screen-overlay (opaque := true — MainMenu, Credits, standalone
 ## Settings, Victory/Defeat, Armory: nothing needs to show through) vs
 ## .screen-overlay.modal-backdrop (opaque := false — PauseMenu and its
@@ -45,7 +95,11 @@ static func make_overlay(opaque: bool) -> ColorRect:
 ## PauseMenu's embedded Settings pinned to the top-left corner, behind the
 ## HUD, instead of centered over the translucent backdrop.
 static func make_panel(content: Control, wide: bool = false, chrome: bool = true) -> PanelContainer:
-	var half_w: float = 450.0 if wide else 310.0
+	# wide's 450 -> 480 bump is part of this same frame change: the new
+	# ornate border's margins (120px each side, vs. the old flat panel's
+	# 28px) eat much more into a fixed-width panel's usable content width
+	# than before, so every wide=true screen gets a little more room back.
+	var half_w: float = 480.0 if wide else 310.0
 	var panel := PanelContainer.new()
 	panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	panel.set_anchors_preset(Control.PRESET_CENTER)
@@ -60,15 +114,7 @@ static func make_panel(content: Control, wide: bool = false, chrome: bool = true
 	panel.anchor_top = 0.5
 	panel.anchor_bottom = 0.5
 	if chrome:
-		var style := StyleBoxFlat.new()
-		style.bg_color = Color(Palette.PANEL_SOLID)
-		style.border_color = Color(Palette.BORDER)
-		style.set_border_width_all(1)
-		style.set_corner_radius_all(16)
-		style.set_content_margin_all(28.0)
-		style.shadow_color = Color(0.0, 0.0, 0.0, 0.5)
-		style.shadow_size = 16
-		panel.add_theme_stylebox_override("panel", style)
+		panel.add_theme_stylebox_override("panel", _panel_frame_stylebox())
 	else:
 		# No visible chrome, but content still needs the same breathing
 		# room the styled panel's content_margin gives it — an empty

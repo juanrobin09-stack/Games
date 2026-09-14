@@ -16,8 +16,8 @@ var _weapon_id: String
 var _ability_id: String
 var _unlocked_weapons: Array[String]
 var _unlocked_abilities: Array[String]
-var _weapon_row: HBoxContainer
-var _ability_row: HBoxContainer
+var _weapon_row: HFlowContainer
+var _ability_row: HFlowContainer
 var _on_confirm: Callable
 
 ## `on_confirm` is called once, as on_confirm(weapon_id, ability_id), when
@@ -52,19 +52,32 @@ func _build() -> void:
 
 	content.add_child(MenuUiKit.make_title(I18n.t("loadout.title", "Choose Your Loadout")))
 
-	content.add_child(MenuUiKit.make_subtitle(I18n.t("loadout.weapon", "Weapon")))
-	_weapon_row = HBoxContainer.new()
-	_weapon_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_weapon_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	_weapon_row.add_theme_constant_override("separation", 12)
-	content.add_child(_weapon_row)
+	# Fixed-height scroll region around both card rows rather than letting
+	# them push the panel taller — sized to fit the common case (<=3 cards
+	# per row, one line each) with no visible scrollbar at all; only a
+	# player with every weapon unlocked (4 cards -> _make_card_flow() wraps
+	# to 2 rows) actually needs to scroll. Without this, that 4-weapon case
+	# grows the panel to ~733px, taller than the 648px viewport, and pushes
+	# the title and Begin button off-screen top and bottom both — found via
+	# a real render with all weapons/abilities unlocked, not guessed.
+	var scroll := ScrollContainer.new()
+	scroll.mouse_filter = Control.MOUSE_FILTER_STOP
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.custom_minimum_size = Vector2(0.0, 380.0)
+	content.add_child(scroll)
+	var scroll_col := VBoxContainer.new()
+	scroll_col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	scroll_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll_col.add_theme_constant_override("separation", 12)
+	scroll.add_child(scroll_col)
 
-	content.add_child(MenuUiKit.make_subtitle(I18n.t("loadout.ability", "Ability")))
-	_ability_row = HBoxContainer.new()
-	_ability_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_ability_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	_ability_row.add_theme_constant_override("separation", 12)
-	content.add_child(_ability_row)
+	scroll_col.add_child(MenuUiKit.make_subtitle(I18n.t("loadout.weapon", "Weapon")))
+	_weapon_row = _make_card_flow()
+	scroll_col.add_child(_weapon_row)
+
+	scroll_col.add_child(MenuUiKit.make_subtitle(I18n.t("loadout.ability", "Ability")))
+	_ability_row = _make_card_flow()
+	scroll_col.add_child(_ability_row)
 
 	var button_row := MenuUiKit.make_button_row()
 	var begin_btn := MenuUiKit.make_button(I18n.t("loadout.begin", "Begin"), MenuUiKit.ButtonVariant.PRIMARY)
@@ -106,6 +119,21 @@ func _render_abilities() -> void:
 			_ability_id = picked_id
 			_render_abilities()
 		))
+
+## A centered row that wraps to a second line instead of overflowing the
+## panel — plain HBoxContainer was fine at this screen's old 844px content
+## width (any 2-3 unlocked weapons/abilities fit on one line), but the new
+## frame's wider margins leave only ~740px, and a player who has unlocked
+## all 4 weapons (every returning player, eventually) needs 916px for one
+## row (4 * 220px cards + 3 * 12px gaps) — found via a real render showing
+## the 4th weapon card clipped past the panel's right edge, not guessed.
+func _make_card_flow() -> HFlowContainer:
+	var row := HFlowContainer.new()
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.alignment = FlowContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("h_separation", 12)
+	row.add_theme_constant_override("v_separation", 12)
+	return row
 
 ## Ports `.upgrade-card`'s markup for a selectable weapon/ability choice —
 ## kept local rather than reusing UpgradeCard (that class is typed
