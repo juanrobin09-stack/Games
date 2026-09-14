@@ -75,30 +75,46 @@ const SMALL_ICON_SIZE := 14.0
 ## hardcode a guessed number" approach main_menu_ui.gd's TITLE_LOGO_TEXTURE
 ## and _apply_frame_texture() already established — self-corrects if any
 ## of these nine files is ever re-cropped.
-## 40% of the original 30.0 (a 60% reduction) — measured, not eyeballed:
-## the HP bar's actual rendered fill was 248px wide at the original 30.0,
-## 125px at an earlier 16.0 attempt, 186px at an in-between 22.5 (a 25%
-## cut that, going in the wrong direction from the 16.0 the user had just
-## seen, read as "you made it bigger again, not smaller"). This value
-## puts the same measurement clearly below both: ~104px. Every piece of
-## the row still derives from this one constant (or scales in step with
-## it — see _make_resource_bar_row() below), so icon/bar/gem/spacing
-## shrink as one proportional unit; the number label's font size is the
-## one deliberate exception now, floored at 8px rather than following
-## the same ratio down to ~5px, since text has a real legibility floor
-## that decorative bar art doesn't.
-const RESOURCE_BAR_HEIGHT := 12.0
+##
+## Back at the original 30.0. Three earlier passes shrank this directly
+## (30 -> 16 -> 22.5 -> 12) and hand-scaled each dependent piece —
+## ICON_SLOT_WIDTH, row/column separation, label font size — to match,
+## which meant every one of those pieces was a separate place to get the
+## ratio wrong (the font size drifted off pure proportion on purpose, as
+## a legibility floor, which read as "you shrank everything except the
+## bars"). Per an explicit request to guarantee proportionality by
+## construction instead of by careful arithmetic: this block stays at
+## design size, and HUD_BAR_SCALE (below) shrinks the whole built row —
+## bars, fills, frames, icons, gems, spacing, labels, all of it — with
+## one Control.scale transform on their shared parent, the same way
+## scaling a flattened image in an editor keeps every pixel in the same
+## ratio to every other pixel. Nothing under that parent can end up
+## proportioned differently from anything else, because nothing here
+## computes its own size independently anymore.
+const RESOURCE_BAR_HEIGHT := 30.0
 ## Fixed width every icon is centered within (rather than each row packing
 ## its bar immediately after its own icon's actual width) — at native
 ## resolution the three icon PNGs aren't the same width (health 35x30,
 ## stamina 42x30, ability 43x30), and without a shared slot that
 ## difference would shift each row's bar horizontally by a few px, so
 ## three individually-correct bars wouldn't line up as a column. Set to
-## the widest icon's own rendered width at RESOURCE_BAR_HEIGHT (currently
-## ability, ~17px at 12px tall) so it needs no inset and the other two
-## pick up a few px of centering margin instead — keep the two constants
-## in proportion if either changes again.
-const ICON_SLOT_WIDTH := 17.2
+## the widest icon's own rendered width at RESOURCE_BAR_HEIGHT — currently
+## ability, 43px at the native 30px-tall size — so it needs no inset and
+## the other two pick up a few px of centering margin instead. (An
+## earlier version of this comment claimed 52 "matches the widest icon
+## (Health/Stamina)" — checked directly against the actual files rather
+## than trusted from memory, that was wrong on both counts: ability is
+## the widest, at 43, not 52.)
+const ICON_SLOT_WIDTH := 43.0
+## Applied as `.scale` on the VBoxContainer _build_top_left() builds
+## below, once, after every row is added — the single knob that shrinks
+## the entire HP/Stamina/Ability block (see RESOURCE_BAR_HEIGHT's own
+## comment for why a transform here rather than resized constants
+## everywhere). 0.4 keeps the same overall footprint the third resize
+## pass landed on (RESOURCE_BAR_HEIGHT 12/30 measured the HP bar's real
+## on-screen fill at 104px of an original 260px, a ratio this reproduces
+## exactly): 260 * 0.4 = 104.
+const HUD_BAR_SCALE := 0.4
 const HP_ICON_TEXTURE := preload("res://assets/textures/hud_icon_health.png")
 const HP_BAR_FRAME_TEXTURE := preload("res://assets/textures/hud_bar_frame_health.png")
 const HP_BAR_FILL_TEXTURE := preload("res://assets/textures/hud_bar_fill_health.png")
@@ -262,7 +278,7 @@ static func _set_bar_ratio(fill: ColorRect, ratio: float) -> void:
 func _make_resource_bar_row(col: Control, icon_texture: Texture2D, frame_texture: Texture2D, fill_texture: Texture2D, gem_texture: Texture2D) -> Dictionary:
 	var row := HBoxContainer.new()
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_theme_constant_override("separation", 2)
+	row.add_theme_constant_override("separation", 6)
 	col.add_child(row)
 
 	var icon_slot := CenterContainer.new()
@@ -320,7 +336,7 @@ func _make_resource_bar_row(col: Control, icon_texture: Texture2D, frame_texture
 	label.set_anchors_preset(Control.PRESET_FULL_RECT)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.add_theme_font_size_override("font_size", 8)
+	label.add_theme_font_size_override("font_size", 12)
 	label.add_theme_color_override("font_color", Color(Palette.TEXT_WARM))
 	label.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.8))
 	label.add_theme_constant_override("shadow_offset_x", 0)
@@ -415,7 +431,7 @@ func _make_vignette(stop_offset: float, end_color: Color) -> TextureRect:
 func _build_top_left() -> void:
 	var col := VBoxContainer.new()
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	col.add_theme_constant_override("separation", 4)
+	col.add_theme_constant_override("separation", 11)
 	col.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	col.offset_left = 14.0
 	col.offset_top = 14.0
@@ -443,6 +459,15 @@ func _build_top_left() -> void:
 	_buff_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_buff_row.add_theme_constant_override("separation", 4)
 	col.add_child(_buff_row)
+
+	# Every row above was just built at full design size — see
+	# HUD_BAR_SCALE's own comment for why the shrink happens here, once,
+	# as a single transform on the whole column, rather than by resizing
+	# each piece inside _make_resource_bar_row(). Control.scale pivots
+	# around pivot_offset (default (0,0), i.e. col's own top-left corner),
+	# which is exactly this column's anchored corner, so the block shrinks
+	# in place instead of drifting away from the screen edge it's pinned to.
+	col.scale = Vector2(HUD_BAR_SCALE, HUD_BAR_SCALE)
 
 func _build_top_right() -> void:
 	var col := VBoxContainer.new()

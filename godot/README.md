@@ -3216,3 +3216,50 @@ layout) confirmed the true, monotonic values — 260 → 138.7 → 195 → 104px
 — and that `custom_minimum_size` was being honored exactly, no container-
 stretch bug. Reading the engine's own computed layout beats re-deriving
 it from a screenshot's pixels every time either is available.
+
+### ...then rebuilt on a single `Control.scale` instead of per-piece math
+
+All three passes above shrank the row by recomputing each dependent
+piece's own size from `RESOURCE_BAR_HEIGHT` — correct in principle (every
+formula really does derive from that one constant), but it puts the
+proportionality guarantee on *me getting every formula right*, and the
+one place that didn't happen (the label's font size, floored rather than
+scaled in strict ratio, across two different passes for two different
+reasons) is exactly what read as "you shrank the decorations but not the
+bars." Told explicitly, and correctly: guarantee it structurally instead
+— scale the shared parent, not each child's own numbers.
+
+`RESOURCE_BAR_HEIGHT` and `ICON_SLOT_WIDTH` are back to their true
+original/native values (30.0, and 43.0 — not the old comment's wrong 52,
+see the "shrunk ~47%" entry above for that correction, kept here since
+it was a real bug fix unrelated to sizing), and so is every row/column
+separation and the label's `font_size` (12). New `const HUD_BAR_SCALE :=
+0.4`, applied as `col.scale = Vector2(HUD_BAR_SCALE, HUD_BAR_SCALE)` once
+in `_build_top_left()`, after every row is built. `Control.scale` is a
+render transform, not a layout input — it doesn't ask any child what
+size it wants, it takes the whole already-laid-out subtree (icon, frame,
+fill, gem, label, every spacing value) and scales it as one unit, the
+same way scaling a flattened image in an editor keeps every pixel's
+ratio to every other pixel fixed. Nothing under `col` computes its own
+size independently anymore, so nothing under it *can* end up
+proportioned differently from anything else — the actual bug class from
+every earlier pass, closed by construction rather than by getting more
+formulas right.
+
+Confirmed directly rather than assumed: a temporary harness printed
+`hp_fill.size` (`(260, 30)`, its own logical/pre-scale size, unchanged)
+against `hp_fill.get_global_rect()` (`(104, 12)` on screen, `260 * 0.4`
+and `30 * 0.4` exactly) and the label's own `global_rect`, which lands in
+that identical scaled region while its theme `font_size` reads back as
+the untouched `12` — proof the text is being visually scaled down as
+part of the same transform, not told to render at a smaller point size.
+0.4 was chosen to land on the same overall footprint the -60% pass
+already had approval-adjacent momentum on (104px), not a new number.
+
+One honest tradeoff, surfaced rather than silently patched around: at
+0.4, the "100/100"-style labels render soft/small under magnification —
+inherent to scaling an already-rendered element rather than re-laying
+text out at a smaller point size, the literal cost of the "resize a
+flattened image" model this was explicitly asked to match. Left for the
+user to weigh against the alternative (independent, error-prone
+per-piece sizing) rather than deciding it for them again.
