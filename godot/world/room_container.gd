@@ -323,8 +323,10 @@ func _draw() -> void:
 ## a naive proportional map into a shared border band could sample past
 ## the corner post into the frame's own black interior; picking the
 ## longest horizontal and longest vertical piece off this new sheet
-## instead (cropped tight to content, WALL_HORIZONTAL 949x48 and
-## WALL_VERTICAL 48x325) gives each piece its own dedicated, fully self-
+## instead (cropped tight to content — originally WALL_HORIZONTAL 949x48
+## and WALL_VERTICAL 48x325; both were later replaced with a higher-
+## resolution recrop, currently 1592x157 and 163x795, without changing
+## anything below) gives each piece its own dedicated, fully self-
 ## contained texture with nothing beyond its edges to sample past, so a
 ## piece is just stretched to fill its destination the same simple way
 ## FLOOR_TEXTURE already is — no shared crop, no corner math, no
@@ -355,11 +357,29 @@ const WALL_TEXTURE_V := preload("res://assets/textures/wall_vertical.png")
 ## reads far better than the blur it replaces — confirmed the same way,
 ## with another real screenshot after the change, not assumed from the
 ## math alone.
+##
+## That original fix compared tex_h to h in world-units only — it never
+## knew about entities/player.tscn's Camera2D.zoom = Vector2(1.5, 1.5),
+## which magnifies every world-space draw (this one included) by another
+## 1.5x before it ever reaches the screen. The godot/README.md texture-
+## audit entry found this the hard way: with the current (higher-res)
+## WALL_TEXTURE_V, h / (tex_h * WALL_V_MAX_STRETCH) alone judges the full
+## undoored span safe at 1 tile (620 / (795*1.1) < 1), but the real on-
+## screen texel density at that tile count is ~0.85 texel/px once the
+## 1.5x zoom is included — a ~17% oversize confirmed on a real screenshot,
+## not just the math. CAMERA_ZOOM folds that factor into the same
+## comparison so the tile count this function picks matches what's
+## actually shown on screen instead of only the pre-zoom world geometry.
+## Window/stretch resolution presets (project.godot) add a further,
+## variable factor on top of this that no world-space draw call can ever
+## see or correct for — CAMERA_ZOOM only closes the gap this function can
+## actually reach.
+const CAMERA_ZOOM := 1.5
 const WALL_V_MAX_STRETCH := 1.1
 
 func _draw_wall_v_tiled(x: float, y: float, w: float, h: float) -> void:
 	var tex_h := float(WALL_TEXTURE_V.get_height())
-	var tile_count := maxi(1, ceili(h / (tex_h * WALL_V_MAX_STRETCH)))
+	var tile_count := maxi(1, ceili((h * CAMERA_ZOOM) / (tex_h * WALL_V_MAX_STRETCH)))
 	var tile_h := h / float(tile_count)
 	for i in range(tile_count):
 		draw_texture_rect(WALL_TEXTURE_V, Rect2(x, y + i * tile_h, w, tile_h), false)

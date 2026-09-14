@@ -3055,3 +3055,61 @@ pure `_draw()`. No `WorldEnvironment` exists (no bloom/tonemap), no
 `[rendering]` AA/mipmap/filter overrides exist in `project.godot`, and
 `Camera2D`'s `position_smoothing` is off everywhere — none of those are a
 blur source here, confirmed rather than assumed.
+
+### Applying the audit's corrections — what changed and what didn't
+
+Of the audit's 5 prioritized corrections, 2 were code-only and applied
+here; the other 3 were deliberately left alone rather than guessed at.
+
+**Applied — `_draw_wall_v_tiled()`'s tiling cap is now camera-zoom-aware.**
+`WALL_V_MAX_STRETCH` compares `tex_h` to `h` in world-units; it never
+knew about `Camera2D.zoom`, which is exactly the blind spot the audit's
+screenshot caught (above). New `const CAMERA_ZOOM := 1.5` mirrors
+`player.tscn`'s own value — not looked up at runtime, since `_draw()` has
+no guaranteed live reference to a player/camera and this only ever needs
+to change if the camera's own zoom does — and the tile-count formula
+becomes `ceili((h * CAMERA_ZOOM) / (tex_h * WALL_V_MAX_STRETCH))`. For
+the current full-height undoored span this raises the tile count from 1
+to 2 (one seam, same visual trade-off the original tiling fix already
+accepted), which brings real on-screen texel density from ~0.85 to ~1.71
+texel/px at the base resolution — safely back above native. Verified with
+the same class of real headless screenshot the finding itself was
+confirmed with (player teleported to two different points along the same
+wall, `--resolution 1152x648`), no parse/runtime errors, harness fully
+reverted after (`git diff` on `main.gd`/`project.godot` empty).
+
+This closes the gap this function can actually reach — window/stretch's
+own resolution-preset scaling (×1.0–×2.222 on top of the zoom, depending
+on which preset a player picks in Settings) happens entirely outside this
+script's draw calls, so no world-space code change can fully reach it;
+2 tiles brings the worst case at 2560x1440 down from ~2.6x to ~1.3x
+magnified, better but not fully native. Fully closing that would need
+either enough extra tiles to start showing joint-repetition more than a
+player is likely to accept, or a higher-resolution source texture — a
+judgment call left to the user rather than made here.
+
+**Applied — the stale `WALL_HORIZONTAL 949x48`/`WALL_VERTICAL 48x325`
+comment** (this file's own header, above `WALL_TEXTURE_H`/`WALL_TEXTURE_V`)
+now says what actually ships (`1592x157`/`163x795`) and notes the higher-
+resolution recrop happened without the comment being updated to match —
+a documentation correctness fix, no rendering change.
+
+**Left alone, on purpose:**
+- **`main_menu_bg.png`'s low native resolution relative to a full-screen
+  cover-fit at up to 2560x1440** — needs a higher-resolution source image,
+  not a code change; nothing to apply without new art.
+- **`wall_horizontal.png`'s and `floor_stone.png`'s softening at the
+  1920x1080/2560x1440 presets specifically** (both safe at the base
+  resolution) — `wall_horizontal.png` has no tiling function to extend
+  the same way `wall_vertical.png`'s does (would need a new one, adding
+  a seam to a piece that currently has none, for a benefit only players
+  on a high-res preset would ever see); `floor_stone.png` was
+  deliberately drawn as a single untiled stretch specifically to avoid
+  the seams/repeated-highlight artifacts tiling would reintroduce (see
+  `FLOOR_TEXTURE`'s own comment) — tiling it would trade one visual
+  problem for the exact one it was written to avoid.
+- **Decoupling `text_scale` from HUD art size** (currently one slider
+  scales both fonts and bar/icon/gem textures via `CanvasLayer.scale` on
+  all of `$UI`) — this changes what the accessibility setting actually
+  does, not just how sharp something renders, so it's a product decision
+  rather than a correction to apply unprompted.
