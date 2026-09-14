@@ -165,8 +165,15 @@ func _update_light() -> void:
 		_set_light(glow, Vector2(cos(facing) * 34.0, sin(facing) * 34.0), 120.0, Palette.EMBER3, 0.35)
 		return
 	var color_hex: String = Palette.SOUL if visual == Visual.CRYSTAL else (Palette.FUNGUS if visual == Visual.FUNGUS else Palette.EMBER4)
-	var light_radius: float = 175.0 if visual == Visual.MERCHANT_STALL else (105.0 if visual == Visual.FUNGUS else 120.0)
-	var intensity: float = 0.85 if visual == Visual.MERCHANT_STALL else (0.6 if visual == Visual.FUNGUS else 0.75)
+	# The brazier's own reference (the same spec sheet's in-game preview,
+	# and later a full lit-scene mockup) both show a much broader, richer
+	# pool of warm light soaking the floor around it than this shared
+	# default gave every lit prop alike — bigger and brighter than
+	# MERCHANT_STALL's own already-largest radius, matching an open flame
+	# reading as the room's actual light source rather than one glowing
+	# prop among several.
+	var light_radius: float = 230.0 if visual == Visual.BRAZIER else (175.0 if visual == Visual.MERCHANT_STALL else (105.0 if visual == Visual.FUNGUS else 120.0))
+	var intensity: float = 1.05 if visual == Visual.BRAZIER else (0.85 if visual == Visual.MERCHANT_STALL else (0.6 if visual == Visual.FUNGUS else 0.75))
 	_set_light(glow, Vector2(0.0, -8.0), light_radius, color_hex, intensity)
 
 func _set_light(glow: PointLight2D, offset: Vector2, light_radius: float, color_hex: String, intensity: float) -> void:
