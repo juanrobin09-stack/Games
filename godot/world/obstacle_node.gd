@@ -137,9 +137,42 @@ func _ready() -> void:
 	_apply_shape()
 	($Glow as PointLight2D).texture = DrawUtils.glow_texture()
 
+## MERCHANT_STALL's real footprint — a wide painted archway/counter, not a
+## symmetric blob like everything else this file draws — doesn't fit the
+## shared CircleShape2D every other visual below uses via _apply_shape()'s
+## own default branch: a circle wide enough to cover the counter (roughly
+## half of sprite_w, ~94 units at this obstacle's radius=26 call site)
+## would also block open floor well past both stone pillars, while the
+## radius-sized circle this function actually drew before this fix (26
+## units) left most of the ~187-unit-wide counter itself walkable —
+## exactly the bug reported (the player could walk straight through it).
+## These 3 ratios come from a direct alpha-channel read of
+## shop_stall.png (not guessed off the drawn Rect2 alone): row-by-row,
+## the two stone pillars stay separate, solid columns from texture
+## y=115 down to y=395 (own script: 660x406 native), while y=0-110 is the
+## open archway's own underside — texture space (11,115)-(649,395) is a
+## width/height/vertical-offset-from-center of (638, 280, 52)px, which
+## divided by sprite_w's own texture-pixel scale (radius*7.2/660) gives
+## the ratios below. Leaving the archway itself out of collision (rather
+## than one shape spanning the whole sprite) keeps it walkable-under, the
+## same as every other archway/doorway shape in this project — only the
+## two pillars and the counter between them actually block.
+const STALL_COLLISION_WIDTH_RATIO := 6.96
+const STALL_COLLISION_HEIGHT_RATIO := 3.05
+const STALL_COLLISION_OFFSET_Y_RATIO := 0.567
+
 func _apply_shape() -> void:
 	var shape: CollisionShape2D = get_node_or_null("CollisionShape2D")
-	if shape and shape.shape is CircleShape2D:
+	if shape == null:
+		return
+	if visual == Visual.MERCHANT_STALL:
+		var rect := shape.shape as RectangleShape2D
+		if rect == null:
+			rect = RectangleShape2D.new()
+			shape.shape = rect
+		rect.size = Vector2(radius * STALL_COLLISION_WIDTH_RATIO, radius * STALL_COLLISION_HEIGHT_RATIO)
+		shape.position = Vector2(0.0, radius * STALL_COLLISION_OFFSET_Y_RATIO)
+	elif shape.shape is CircleShape2D:
 		(shape.shape as CircleShape2D).radius = radius
 
 ## Every flicker/pulse/sway in _draw() below is driven by Time.get_ticks_msec(),

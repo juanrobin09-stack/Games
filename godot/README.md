@@ -3313,3 +3313,54 @@ REST-room branch does it (`OBSTACLE_SCENE.instantiate()` →
 `room.add_obstacle()` → `setup()`), which is both more reliable and
 exactly the "close-up" harness pattern this exact object's earlier
 tuning rounds already used.
+
+### Shop stall gets a real hitbox — the counter was walk-through
+
+Reported directly: the player could walk straight through the merchant
+stall's counter. Root cause, confirmed by reading `_apply_shape()`
+(`world/obstacle_node.gd`): every `ObstacleNode`, regardless of
+`Visual`, gets the same single `CircleShape2D` sized to its own
+`radius` field — fine for the roughly-round props (rocks, pillars,
+statues) this was designed around, but `MERCHANT_STALL`'s sprite is a
+wide painted archway/counter (`sprite_w = radius * 7.2` — 187 units at
+this obstacle's `radius=26` call site) that a `radius`-sized circle (26
+units, barely a seventh of that width) leaves mostly uncovered. The
+counter itself sat entirely outside the existing collision circle.
+
+Fixed with a `RectangleShape2D`, swapped in only for
+`Visual.MERCHANT_STALL` inside the same shared `_apply_shape()` (every
+other visual keeps the untouched `CircleShape2D` branch). Its size and
+vertical offset come from a direct alpha-channel read of
+`shop_stall.png` (660x406 native), not a guess off the drawn `Rect2`:
+row-by-row, the two stone pillars run as separate solid columns from
+texture y=115 to y=395, while y=0-110 above that is the open archway's
+own underside with no ground-level content — so the collision rect
+covers exactly the pillars-and-counter band (texture-space
+(11,115)-(649,395), converted through `sprite_w`'s own per-radius pixel
+scale into the `STALL_COLLISION_WIDTH/HEIGHT/OFFSET_Y_RATIO` constants)
+and leaves the archway walkable-under, same as every other doorway
+shape in this project — nothing about the sprite itself changed.
+`radius` stays exactly what it was; only the shape swaps.
+
+Verified two ways, both against a real running scene rather than the
+geometry alone:
+- Printed the assigned shape's actual `size`/`position` back out
+  (`(180.96, 79.3)` / `(0, 14.742)` at `radius=26`) to confirm the swap
+  applied, not just that the constants compiled correctly.
+- A functional movement test: a `CharacterBody2D` player, `velocity`
+  and `move_and_slide()` driven directly (its own `_physics_process`
+  disabled so nothing overwrites the test's manual input), walked
+  straight at the counter from open floor. First attempt showed the
+  player sliding 65 units further than the shape's own edge should
+  allow — not a broken shape, but a same-frame race: the physics
+  server hadn't yet registered the shape swap that had just happened
+  in the same synchronous block, so the first several `move_and_slide()`
+  calls resolved against stale broadphase data. Adding one real timer
+  gap between building the stall and starting the movement test fixed
+  it — the player then stopped at exactly `rect_bottom_edge_Y (304.39) +
+  player_radius (15) = 319.39`, matching the predicted contact point to
+  four decimal places, after 80.6 of a possible 150 units — genuinely
+  blocked, not stuck mid-overlap. A second pass at the same test,
+  walking a straight line at ground level clear of the rectangle,
+  covered the full unobstructed distance (208.3 of an expected ~208),
+  confirming normal movement around the stall is untouched.
