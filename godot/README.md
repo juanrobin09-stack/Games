@@ -3280,3 +3280,10 @@ Confirmed visually (a real render, cropped to the bar block and scaled
 that first surfaced the softness): "100/100", "100", "100" all read
 cleanly now, borders and gem detail sharper too — the whole block scaled
 up together, exactly as guaranteed.
+
+### ...and +15% more
+
+`HUD_BAR_SCALE`: 0.55 → 0.6325 (0.55 * 1.15). Same one-number change as
+the previous pass, same guarantee carried forward automatically. HP
+bar's real on-screen fill: 260 * 0.6325 ≈ 164px. Confirmed the same way
+(cropped, 4x-scaled render) — still reads cleanly.

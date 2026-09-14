@@ -116,8 +116,9 @@ const ICON_SLOT_WIDTH := 43.0
 ## it, and asked to prioritize legibility over how small the block gets:
 ## bumped up 35-40% (0.4 * 1.375 ≈ 0.55) rather than picked fresh, so the
 ## increase is the specific amount actually asked for, not a new guess at
-## an absolute size. HP bar's real on-screen fill at 0.55: 260*0.55=143px.
-const HUD_BAR_SCALE := 0.55
+## an absolute size. Bumped again, +15% on top of that (0.55 * 1.15 =
+## 0.6325): HP bar's real on-screen fill at 0.6325: 260*0.6325≈164px.
+const HUD_BAR_SCALE := 0.6325
 const HP_ICON_TEXTURE := preload("res://assets/textures/hud_icon_health.png")
 const HP_BAR_FRAME_TEXTURE := preload("res://assets/textures/hud_bar_frame_health.png")
 const HP_BAR_FILL_TEXTURE := preload("res://assets/textures/hud_bar_fill_health.png")
