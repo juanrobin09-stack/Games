@@ -3174,3 +3174,45 @@ pass — `_make_resource_bar_row()`'s row separation (6→5) and its label's
 separation between the three rows (11→8). Checked at 9px via the same
 real render this file holds every legibility claim to, rather than
 assumed: still readable.
+
+### ...then told flatly "you didn't shrink the bars" — the -25% pass
+### had gone the wrong direction from what the user had just seen
+
+The -25% result (22.5) is, correctly, *larger* than the -47% one (16.0)
+shown the message before — both are cuts from the same original 30.0
+baseline, not successive cuts on top of each other. But the user's own
+point of comparison was the last screenshot they'd seen (16.0), not the
+original from several messages back, so a bar that grew relative to that
+read as "you didn't reduce it." Asked for explicitly: go smaller than
+*both* prior attempts, not relative to either specific one — resolved
+directly rather than re-guessed, since a third wrong guess after two
+would have cost real trust.
+
+`RESOURCE_BAR_HEIGHT` → 12.0 (40% of the original, a 60% cut — clearly
+under the 16.0 the -47% pass used). `ICON_SLOT_WIDTH` re-derived again
+(17.2), row/column separation scaled down further (2, 4). The number
+label is the one deliberate exception this pass: pure proportional
+scaling would put its font at ~5px, past any real legibility floor, so
+it's set to 8px instead — smaller than the previous pass's 9px, but not
+strictly in ratio with everything else, because text has a hard
+readability limit that decorative bar art doesn't.
+
+Verifying this one caught a real methodology bug worth recording: a
+first verification pass used a Python/PIL script scanning each
+screenshot for the widest contiguous run of "reddish" pixels near the
+top-left, meant to measure the HP bar's actual on-screen width. It gave
+104px → 125px → 186px → 149px across the four versions (original, -47%,
+-25%, -60%) — nonsense, since the last cut is the deepest and should
+have measured the smallest, not second-largest. Restricting the scan to
+each render's own known bar-row Y-band (rather than a broad guess)
+narrowed but didn't fix it: 248 → 113 → 186 → 149, still non-monotonic.
+The scan was picking up the health gem (`hud_gem_health.png`, plausibly
+reddish, sitting flush against the bar with zero separation) as part of
+the same contiguous run, not just the bar itself — pixel-guessing from a
+screenshot instead of asking the engine what it actually did. Fixed by
+instrumenting the running scene directly instead: a temporary print of
+`hud._hp_fill.size` and `.get_global_rect()` (the real `Control`, post-
+layout) confirmed the true, monotonic values — 260 → 138.7 → 195 → 104px
+— and that `custom_minimum_size` was being honored exactly, no container-
+stretch bug. Reading the engine's own computed layout beats re-deriving
+it from a screenshot's pixels every time either is available.

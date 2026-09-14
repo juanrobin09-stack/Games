@@ -75,16 +75,19 @@ const SMALL_ICON_SIZE := 14.0
 ## hardcode a guessed number" approach main_menu_ui.gd's TITLE_LOGO_TEXTURE
 ## and _apply_frame_texture() already established — self-corrects if any
 ## of these nine files is ever re-cropped.
-## Scaled to 75% of the original 30.0 (a 25% reduction). A first pass cut
-## this ~47%, which read as shrinking everything BUT the bars themselves —
-## the number label's font size stayed fixed there, which made a smaller
-## bar look like only its surroundings had shrunk. This pass scales the
-## label too (see _make_resource_bar_row() below), per an explicit
-## "everything shrinks together, no exceptions" request — every piece of
-## the row derives from this one constant (or is scaled in step with it),
-## so the three bars (icon+frame+fill+gem+label) shrink as one
-## proportional unit rather than needing separate per-piece tuning.
-const RESOURCE_BAR_HEIGHT := 22.5
+## 40% of the original 30.0 (a 60% reduction) — measured, not eyeballed:
+## the HP bar's actual rendered fill was 248px wide at the original 30.0,
+## 125px at an earlier 16.0 attempt, 186px at an in-between 22.5 (a 25%
+## cut that, going in the wrong direction from the 16.0 the user had just
+## seen, read as "you made it bigger again, not smaller"). This value
+## puts the same measurement clearly below both: ~104px. Every piece of
+## the row still derives from this one constant (or scales in step with
+## it — see _make_resource_bar_row() below), so icon/bar/gem/spacing
+## shrink as one proportional unit; the number label's font size is the
+## one deliberate exception now, floored at 8px rather than following
+## the same ratio down to ~5px, since text has a real legibility floor
+## that decorative bar art doesn't.
+const RESOURCE_BAR_HEIGHT := 12.0
 ## Fixed width every icon is centered within (rather than each row packing
 ## its bar immediately after its own icon's actual width) — at native
 ## resolution the three icon PNGs aren't the same width (health 35x30,
@@ -92,10 +95,10 @@ const RESOURCE_BAR_HEIGHT := 22.5
 ## difference would shift each row's bar horizontally by a few px, so
 ## three individually-correct bars wouldn't line up as a column. Set to
 ## the widest icon's own rendered width at RESOURCE_BAR_HEIGHT (currently
-## ability, ~32px at 22.5px tall) so it needs no inset and the other two
+## ability, ~17px at 12px tall) so it needs no inset and the other two
 ## pick up a few px of centering margin instead — keep the two constants
 ## in proportion if either changes again.
-const ICON_SLOT_WIDTH := 32.25
+const ICON_SLOT_WIDTH := 17.2
 const HP_ICON_TEXTURE := preload("res://assets/textures/hud_icon_health.png")
 const HP_BAR_FRAME_TEXTURE := preload("res://assets/textures/hud_bar_frame_health.png")
 const HP_BAR_FILL_TEXTURE := preload("res://assets/textures/hud_bar_fill_health.png")
@@ -259,7 +262,7 @@ static func _set_bar_ratio(fill: ColorRect, ratio: float) -> void:
 func _make_resource_bar_row(col: Control, icon_texture: Texture2D, frame_texture: Texture2D, fill_texture: Texture2D, gem_texture: Texture2D) -> Dictionary:
 	var row := HBoxContainer.new()
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_theme_constant_override("separation", 5)
+	row.add_theme_constant_override("separation", 2)
 	col.add_child(row)
 
 	var icon_slot := CenterContainer.new()
@@ -317,7 +320,7 @@ func _make_resource_bar_row(col: Control, icon_texture: Texture2D, frame_texture
 	label.set_anchors_preset(Control.PRESET_FULL_RECT)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.add_theme_font_size_override("font_size", 9)
+	label.add_theme_font_size_override("font_size", 8)
 	label.add_theme_color_override("font_color", Color(Palette.TEXT_WARM))
 	label.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.8))
 	label.add_theme_constant_override("shadow_offset_x", 0)
@@ -412,7 +415,7 @@ func _make_vignette(stop_offset: float, end_color: Color) -> TextureRect:
 func _build_top_left() -> void:
 	var col := VBoxContainer.new()
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	col.add_theme_constant_override("separation", 8)
+	col.add_theme_constant_override("separation", 4)
 	col.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	col.offset_left = 14.0
 	col.offset_top = 14.0
