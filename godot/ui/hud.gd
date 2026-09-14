@@ -75,17 +75,23 @@ const SMALL_ICON_SIZE := 14.0
 ## hardcode a guessed number" approach main_menu_ui.gd's TITLE_LOGO_TEXTURE
 ## and _apply_frame_texture() already established — self-corrects if any
 ## of these nine files is ever re-cropped.
-const RESOURCE_BAR_HEIGHT := 30.0
+## Shrunk from the original 30.0 (~47% smaller) — the HP/Stamina/Ability
+## row footprint read as oversized relative to the rest of the HUD at
+## default settings. Everything below derives from this one constant, so
+## the three bars (icon+frame+fill+gem) shrink as one proportional unit
+## rather than needing separate per-piece tuning.
+const RESOURCE_BAR_HEIGHT := 16.0
 ## Fixed width every icon is centered within (rather than each row packing
-## its bar immediately after its own icon's actual width) — Health's and
-## Stamina's icons render at 52px wide but Ability's at 46px, and without
-## a shared slot that 6px difference shifted Ability's whole row 6px
-## left, so its same-width (300px) bar ended 6px short of the other two's
-## right edge: three individually-correct bars that still didn't line up
-## as a column. 52 matches the widest icon currently in use (Health/
-## Stamina) so neither needs any inset; only Ability picks up ~3px of
-## centering margin on each side.
-const ICON_SLOT_WIDTH := 52.0
+## its bar immediately after its own icon's actual width) — at native
+## resolution the three icon PNGs aren't the same width (health 35x30,
+## stamina 42x30, ability 43x30), and without a shared slot that
+## difference would shift each row's bar horizontally by a few px, so
+## three individually-correct bars wouldn't line up as a column. Set to
+## the widest icon's own rendered width at RESOURCE_BAR_HEIGHT (currently
+## ability, ~23px at 16px tall) so it needs no inset and the other two
+## pick up a few px of centering margin instead — keep the two constants
+## in proportion if either changes again.
+const ICON_SLOT_WIDTH := 23.0
 const HP_ICON_TEXTURE := preload("res://assets/textures/hud_icon_health.png")
 const HP_BAR_FRAME_TEXTURE := preload("res://assets/textures/hud_bar_frame_health.png")
 const HP_BAR_FILL_TEXTURE := preload("res://assets/textures/hud_bar_fill_health.png")
@@ -249,7 +255,7 @@ static func _set_bar_ratio(fill: ColorRect, ratio: float) -> void:
 func _make_resource_bar_row(col: Control, icon_texture: Texture2D, frame_texture: Texture2D, fill_texture: Texture2D, gem_texture: Texture2D) -> Dictionary:
 	var row := HBoxContainer.new()
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_theme_constant_override("separation", 6)
+	row.add_theme_constant_override("separation", 3)
 	col.add_child(row)
 
 	var icon_slot := CenterContainer.new()
@@ -402,7 +408,7 @@ func _make_vignette(stop_offset: float, end_color: Color) -> TextureRect:
 func _build_top_left() -> void:
 	var col := VBoxContainer.new()
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	col.add_theme_constant_override("separation", 11)
+	col.add_theme_constant_override("separation", 6)
 	col.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	col.offset_left = 14.0
 	col.offset_top = 14.0

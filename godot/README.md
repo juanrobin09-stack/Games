@@ -3113,3 +3113,40 @@ a documentation correctness fix, no rendering change.
   all of `$UI`) — this changes what the accessibility setting actually
   does, not just how sharp something renders, so it's a product decision
   rather than a correction to apply unprompted.
+
+### HP/Stamina/Ability bars shrunk ~47%
+
+Follow-up request, unrelated to the audit itself: the three top-left
+resource bars (`ui/hud.gd`'s `_build_top_left()`) read as oversized
+against the rest of the HUD. `RESOURCE_BAR_HEIGHT` (30.0 → 16.0) is the
+one constant `_make_resource_bar_row()` derives every piece from — icon,
+bar frame/fill, and gem all read their own texture's aspect ratio at this
+shared height (this file's own header comment on why), so changing it
+alone shrinks all three rows as one proportional unit without any piece
+needing separate tuning. `ICON_SLOT_WIDTH` (the fixed column every icon
+centers within, so the three bars still line up despite their icons not
+sharing a native width) scales down with it, from 52.0 to 23.0 — and
+while re-deriving that number, found it corrects a stale one: the
+existing comment claimed 52 "matches the widest icon (Health/Stamina)",
+but the actual current files (checked the same way the texture audit
+checked everything else — a real dimension read, not memory) are health
+35x30, stamina 42x30, ability 43x30 — ability is, and most likely always
+was after some since-forgotten re-crop, the widest of the three, the same
+kind of drift the texture audit already found in the wall textures' own
+doc comment. 23px is that icon's real rendered width at the new height,
+so the comment now says what's actually true instead of repeating an old
+number nobody had re-checked.
+
+Two spacings scaled down alongside the bars themselves, so the group
+reads as one coherently-shrunk block rather than smaller bars in
+unchanged gaps: the gap between the three rows (11 → 6) and the gap
+between each row's icon and its bar (6 → 3). Label font size (12) was
+left untouched on purpose — checked via a real render rather than
+assumed, and still fully legible at the new bar height without
+crowding the box.
+
+Verified with the same class of headless screenshot every visual claim
+in this file is held to (temporary harness in `main.gd`'s `_ready()`,
+`--resolution 1152x648`, reverted immediately after, empty `git diff`
+confirmed): all three bars render at their new, smaller size, properly
+aligned as a column, numbers still readable, no clipping.
