@@ -3364,3 +3364,26 @@ geometry alone:
   walking a straight line at ground level clear of the rectangle,
   covered the full unobstructed distance (208.3 of an expected ~208),
   confirming normal movement around the stall is untouched.
+
+### Shop stall +15%, sprite and hitbox together
+
+Follow-up: the user thought the stall (just given its own real hitbox,
+above) had somehow been shrunk. It hadn't — `git log -p` across every
+commit touching `sprite_w = radius * 7.2` and the `radius=26.0` call
+site (`level_generator.gd`) turned up exactly one introduction of each
+value, never a later change to either — but a real render at actual
+gameplay scale next to the player, sent over for a direct look, settled
+it as a genuine "make it bigger" ask instead, not a regression to
+undo.
+
+`level_generator.gd`'s call site: `26.0 -> 29.9` (`26 * 1.15`). Both the
+sprite (`sprite_w = radius * 7.2`) and the new `STALL_COLLISION_*_RATIO`-
+based hitbox (the previous entry, above) derive from this one `radius`,
+so growing it grows the counter and its hitbox together automatically —
+no separate collision re-tuning needed for them to stay matched to the
+now-bigger sprite. Confirmed directly: the collision rect's printed
+`size` came back as `(208.104, 91.195)`, exactly the old `(180.96,
+79.3) * 1.15`, and a repeat of the same functional movement test from
+the entry above stopped the player at exactly the new predicted contact
+point (`292.55 + 15 = 307.55`) — the fit held after scaling, not just
+before it.

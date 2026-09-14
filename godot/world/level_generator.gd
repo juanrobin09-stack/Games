@@ -684,7 +684,13 @@ static func populate_room_content(room: RoomContainer, zone: ZoneDefinition, opt
 			var pos: Vector2 = _landmark_position(rng)
 			var stall: ObstacleNode = OBSTACLE_SCENE.instantiate()
 			room.add_obstacle(stall)
-			stall.setup(pos, 26.0, ObstacleNode.Visual.MERCHANT_STALL)
+			# 26.0 * 1.15 — a flat +15% on the stall's whole footprint. Both
+			# the sprite (_draw_merchant_stall's own sprite_w = radius * 7.2)
+			# and its collision rect (obstacle_node.gd's STALL_COLLISION_*
+			# ratios) derive from this one radius, so scaling it up grows
+			# the counter and its hitbox together — no separate collision
+			# adjustment needed for them to stay matched to the bigger sprite.
+			stall.setup(pos, 29.9, ObstacleNode.Visual.MERCHANT_STALL)
 			scatter_obstacles(room, rng, zone.index, rng.randi_range(1, 2))
 
 		RoomContainer.Type.EVENT:
