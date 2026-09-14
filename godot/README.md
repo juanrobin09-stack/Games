@@ -2962,3 +2962,36 @@ differently — closer to the room's actual light — so it now gets its
 own case in that branch: `light_radius` 120 → 230, `intensity` 0.75 →
 1.05, both above even `MERCHANT_STALL`'s previous high-water mark.
 Re-verified with the same close-up harness.
+
+### The rest-room brazier now goes out once its warmth is spent
+
+`LevelFlow.use_rest()` already gated its one-time heal behind
+`room.rest_used`, but the brazier itself kept burning at full brightness
+after — nothing distinguished a rest room already used from one still
+available at a glance, short of re-reading the (now-stale) "Rest at the
+Brazier" prompt. `ObstacleNode` gains `extinguish()`, the same
+"stateful landmark flips once" shape `activate()` (the sealed
+stairwell) already established: `use_rest()` calls it the instant the
+heal lands, via the same `_find_obstacle()` lookup the interact-prompt
+check already uses to find this exact brazier in this exact room, so
+the wiring only had to reuse an already-proven path rather than add a
+new one.
+
+The flame fades rather than snapping off — `BRAZIER_EXTINGUISH_DURATION`
+(1.8s) drives both `_draw_brazier()`'s flame alpha and
+`_update_light()`'s own new `BRAZIER and extinguished` branch (inserted
+alongside the existing `STAIRS_DOWN`/`STAIRS_UP` special cases, ahead of
+the shared generic-prop branch above) off the same clock, so the visible
+fire and its glow die down together instead of one lagging the other.
+`BRAZIER_RING_TEXTURE` was always the unlit-coals art underneath the
+flame (see its own doc-comment), so once the flame's alpha reaches 0
+there's nothing left to swap — a spent brazier already reads as cold,
+dark coals with no further change needed. Once the fade completes,
+`_update_light()` sets `lit = false` so every future call takes the
+function's existing fast early-out instead of recomputing an already-
+zero fade forever.
+
+Verified with a temporary harness calling `extinguish()` directly on a
+close-up brazier and capturing three points on the fade (just lit, mid-
+fade, fully out) — flame and glow visibly dying down together, ending
+on plain unlit coals with the ambient floor-light pool gone.

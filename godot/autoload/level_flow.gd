@@ -778,6 +778,9 @@ func use_rest(room: RoomContainer) -> void:
 	VfxPresets.heal_sparkle(room, player.global_position)
 	AudioEngine.play_sfx("pickupHeart")
 	hud.show_toast(I18n.t("toast.brazier", "The brazier's warmth mends your wounds."))
+	var brazier := _find_obstacle(room, ObstacleNode.Visual.BRAZIER)
+	if brazier != null:
+		brazier.extinguish()
 
 ## Ports Game.ts's private openChest: a chest grants exactly one upgrade, at
 ## or above its own tier — no player choice involved, unlike a room-clear

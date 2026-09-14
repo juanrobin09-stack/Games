@@ -80,6 +80,11 @@ const BRAZIER_FLAME_TEXTURES: Array[Texture2D] = [
 ## own "RÉSULTAT FINAL" composite, not a small flame lost inside the ring.
 const BRAZIER_FLAME_WIDTH_RATIO := 0.62
 const BRAZIER_FLAME_FPS := 10.0
+## How long a rest-room brazier's flame takes to die out once extinguish()
+## is called (LevelFlow.use_rest(), the moment its one-time heal is spent).
+## Shared with _update_light()'s own fade so the visible flame and its
+## glow die out together rather than the light lagging or leading it.
+const BRAZIER_EXTINGUISH_DURATION := 1.8
 
 var radius: float = 16.0
 var visual: Visual = Visual.ROCK
@@ -92,6 +97,11 @@ var facing: float = 0.0
 ## is met — LevelFlow.open_stairs() sets it true when a heart/boss room clears.
 var activated: bool = false
 var activated_at: float = -1.0
+## A rest-room brazier's one-time use — LevelFlow.use_rest() calls
+## extinguish() the moment the player draws on its warmth to heal, same
+## "stateful landmark flips once" shape as `activated` above.
+var extinguished: bool = false
+var extinguished_at: float = -1.0
 
 func setup(pos: Vector2, p_radius: float, p_visual: Visual, opts: Dictionary = {}) -> void:
 	position = pos
@@ -141,6 +151,13 @@ func activate() -> void:
 	activated_at = Time.get_ticks_msec() / 1000.0
 	queue_redraw()
 
+func extinguish() -> void:
+	if extinguished:
+		return
+	extinguished = true
+	extinguished_at = Time.get_ticks_msec() / 1000.0
+	queue_redraw()
+
 ## Ports Game.ts's registerLights() obstacle loop exactly, including its
 ## early-continue shape: an unlit obstacle (most visuals — see setup()'s
 ## default_lit) gets no light at all, stairsDown only lights once activated
@@ -163,6 +180,19 @@ func _update_light() -> void:
 		return
 	if visual == Visual.STAIRS_UP:
 		_set_light(glow, Vector2(cos(facing) * 34.0, sin(facing) * 34.0), 120.0, Palette.EMBER3, 0.35)
+		return
+	if visual == Visual.BRAZIER and extinguished:
+		var now: float = Time.get_ticks_msec() / 1000.0
+		var fade: float = 1.0 - clampf((now - extinguished_at) / BRAZIER_EXTINGUISH_DURATION, 0.0, 1.0)
+		if fade <= 0.0:
+			# The fade only ever runs once — done, so stop paying for it:
+			# `lit = false` makes every future call take the fast early-out
+			# at the top of this function instead of recomputing a clamped
+			# fade whose result is permanently 0.
+			lit = false
+			glow.enabled = false
+			return
+		_set_light(glow, Vector2(0.0, -8.0), 230.0, Palette.EMBER4, 1.05 * fade)
 		return
 	var color_hex: String = Palette.SOUL if visual == Visual.CRYSTAL else (Palette.FUNGUS if visual == Visual.FUNGUS else Palette.EMBER4)
 	# The brazier's own reference (the same spec sheet's in-game preview,
@@ -308,12 +338,22 @@ func _draw_brazier(now: float) -> void:
 	var sprite_h: float = sprite_w * (BRAZIER_RING_TEXTURE.get_height() / float(BRAZIER_RING_TEXTURE.get_width()))
 	draw_texture_rect(BRAZIER_RING_TEXTURE, Rect2(-sprite_w / 2.0, -sprite_h / 2.0, sprite_w, sprite_h), false)
 
+	# A rest room's one-time heal (LevelFlow.use_rest()) calls extinguish(),
+	# which fades this out rather than cutting it — the ring itself is
+	# already the unlit-coals art (see BRAZIER_RING_TEXTURE's own comment),
+	# so once flame_alpha reaches 0 what's left reads as a spent, cold
+	# brazier with no further change needed.
+	var flame_alpha: float = 1.0
+	if extinguished:
+		flame_alpha = 1.0 - clampf((now - extinguished_at) / BRAZIER_EXTINGUISH_DURATION, 0.0, 1.0)
+	if flame_alpha <= 0.0:
+		return
 	var frame_count := BRAZIER_FLAME_TEXTURES.size()
 	var frame_index: int = int(fmod(now * BRAZIER_FLAME_FPS + seed_value * 8.0, float(frame_count)))
 	var flame: Texture2D = BRAZIER_FLAME_TEXTURES[frame_index]
 	var flame_w: float = sprite_w * BRAZIER_FLAME_WIDTH_RATIO
 	var flame_h: float = flame_w * (flame.get_height() / float(flame.get_width()))
-	draw_texture_rect(flame, Rect2(-flame_w / 2.0, -flame_h / 2.0, flame_w, flame_h), false)
+	draw_texture_rect(flame, Rect2(-flame_w / 2.0, -flame_h / 2.0, flame_w, flame_h), false, Color(1.0, 1.0, 1.0, flame_alpha))
 
 func _draw_crystal(now: float) -> void:
 	var flick: float = 0.8 + sin(now * 2.0 + seed_value) * 0.2
