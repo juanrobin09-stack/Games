@@ -2995,3 +2995,63 @@ Verified with a temporary harness calling `extinguish()` directly on a
 close-up brazier and capturing three points on the fade (just lit, mid-
 fade, fully out) — flame and glow visibly dying down together, ending
 on plain unlit coals with the ambient floor-light pool gone.
+
+### Full texture/visual-asset sharpness audit (read-only, no assets changed)
+
+A systematic pass over every imported texture and every render-scale
+setting that could soften them, requested as a diagnostic-only task — no
+texture or code was modified as part of it, per the explicit instruction
+to leave anything already correct untouched. Full method: verify every
+PNG's actual pixel dimensions (fresh `PIL` scan, not assumed from memory),
+read every `.import` sidecar's defaults (`compress/mode=0` Lossless,
+`mipmaps/generate=false`, everywhere — nobody has ever customized one),
+and, for every texture drawn in world-space or UI-space, compute the real
+screen-pixels-per-texel ratio rather than just comparing native resolution
+to the `Rect2`/`custom_minimum_size` it's drawn into.
+
+That last step is what earlier informal looks at this project's textures
+would have missed: `entities/player.tscn`'s `Camera2D.zoom = Vector2(1.5,
+1.5)` means every world-space texture (floor, walls, brazier, shop stall)
+already renders 1.5x larger on screen than its own `Rect2` size in world
+units would suggest, and `window/stretch/mode="canvas_items"`
+(`project.godot`, base 1152x648, four 16:9 resolution presets up to
+2560x1440) stacks a further ×1.0–×2.222 on top of that for world textures,
+or ×0.85–×1.3 (the `text_scale` accessibility slider, applied as
+`CanvasLayer.scale` on the whole `$UI` node in `main.gd`'s
+`_apply_ui_scale()`) times that same ×1.0–×2.222 for HUD/menu textures.
+Neither multiplier shows up by just eyeballing a PNG's dimensions against
+the constant it's drawn at — both had to be read from `player.tscn`,
+`project.godot`, and `main.gd` and multiplied through by hand.
+
+The one finding worth calling out here (full numbers went to the user's
+report, not repeated in full in this file): `WALL_V_MAX_STRETCH` (this
+file's own `_draw_wall_v_tiled()`, above) caps its tiling decision purely
+in world-units-vs-texture-pixels, with no knowledge of `Camera2D.zoom` —
+so `wall_vertical.png`'s full-height, no-door segment (`795` native px
+over `620` world units, a comfortable `0.78x` by the cap's own math, needing
+no tiling) is actually shown at `~0.85` texel/screen-px once the camera's
+`×1.5` is accounted for, a real ~17% magnification already at the game's
+own base resolution, not just at a higher preset. Confirmed with a real
+headless screenshot (temporary harness in `main.gd`'s `_ready()`,
+teleporting the player to a room's undoored NW corner, `--resolution
+1152x648`, reverted immediately after, empty `git diff` confirmed) rather
+than trusted from the math alone — the same standard this file has held
+every other blur claim to. Visually subtle against the stone texture's own
+high-frequency detail, not the dramatic softness the original tiling fix
+(above, in this same function) was written to solve, but real and
+worth the same class of fix: making the cap aware of the actual on-screen
+scale instead of only the world-unit one.
+
+Every other texture in the project (brazier ring/flame, shop stall,
+title logo, button frames, all HUD bars/icons/gems at default settings)
+stays at or above native resolution across the resolutions/`text_scale`
+this project actually offers, with margins ranging from generous to a
+thin single-digit percent only at the single most extreme combination
+(2560x1440 + `text_scale` 1.3). VFX (`vfx/vfx_system.gd`,
+`vfx/vfx_presets.gd`) is 100% `GPUParticles2D` driven by runtime-built
+`GradientTexture2D`s, never a bitmap, so texture-scale blur is not
+structurally possible there; same for enemies/boss/minimap/player, all
+pure `_draw()`. No `WorldEnvironment` exists (no bloom/tonemap), no
+`[rendering]` AA/mipmap/filter overrides exist in `project.godot`, and
+`Camera2D`'s `position_smoothing` is off everywhere — none of those are a
+blur source here, confirmed rather than assumed.
