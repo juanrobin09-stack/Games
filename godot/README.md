@@ -3150,3 +3150,27 @@ in this file is held to (temporary harness in `main.gd`'s `_ready()`,
 `--resolution 1152x648`, reverted immediately after, empty `git diff`
 confirmed): all three bars render at their new, smaller size, properly
 aligned as a column, numbers still readable, no clipping.
+
+### ...then re-tuned to -25%, with the number labels shrinking too
+
+Immediate follow-up: the ~47% cut above read as too aggressive, and —
+the actual bug report — as shrinking everything *but* the bars
+themselves. Root cause: `_make_resource_bar_row()`'s number label
+(`"100/100"`, `"100"`, `"100"`) had its `font_size` theme override left
+at a fixed 12 through that whole pass, on a legibility worry, while
+every other piece of the row scaled off `RESOURCE_BAR_HEIGHT`. A fixed-
+size label sitting inside a visibly shrinking bar reads as "the bar
+didn't really shrink, only the icon/spacing around it did" — an
+optical mismatch, not a rendering bug, but a real one.
+
+Asked for explicitly this time: a smaller cut (25%, not 47%) and every
+single piece scaling together, no exceptions. `RESOURCE_BAR_HEIGHT` is
+now 22.5 (75% of the original 30.0, not 75% of the already-shrunk 16.0 —
+scaled from the original baseline both times, so the two passes don't
+compound), `ICON_SLOT_WIDTH` re-derived the same way as before (32.25,
+the widest icon's own rendered width at the new height), and — new this
+pass — `_make_resource_bar_row()`'s row separation (6→5) and its label's
+`font_size` (12→9) scale down too, plus `_build_top_left()`'s own
+separation between the three rows (11→8). Checked at 9px via the same
+real render this file holds every legibility claim to, rather than
+assumed: still readable.
