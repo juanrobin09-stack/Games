@@ -3743,3 +3743,76 @@ headless renders (idle and run for the transparency fix — no visible
 box against the floor texture anymore; two points in the attack swing
 for the weapon fix — one energy-slash, not two overlapping weapon
 shapes) plus a full game boot to confirm no regression elsewhere.
+
+### Round two: the character itself was still translucent, and the weapon still crossed the body
+
+The previous entry's own fix only addressed half of what "translucent
+box" turned out to mean, and left the weapon's real root cause
+untouched entirely — both reported again, directly, from actually
+playing. Worth being straightforward about why the first pass missed
+them: it screenshotted a handful of individual frames and looked at
+each one in isolation, which is exactly the wrong way to notice either
+bug — a translucent box needs a busy background to show against, not
+this project's own flat grey contact-sheet backing, and a weapon that
+only crosses the torso at *some* aim angles won't show it in a render
+that only ever tested facing left/right.
+
+**Opacity, properly this time.** The previous fix stopped disconnected
+background grain from leaking through (that part was real and stayed
+fixed), but it kept computing every pixel's alpha from that same pixel's
+own brightness — including pixels genuinely *inside* the character's
+own silhouette. A deep hood shadow, a dark cloak fold, the character's
+own black outline linework: all dim by nature, all legitimately part of
+the character, and all still rendered partially see-through as a
+result, since "dim" and "background" looked identical to a per-pixel
+brightness check. Confirmed numerically before changing anything: 41
+pixels inside one frame's own recognized silhouette had alpha < 200.
+A distance-based feather (opacity as a function of distance from the
+silhouette's outer edge, not of each pixel's own color) was tried next
+and rejected too — thin details like a 2px-wide outline stroke are
+never more than 1-2px from *some* edge even at their own center, so a
+feather of any real width still faded them, just for a different
+reason than before. Landed on the simplest thing that can't fail this
+requirement: a pure binary mask. Everything inside the (dilated,
+largest-connected-component) silhouette is alpha 255, full stop,
+regardless of how dark that specific pixel is; everything outside is
+alpha 0. Checked across all 24 frames after: zero pixels anywhere with
+an alpha value that isn't exactly 0 or 255. The dark outline that was
+fading before is now crisp and solid — a genuine improvement to how
+readable the silhouette is, not just a technical fix.
+
+**The weapon, structurally.** The real root cause, once actually
+traced rather than patched around: `_draw_weapon()`'s old transform
+translated every point by a fixed `arm_offset` *before* rotating the
+whole shape by `weapon_angle` — `(p + Vector2(arm_offset, 0)).rotated
+(weapon_angle)`. That means the grip itself, not just the blade tip,
+swings through a full circle around the character's center as
+weapon_angle changes. At `arm_offset = 10` (a small distance from
+center), that circle passes close enough to the body that aiming
+anywhere other than close to straight left/right visibly dragged the
+whole weapon — hand end included — across the torso. The previous
+round's mental model (only the blade end sweeps outward from a fixed
+hand) was simply wrong about what the old code did.
+
+Fixed two ways together, both necessary: (1) the transform now rotates
+each point *around the weapon's own local origin* (the grip's own
+center, where the shape's points are already defined relative to) and
+translates the *already-rotated* shape out to a fixed `HAND_OFFSET` —
+`p.rotated(weapon_angle) + hand_pos` — so the grip stays pinned to one
+spot on the body and only the blade swings; (2) `weapon_angle` itself
+is now clamped to `WEAPON_ANGLE_CLAMP` (70°) either side of the
+sprite's own current facing side (`_facing_left`, the same flip
+decision the body sprite uses, so the two always agree on which side
+the weapon lives), so even the pinned-grip version can't swing the
+blade past pointing back into the body. `HAND_OFFSET` itself was
+eyeballed off a real render rather than measured from an alpha-channel
+landmark the way e.g. the shop-stall collision ratios were — this
+sprite has no equivalent marker for exactly where the hand is — and
+nudged once after an initial pass showed the grip sitting slightly
+outside the body's edge instead of against it. Verified across 6 aim
+directions this time, not just 2: right, left, up, down, up-left,
+down-left — in every one the weapon stays on the correct side and
+swings through a bounded, natural-looking arc, never crossing the
+torso. Actual hit detection remains untouched (still entirely
+independent of what `_draw()` renders, as the previous round already
+established) — this is still a purely cosmetic, visual-layer fix.

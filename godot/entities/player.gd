@@ -104,6 +104,21 @@ const SPRITE_SCALE := 0.6
 ## normal animation weight-shift rather than misalignment.
 const SPRITE_Y_OFFSET := -8.0
 
+## Where the weapon's grip is pinned on the body (mirrored in x by
+## _draw()'s own facing check, so it's always on the sprite's facing
+## side), and how far weapon_angle may swing away from that facing
+## direction before being clamped — see _draw()'s own weapon-drawing
+## comment for why the clamp exists (it's the actual fix for the weapon
+## crossing through the torso, not the hand position by itself). Chosen
+## by rendering the idle silhouette and reading its rough edge/hip height
+## off the screenshot, then adjusted once more after an initial render
+## showed the grip sitting slightly outside the hand: not derived from
+## exact pixel measurements the way e.g. the shop-stall collision ratios
+## were, since this sprite has no equivalent alpha-channel "where exactly
+## is the hand" landmark to measure against.
+const HAND_OFFSET := Vector2(11.0, 5.0)
+const WEAPON_ANGLE_CLAMP := deg_to_rad(70.0)
+
 ## Built once in _ready() from the const frame arrays above — programmatic
 ## rather than a hand-authored SpriteFrames .tres, matching this project's
 ## existing "build via code, not the editor" convention for anything this
@@ -699,14 +714,31 @@ func _draw() -> void:
 	# art, so it's the only visual cue for which weapon is equipped
 	# outside of combat.
 	if w != null and not is_attacking:
-		var weapon_angle: float = draw_facing
-		var arm_offset := 10.0
+		# The grip stays pinned to a fixed hand position on the body (mirrored
+		# with the sprite's own flip_h so it's always on the facing side, see
+		# HAND_OFFSET below), and only the blade's own direction rotates
+		# around that fixed point — not, as before, the grip itself orbiting
+		# the character's center. That old model was the actual bug behind
+		# "the weapon crosses through the body": at an arm_offset of only 10
+		# units, the grip end sat close enough to center that swinging
+		# weapon_angle through its full continuous range (this still tracks
+		# the mouse continuously, unlike the body which only flips) carried
+		# the whole weapon — including the hand end — across the torso
+		# whenever the player aimed anywhere other than straight left/right.
+		# Clamping weapon_angle to a bounded arc around the facing side
+		# fixes it structurally: the blade can swing up/down somewhat for
+		# aim feedback, but never past pointing "into" the body.
+		var base_angle: float = PI if _facing_left else 0.0
+		var angle_delta: float = clampf(wrapf(draw_facing - base_angle, -PI, PI), -WEAPON_ANGLE_CLAMP, WEAPON_ANGLE_CLAMP)
+		var weapon_angle: float = base_angle + angle_delta
+		var hand_pos := Vector2(-HAND_OFFSET.x, HAND_OFFSET.y) if _facing_left else HAND_OFFSET
 		# Melee blade length is derived from the weapon's actual (stat-scaled) range so the
-		# sprite always reaches exactly as far as the hitbox does — armOffset (above) and the
-		# blade tip's own +4 extension (_draw_weapon's path) are both part of that total reach.
-		var melee_length: float = maxf(20.0, w.range * stats.range_mult - arm_offset - 4.0)
+		# sprite always reaches exactly as far as the hitbox does — the hand's own distance
+		# from center (HAND_OFFSET) and the blade tip's own +4 extension (_draw_weapon's
+		# path) are both part of that total reach.
+		var melee_length: float = maxf(20.0, w.range * stats.range_mult - HAND_OFFSET.x - 4.0)
 		var weapon_length: float = melee_length if w.kind == WeaponDefinition.Kind.MELEE else 40.0
-		_draw_weapon(w, weapon_length, weapon_angle, arm_offset, death_angle, death_alpha)
+		_draw_weapon(w, weapon_length, weapon_angle, hand_pos, death_angle, death_alpha)
 
 	if is_invulnerable() and alive and not is_dodging:
 		var ring_pts := PackedVector2Array()
@@ -718,15 +750,20 @@ func _draw() -> void:
 		ring_color.a = 0.6 * ring_pulse
 		draw_polyline(ring_pts, ring_color, 1.5, true)
 
-## Ports drawPlayer.ts's local drawWeapon() helper. `weapon_angle`/`arm_offset`
-## are the arm's own rotate/translate: the source calls `ctx.rotate(weaponAngle)`
-## then `ctx.translate(armOffset, 0)`, so — per the reverse-of-call-order
-## composition this whole file follows — a raw point is translated first,
-## then rotated, before the on-death fall-over rotation (identity while
-## alive) is applied last via _weapon_xf. No bob/squash anymore — see this
-## function's caller (_draw()) for why: that motion lives in the sprite's
-## own animation frames now, not a separately-computed offset here.
-func _draw_weapon(w: WeaponDefinition, length: float, weapon_angle: float, arm_offset: float, death_angle: float, death_alpha: float) -> void:
+## Ports drawPlayer.ts's local drawWeapon() helper, with the grip's own
+## anchor point now pinned to a fixed spot on the body (`hand_pos`) instead
+## of orbiting the character's center with `weapon_angle`. Every point is
+## defined in the weapon's own local space with (0,0) at the middle of the
+## grip (see grip_raw below, spanning roughly x=[-6,6]) — rotating around
+## that local origin first, then translating the whole already-rotated
+## shape out to hand_pos, is what keeps the grip end sitting still in the
+## hand while only the blade swings through weapon_angle's arc. (The old
+## version translated by arm_offset *before* rotating, which moved the
+## grip itself through a wide circle around the body as weapon_angle
+## changed — that, not the blade's length, was what let it cross the
+## torso.) The on-death fall-over rotation (identity while alive) is
+## applied last via _weapon_xf, same as before.
+func _draw_weapon(w: WeaponDefinition, length: float, weapon_angle: float, hand_pos: Vector2, death_angle: float, death_alpha: float) -> void:
 	if w.kind == WeaponDefinition.Kind.MELEE:
 		var width: float = 9.0 if w.id == "voidScythe" else 6.0
 		var curve: float = 0.55 if w.id == "voidScythe" else 0.15
@@ -751,7 +788,7 @@ func _draw_weapon(w: WeaponDefinition, length: float, weapon_angle: float, arm_o
 			raw.append(raw_seg2[i])
 		var blade_pts := PackedVector2Array()
 		for p in raw:
-			blade_pts.append(_weapon_xf((p + Vector2(arm_offset, 0.0)).rotated(weapon_angle), death_angle))
+			blade_pts.append(_weapon_xf(p.rotated(weapon_angle) + hand_pos, death_angle))
 		# 3-stop gradient (bg3 -> weapon color -> near-white) simplified to
 		# the weapon's own (middle, most identity-defining) flat color.
 		var blade_color := Color(w.color)
@@ -761,7 +798,7 @@ func _draw_weapon(w: WeaponDefinition, length: float, weapon_angle: float, arm_o
 		var grip_raw := PackedVector2Array([Vector2(-6.0, -3.0), Vector2(6.0, -3.0), Vector2(6.0, 3.0), Vector2(-6.0, 3.0)])
 		var grip_pts := PackedVector2Array()
 		for p in grip_raw:
-			grip_pts.append(_weapon_xf((p + Vector2(arm_offset, 0.0)).rotated(weapon_angle), death_angle))
+			grip_pts.append(_weapon_xf(p.rotated(weapon_angle) + hand_pos, death_angle))
 		var grip_color := Color(Palette.BG2)
 		grip_color.a = death_alpha
 		draw_colored_polygon(grip_pts, grip_color)
@@ -769,7 +806,7 @@ func _draw_weapon(w: WeaponDefinition, length: float, weapon_angle: float, arm_o
 		var head_raw := PackedVector2Array([Vector2(4.0, 0.0), Vector2(length - 14.0, -4.0), Vector2(length, 0.0), Vector2(length - 14.0, 4.0)])
 		var head_pts := PackedVector2Array()
 		for p in head_raw:
-			head_pts.append(_weapon_xf((p + Vector2(arm_offset, 0.0)).rotated(weapon_angle), death_angle))
+			head_pts.append(_weapon_xf(p.rotated(weapon_angle) + hand_pos, death_angle))
 		# Gradient (bg3 -> weapon color) simplified to its midpoint tone.
 		var head_color: Color = DrawUtils.lerp_color_hex(Palette.BG3, w.color, 0.5)
 		head_color.a = death_alpha
@@ -778,7 +815,7 @@ func _draw_weapon(w: WeaponDefinition, length: float, weapon_angle: float, arm_o
 		var grip_raw := PackedVector2Array([Vector2(-4.0, -2.5), Vector2(6.0, -2.5), Vector2(6.0, 2.5), Vector2(-4.0, 2.5)])
 		var grip_pts := PackedVector2Array()
 		for p in grip_raw:
-			grip_pts.append(_weapon_xf((p + Vector2(arm_offset, 0.0)).rotated(weapon_angle), death_angle))
+			grip_pts.append(_weapon_xf(p.rotated(weapon_angle) + hand_pos, death_angle))
 		var grip_color := Color(Palette.BG2)
 		grip_color.a = death_alpha
 		draw_colored_polygon(grip_pts, grip_color)
@@ -786,9 +823,9 @@ func _draw_weapon(w: WeaponDefinition, length: float, weapon_angle: float, arm_o
 	# Small ember glow at the guard, same light the chest carries reaching
 	# out to the hand that bears it. draw_glow_circle takes one plain
 	# center point with no per-point transform hook, so — same workaround
-	# every other glow center in this file uses — the arm_offset/rotate/
+	# every other glow center in this file uses — the rotate/translate/
 	# _weapon_xf chain above is replayed manually just for this one point.
-	var hilt_center := (Vector2(arm_offset - 2.0, 0.0)).rotated(weapon_angle)
+	var hilt_center := Vector2(-2.0, 0.0).rotated(weapon_angle) + hand_pos
 	hilt_center = _weapon_xf(hilt_center, death_angle)
 	DrawUtils.draw_glow_circle(self, hilt_center.x, hilt_center.y, 4.0, Palette.EMBER5, 0.85 * death_alpha)
 
