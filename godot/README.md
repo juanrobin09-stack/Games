@@ -3554,3 +3554,124 @@ don't deform, not just that they look fine at a glance — before
 calling any part of this done. The real game scene was also booted
 once after all four migrations to confirm the project still compiles
 and boots clean end to end, not just each screen in isolation.
+
+### Real character art for the player, replacing the procedural body
+
+The ask, in two parts: a reference image supplied via GitHub (a
+character style sheet — portrait, 4 turnaround views, and 5 six-frame
+animation cycles: Idle/Marche/Course/Attaque/Saut — on a near-black
+background), and, once it became clear the old rendering's continuous
+360°-toward-the-mouse rotation is fundamentally incompatible with an
+illustrated 2D sprite (spinning a painted character through arbitrary
+angles the way the old vector silhouette rotated would look broken —
+raised directly before starting, not discovered partway through), a
+choice among four integration levels from "static sprite, no rotation"
+up to "full animation system." The answer: build the full system —
+real `AnimatedSprite2D` idle/run/attack/dodge cycles replacing the
+body/cape/head entirely, accepting flip-left-right instead of
+continuous rotation as the necessary tradeoff of using real
+illustrated art at all.
+
+**Extracting 24 frames from one style sheet.** The reference isn't a
+grid-aligned spritesheet — it's concept art with portrait, turnaround,
+and animation sections arranged at different sizes with text labels
+between them. Row Y-bands came from a brightness column-profile scan
+(a `is_fg(x,y)` threshold, counting foreground pixels per row to find
+the gaps between sections); per-row frame X-clusters came from the
+same technique run horizontally within each band, which turned up 7
+clusters per row instead of the expected 6 — cluster 1 turned out to
+be the row's own text label ("Idle", "Attaque", ...), sitting to the
+frames' left, not a 7th frame. Each of the resulting 24 tight
+bounding boxes was then alpha-matted off the near-black background
+with a soft brightness ramp (fully transparent at sum-of-channels ≤25,
+fully opaque ≥55, linear between) rather than a hard cutoff — found by
+sampling the darkest pixels inside one frame's own bbox and histogram-
+ming them: background pixels cluster hard below 30, real (dark-
+shadowed) character material picks back up past a ~40-50 valley, and
+a hard threshold anywhere in between would have either left a ring of
+background haze or eaten into genuine shadow detail. A hard 0/1 cutoff
+was tried first and rejected on inspection (jagged, aliased edges); the
+soft ramp keeps the anti-aliasing the source art already has.
+
+**Which rows got used.** Only 4 of the reference's 5 animation rows:
+`AnimState` only distinguishes IDLE and RUN (no walk/run speed split),
+so "Marche" (walk) has nothing to map to and was left unused rather
+than forcing a distinction the state machine doesn't make. "Saut"
+(jump) became the "dodge" animation instead — this is a top-down game
+with no vertical jump, and a leaping/rolling pose is the closest real
+match to what a dodge roll actually is. HIT and DEAD, which never had
+dedicated frames in the reference either, fall back to the idle
+animation with a modulate tint layered on top (hit: a brief red flash;
+dead: fade + fall-over rotation) instead of freezing on an arbitrary
+mid-animation frame.
+
+**Body vs. weapon: two different answers to the same rotation
+problem.** The body moved fully onto the sprite, flipped (`flip_h`)
+left/right instead of rotated — the standard technique for an
+illustrated top-down character, and the only one that doesn't visibly
+break this art style. The weapon stayed exactly where it was: a small
+procedural shape (`_draw_weapon()`, unchanged in what it draws, only
+in what transforms feed it) that keeps rotating continuously toward
+`weapon_angle`, because a thin procedural blade/staff spun to an
+arbitrary angle reads fine — it's not an illustrated silhouette — and
+this is the one piece of the old continuous-aim feedback that can
+survive the sprite swap unchanged. `bob`/`squash` (the old idle-
+breathing/run-bob/dodge-squash offsets `_body_xf` used to apply to
+every body point) were dropped from the weapon call entirely rather
+than kept: that motion now lives baked into the sprite's own animation
+frames, and layering the old separately-computed sine bob on top would
+have fought it rather than matched it. `_body_xf` itself, with nothing
+left calling it, was deleted; `_draw()` now only draws what was never
+"the body" to begin with — the ground shadow, the weapon+arm, and the
+invulnerability ring.
+
+**Scale and alignment, calibrated once against Idle.**
+`SPRITE_SCALE := 0.6` (native ~88px-tall idle frames -> ~53 world
+units, a touch taller than the old ~40-50 unit silhouette — real
+painted art needs a bit more presence at this camera's 1.5x zoom to
+read as clearly as a thin vector outline did) and
+`SPRITE_Y_OFFSET := -8.0` (shifts the sprite up from this node's local
+origin so idle's feet land near the shadow, which stayed exactly where
+it always was) are both plain constants, not derived — `AnimatedSprite2D`
+has no per-frame pivot, so exact per-animation foot alignment isn't
+achievable with one offset anyway; run/attack/dodge frames differ from
+idle's own height by a few px each, which reads as ordinary animation
+weight-shift rather than misalignment once actually on screen.
+
+**Verification, and two test-harness bugs it caught before they could
+be mistaken for real bugs.** A temporary harness instantiated the real
+`main.tscn`, called `_begin_run()` directly (skipping the main menu),
+then drove `move_input`/`facing`/`anim_state` on the live player
+directly rather than faking physical key input — same "drive state
+directly for a deterministic test" technique this README's own shop-
+collision entry used earlier. First attempt: a `run` and a `run_left`
+render came back visually identical. Root cause was the harness, not
+the sprite: `_read_input()` (real physical-key/mouse state, always
+empty in this headless run) resets `move_input`/`facing` back to
+idle/zero on *every* physics tick regardless of what the test had just
+set, so a one-shot override before a multi-frame wait doesn't hold.
+Fixed by setting `is_transitioning = true` for these two cases
+specifically — it skips `_read_input()`/`_update_state()` entirely
+(see `_physics_process`), freezing the manual override in place, while
+`_update_sprite_animation()` (deliberately placed outside that guard)
+keeps running every frame regardless and reacts to it correctly.
+Second bug, same session: `attack`/`dodge`/`hit` renders all came back
+showing idle. Root cause here was real elapsed time, not a state bug —
+each software-rendered (llvmpipe) frame costs real wall-clock time, and
+a fixed 20-frame wait added up to more real time than attack's ~0.3s
+swing or dodge's 0.22s duration, so both had already finished and
+reverted to idle before the screenshot was taken. Fixed by waiting on
+`Time.get_ticks_msec()` against a real millisecond budget (120ms for
+attack/dodge, matched against the sprite's own reported `.animation`/
+`.frame` printed alongside each render to confirm which frame was
+actually showing) instead of a frame count blind to how long each
+frame really took. With both fixed: idle, run (both flip directions),
+attack (verified at two points in the swing — an early transitional
+frame and the dramatic wide-slash frame further into it), dodge (with
+its existing dodge-trail VFX still firing correctly alongside it), hit
+(red tint plus the pre-existing invulnerability ring, both correctly
+layered on the new silhouette), and dead (fade + fall-over rotation,
+applied consistently to both the sprite and the still-procedural
+weapon) were all rendered and inspected before calling this done. The
+real game was also booted end-to-end once more after the full change
+to confirm no regression outside the player itself.
