@@ -687,19 +687,19 @@ func _draw() -> void:
 	# source's player.weapon getter has to account for, but skipping the
 	# arm/weapon silhouette entirely is the safe fallback here rather than
 	# guessing at a placeholder weapon.)
-	if w != null:
+	#
+	# Skipped entirely while is_attacking: the reference art's own attack
+	# frames already carry a dramatic weapon-equivalent energy-slash
+	# effect, so drawing this procedural blade on top during the swing
+	# read as two overlapping weapons rather than one — reported directly
+	# against real gameplay, not caught by this project's own renders
+	# (which only ever screenshotted one swing frame at a time, not the
+	# full sequence next to the sprite's own effect). Idle/run/dodge still
+	# draw it normally: those sprite frames don't carry their own weapon
+	# art, so it's the only visual cue for which weapon is equipped
+	# outside of combat.
+	if w != null and not is_attacking:
 		var weapon_angle: float = draw_facing
-		if is_attacking:
-			var swing_duration: float = minf(0.32, attack_cooldown_duration() * 0.85)
-			var swing_progress: float = minf(1.0, attack_anim_timer / swing_duration)
-			# `?? 90` in the source: arc_degrees is 0.0 (unset) on both
-			# ranged weapons' resources, same as an absent field in TS —
-			# same fallback idiom enemy_ai.gd already uses for other
-			# optional EnemyDefinition floats (e.g. vanish_duration).
-			var arc_degrees: float = w.arc_degrees if w.arc_degrees > 0.0 else 90.0
-			var arc: float = arc_degrees * PI / 180.0
-			var swing_angle: float = -arc / 2.0 + arc * _ease_out_cubic(swing_progress)
-			weapon_angle = draw_facing + swing_angle
 		var arm_offset := 10.0
 		# Melee blade length is derived from the weapon's actual (stat-scaled) range so the
 		# sprite always reaches exactly as far as the hitbox does — armOffset (above) and the

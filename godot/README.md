@@ -3675,3 +3675,71 @@ applied consistently to both the sprite and the still-procedural
 weapon) were all rendered and inspected before calling this done. The
 real game was also booted end-to-end once more after the full change
 to confirm no regression outside the player itself.
+
+### Two real bugs from actually playing it: a translucent box, a double weapon
+
+Reported directly after the character-art change above shipped: a
+faint translucent rectangle visible around the player while moving,
+and — separately — the weapon showing twice during an attack (the
+sprite's own energy-slash plus the still-procedural blade on top of
+it). Neither showed up in this project's own renders, which is worth
+naming honestly: every earlier check screenshotted one still frame at
+a time against the game's own dark floor, at which point a faint box
+and an extra weapon silhouette both read as "a bit busy," not as
+obviously wrong. Playing it moving, continuously, is what made both
+legible as bugs.
+
+**The translucent box.** Root cause: the alpha-matting threshold from
+the original extraction (soft ramp, fully transparent ≤25, fully
+opaque ≥55, sum of R+G+B) was calibrated against a couple of sampled
+"background" pixels that happened to read low — but a proper
+histogram of an actual frame's corner pixels (deliberately far from
+any character content) showed the source image's real background
+level sitting at sum ≈27-34, squarely inside that "still partly
+visible" 25-55 ramp instead of below it. Every one of the 24 frames'
+"empty" corners was therefore carrying a small but real non-zero
+alpha across its *whole* rectangular canvas — invisible against this
+project's own flat-grey contact-sheet backgrounds, but a visible box
+once actually composited over the game's own busier floor texture,
+worst while the frame size (and so the visible box) changes shape
+during the run cycle. Confirmed numerically before touching anything:
+181 of the 256 pixels in one frame's 8px corners came back with alpha
+> 0.
+Fixed with a more robust technique than "raise the threshold and
+hope," since a pure per-pixel brightness cutoff can't distinguish
+genuine background grain from a real, similarly-dim silhouette edge:
+for each frame, a strict "confident foreground" mask (sum > 65) goes
+through `scipy.ndimage.label` to find connected components, keeps only
+the *largest* one (the actual character — isolated background specks
+never get connected to it), dilates that mask by 3px so the character's
+own soft anti-aliased edge halo (which sits below the confident
+threshold) is still included, and *only* applies the brightness ramp
+inside that dilated region — everywhere else is forced to alpha=0
+regardless of what its own brightness happens to be. Re-checked the
+same corner-pixel count after: 0 of 256, from 181. The visible
+difference on a real contact sheet was corners going from a faint
+grey cast to genuinely transparent, silhouette edges unchanged.
+
+**The double weapon.** Root cause was a known, named tradeoff from
+this feature's own design (see the entry above: "keeps rotating
+continuously... because a thin procedural blade... reads fine") that
+turned out wrong specifically for the attack swing: the reference
+art's own attack frames already carry a dramatic energy-slash effect
+standing in for the weapon, so drawing the small procedural blade on
+top of it during the 6-frame swing didn't read as "weapon effect
+reinforced," it read as two overlapping weapons. Fixed narrowly —
+`_draw_weapon()` is now skipped entirely while `is_attacking` is true
+(idle/run/dodge still draw it normally, since those sprite frames
+don't carry any weapon art of their own and it's the only cue for
+which weapon is equipped outside combat) — rather than reopening the
+whole rotate-vs-flip design. Actual hit detection
+(`CombatManager.perform_melee_attack`) was already fully decoupled
+from what `_draw()` renders (fires instantly at swing start off the
+weapon's own `range`/`arc_degrees`, not off any drawn shape), so this
+is a purely cosmetic change with no gameplay-logic risk.
+
+Both fixes re-verified the same way as the original feature: real
+headless renders (idle and run for the transparency fix — no visible
+box against the floor texture anymore; two points in the attack swing
+for the weapon fix — one energy-slash, not two overlapping weapon
+shapes) plus a full game boot to confirm no regression elsewhere.
