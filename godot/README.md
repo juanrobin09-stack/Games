@@ -3816,3 +3816,121 @@ swings through a bounded, natural-looking arc, never crossing the
 torso. Actual hit detection remains untouched (still entirely
 independent of what `_draw()` renders, as the previous round already
 established) — this is still a purely cosmetic, visual-layer fix.
+
+### Round three: a full methodical audit, after two rounds of fixes that each verified a narrower claim than what was actually broken
+
+Reported again — still transparency, still a body that loses pieces
+mid-run, plus "blinking" somehow made it worse — with an explicit
+instruction to stop patching symptoms one screenshot at a time and
+instead audit the whole rendering path before touching anything, verify
+every one of the 24 frames individually (not just whichever one a quick
+render happened to catch), and only then fix, in a fixed order, testing
+after each step rather than bundling several changes into one pass. Fair:
+both previous rounds really had each verified a claim narrower than the
+actual bug — "background doesn't leak" without checking "is everything
+that should be opaque actually opaque," "the grip doesn't orbit the body"
+without checking "does the blade still clear the torso at every aim
+angle, not just the ones tested."
+
+**The audit, before any fix.** Confirmed from a fresh read of
+`player.gd` and `player.tscn`: one `AnimatedSprite2D`, no shader, no
+material, no extra z_index or modulate logic beyond the hit-flash/death
+tint already documented above, and — importantly — no blink system of
+any kind anywhere in the codebase. Whatever was reading as "blinking"
+had to be a property of the source frames themselves, not of any
+runtime logic modifying them.
+
+**The actual root cause, found by re-running the previous rounds' own
+extraction step and inspecting what it discards, not just what it
+keeps.** Both previous rounds' alpha extraction kept only the single
+*largest* connected bright region per frame (`ndimage.label`, then the
+one component with the most pixels) — added in round two specifically
+to reject stray background grain. It also, silently, rejected anything
+else: a leg, a hand, a foot, or the eyes, whenever a shadow gap at the
+`brightness > 65` core threshold happened to separate that part from
+the main torso/head blob, which turns out to happen constantly in this
+character's own shading. Measured directly before changing anything:
+across all 24 frames, the "largest only" rule discarded up to 51% of a
+frame's real character content (worst cases: `idle_0` kept 56% of
+itself, `dodge_1` 51%, `dodge_2` 50%, `dodge_4` 49%). A color-coded
+render of every kept-vs-discarded component made it unambiguous rather
+than just numeric — `idle_0` was discarding an entire leg, a hand, a
+foot, *and* both eyes as four separate "smaller" components; `dodge_2`
+was discarding a 963px chunk (the cape and lower body) against a
+1003px chunk that happened to be marginally larger and so got kept
+alone. One mechanism, three symptoms the user had reported as if
+unrelated: general transparency (a discarded limb reads as "see
+through" against a busy floor texture), a body that loses pieces
+specifically during running (the run poses' own shading splits legs
+from torso more often than idle does), and "blinking" (`idle_0`, the
+frame most often on screen at rest, was the single worst-hit frame and
+had *both* eyes among its discarded components — nothing was ever
+animating the eyes; the frame that happened to be showing just kept
+losing them).
+
+**The fix.** Widened the retention rule from "keep only the single
+largest component" to "keep every component at or above a 5px floor,"
+discarding only genuine 1-4px noise specks — everything else the core
+threshold finds gets to stay, connected to the main silhouette or not.
+`CORE_THRESH` itself (the value that separates real content from real
+background, and the actual fix for round two's leak) was left
+untouched, and rechecked explicitly for this reason: widening what
+counts as "keep" could in principle reopen the background-leak bug if
+it let background grain back in, but background grain sits at
+brightness ~27-34 in this source image, comfortably below the
+`CORE_THRESH = 65` gate regardless of the component-size rule sitting
+downstream of it — the two checks are independent, and only one of
+them changed. Re-measured after: 99.4-100% of character area retained
+across all 24 frames (worst case now `attack_2` at 99.4%, everything
+else effectively 100%).
+
+**Verified, per the mandated order, before moving past each step.**
+Every one of the 24 corrected frames individually, both as raw
+extracted PNGs on a checkerboard backing and — separately, since the
+raw PNG is not what the game actually shows — rendered in-game through
+the real pipeline (`AnimatedSprite2D` scaled and offset exactly as
+`player.gd` configures it, composited against the floor texture and
+this scene's own lighting) via a temporary debug harness that force-set
+each animation's `AnimatedSprite2D.frame` directly (0 through 5, one
+screenshot each) rather than waiting on the timer-driven playback,
+so every capture is an exact, deterministic frame rather than
+whatever the animation clock happened to land on. All 6 idle, all 6
+run, all 6 attack, and all 6 dodge frames confirmed complete and fully
+opaque, with legs, feet, arms, head, and (where the pose shows them)
+both eyes present in every single one — including specifically the run
+frames, the animation originally reported as losing its lower body.
+`idle_0` — the frame identified above as the worst-hit and the one
+most likely behind the "blinking" report — now renders with both eyes
+and the previously-discarded leg/hand/foot intact, at the same full
+opacity as the rest of the frame; there being no blink system to begin
+with (confirmed in the audit step), this closes that report as the
+same bug as the general transparency one, not a separate fix.
+
+Two more checks the mandated order specifically called out, run against
+the *source* spritesheet rather than the extracted frames, since a
+"the frame looks fine" render doesn't by itself rule out "the crop box
+around that frame was too tight and lost something anyway": (1) whether
+any frame's kept silhouette touches its own crop-box edge — every frame
+does, on at least one side, but a wide margin scan around each
+box (using `CORE_THRESH` against the source image directly, not the
+already-cropped frame) confirms that's dilation from the 3px alpha-mask
+grow step reaching the edge of an already-generously-drawn box, not
+lost content: re-run within a Y-band constrained to each animation
+row's own vertical span specifically to keep the check from bridging
+into a neighboring row (the gap between the run and attack rows is
+only 28px, and an unconstrained version of this same check initially
+produced false positives by doing exactly that), the real content of
+every single one of the 24 poses sits entirely inside its existing
+crop box with margin to spare on every side; (2) the weapon fix from
+the previous round, re-checked against the *new* frames specifically
+rather than assumed to still hold — rendered at four aim directions
+(right, left, up, down) on the corrected art, grip pinned to the hand
+and the blade clearing the torso at every one, same as before the
+opacity fix and for the same structural reason (the fix is independent
+of what the sprite frames contain).
+
+Deliberately unchanged: art direction, palette, proportions, the
+already-correct idle/run/attack/dodge pose timing, and every non-visual
+system (movement, combat, input) — this round, like the previous two,
+is exclusively about what `_update_sprite_animation()` and the 24 PNGs
+it plays put on screen.
