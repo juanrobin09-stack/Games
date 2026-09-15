@@ -4,3 +4,11 @@
 
 # Godot-generated import artifacts (regenerated automatically on open)
 *.import
+
+# *.uid files (Godot 4.4+) are deliberately NOT ignored here and should stay
+# committed — see README.md's own entry for why. They're stable per-script
+# identifiers, not a machine-local cache like .godot/ or *.import above; an
+# editor newer than this project's own 4.3 baseline needs them to resolve
+# every class_name reference on first open without a project-wide mass
+# first-time generation pass (which is what the README entry documents
+# actually going wrong for this project specifically).

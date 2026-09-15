@@ -3934,3 +3934,57 @@ already-correct idle/run/attack/dodge pose timing, and every non-visual
 system (movement, combat, input) — this round, like the previous two,
 is exclusively about what `_update_sprite_animation()` and the 24 PNGs
 it plays put on screen.
+
+### `*.uid` files committed — a local editor failing to open the project at all, unrelated to any of the rendering work above
+
+Reported separately from the sprite rounds: a fresh local checkout on
+Godot 4.7 showed a Script panel error, `Parser Error: Could not parse
+global class "RoomContainer" from "res://world/room_container.gd"`,
+cascading into every other script typed against it (`run_state.gd`'s
+own `-> RoomContainer` return type included) — the project wouldn't
+open cleanly at all, before any of this session's own sprite changes
+even come into it. Survived a full quit-and-relaunch of the editor, so
+not the routine "just reload the project" cache hiccup that error
+usually is.
+
+**Root cause, not a bug in any of this project's own script content.**
+This project has been built and tested exclusively against Godot 4.3
+throughout (`project.godot`'s own `config/features` says so), which
+predates Godot's per-script `*.uid` sidecar-file system entirely —
+4.4 added it. Opening a pre-4.4 project in 4.4+ for the first time
+makes the editor generate a `.uid` file next to every single `.gd`
+script as part of its own first project-wide scan, and — confirmed
+against the engine's own current guidance, not assumed — those files
+are meant to be committed to version control like any other project
+file, not treated as a regenerable cache the way `.godot/` and
+`*.import` are: skip committing them and every fresh clone regenerates
+its own fresh set independently, and a first-time mass-generation pass
+across 70+ interdependent `class_name` scripts (this project's own
+count) is exactly the situation multiple upstream Godot issues
+describe as prone to a transient, sometimes non-deterministic global-
+class-cache race — which is consistent both with the error reproducing
+on the reporting machine and with two independent verification passes
+here (Godot 4.3 headless, and a freshly downloaded Godot 4.7 headless)
+never once reproducing it themselves: the underlying script content
+was never the problem, only ever the absence of the files that let a
+newer editor skip that first-time scan altogether.
+
+**Fix.** Ran a full Godot 4.7 project scan here specifically to
+generate the missing file for every one of this project's 72 `.gd`
+scripts, verified they're stable (byte-identical across a second,
+independent open rather than regenerated each time), and committed all
+72 — plus a `.gitignore` comment explaining why they're deliberately
+*not* ignored alongside `.godot/`/`*.import` just above that entry,
+since at a glance they look like the same kind of regenerable artifact
+and aren't. Re-verified clean afterward under both engines (4.3 and
+4.7 headless, project boot in both, no parse errors either way) — this
+doesn't change what version the project targets going forward, only
+removes the specific first-open failure mode for whoever's on a newer
+editor than this project's own 4.3 baseline. `project.godot` itself is
+deliberately untouched: opening it under 4.7 the same session rewrote
+several unrelated fields (dropped the declared viewport size/aspect
+and `rendering_method` entries, bumped `config/features` to "4.7") as
+a side effect of the specific headless CLI flags this verification
+used to force a software-rendering context — reverted both times
+rather than kept, since neither is part of this fix and nothing here
+is the right place to decide this project's minimum-version baseline.
