@@ -119,6 +119,14 @@ const SPRITE_Y_OFFSET := -8.0
 const HAND_OFFSET := Vector2(11.0, 5.0)
 const WEAPON_ANGLE_CLAMP := deg_to_rad(70.0)
 
+## Temporarily disabled while the character sprite itself is still being
+## debugged (lower body / silhouette issues reported directly from real
+## gameplay) — the weapon attachment is a separate, already-solved problem
+## and re-verifying it against a still-changing character silhouette would
+## waste effort twice over. Flip back to true once the character is signed
+## off; nothing else about the weapon code below needs to change.
+const DRAW_WEAPON := false
+
 ## Built once in _ready() from the const frame arrays above — programmatic
 ## rather than a hand-authored SpriteFrames .tres, matching this project's
 ## existing "build via code, not the editor" convention for anything this
@@ -713,7 +721,7 @@ func _draw() -> void:
 	# draw it normally: those sprite frames don't carry their own weapon
 	# art, so it's the only visual cue for which weapon is equipped
 	# outside of combat.
-	if w != null and not is_attacking:
+	if DRAW_WEAPON and w != null and not is_attacking:
 		# The grip stays pinned to a fixed hand position on the body (mirrored
 		# with the sprite's own flip_h so it's always on the facing side, see
 		# HAND_OFFSET below), and only the blade's own direction rotates
