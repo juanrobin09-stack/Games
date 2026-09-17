@@ -63,22 +63,24 @@ const IDLE_FRAMES: Array[Texture2D] = [
 	preload("res://assets/textures/player_idle_5.png"),
 ]
 ## The "idle" *animation* plays only this subset of IDLE_FRAMES, not all six —
-## diagnosed directly from a real gameplay recording reported as "the leg
-## disappears": idle_2 and idle_5 are genuine, correctly-extracted frames
-## (verified pixel-complete, nothing missing or corrupted — see the README's
-## own entry for this round), but the reference art draws them as a single
-## foot stepping forward, narrowing the silhouette's own base from ~45px
-## wide (every other idle frame) to ~20px. Looping all 6 at 6fps flashes
-## that narrow pose for one frame out of six, twice a cycle, which reads as
-## the leg popping in and out rather than as a weight shift — there's no
-## seventh in-between frame this reference sheet provides to smooth it, so
-## dropping the two outliers (not retiming or reordering them, which would
-## still cut just as abruptly, only later) is what actually removes the
-## effect rather than just spacing it out. IDLE_FRAMES itself stays all six,
-## matching the source sheet 1:1, since some other frame or feature might
-## want idle_2/5 later (a "shift weight" tell on a longer idle timer, say).
+## diagnosed directly from a real gameplay recording reported as "the opposite
+## side disappears" (see the README's own entries for this round; the first
+## pass here only found and fixed part of it). idle_1/3/4 are the only three
+## of the six that draw a consistent pose: same wide two-legged stance, and
+## the same small reduced wisp of cape visible past the right hip. The other
+## three each break that consistency in a different way — idle_0 is the only
+## frame with a *full* cape on the right side (not reduced, not absent);
+## idle_2 and idle_5 both narrow the stance to a single stepping foot AND
+## reduce the right-side cape to almost nothing. Looping in any combination
+## that includes idle_0 still flashes a full right-side cape on top of three
+## frames that don't have one, once a cycle — the first pass here dropped
+## idle_2/5 for the leg-width symptom but kept idle_0, so that flash (the
+## actual dominant complaint) survived untouched. idle_1/3/4 alone removes
+## every version of the pop at once. IDLE_FRAMES itself stays all six,
+## matching the source sheet 1:1, in case idle_0/2/5 are useful later for
+## something that wants a one-off pose rather than a steady loop.
 const IDLE_LOOP_FRAMES: Array[Texture2D] = [
-	IDLE_FRAMES[0], IDLE_FRAMES[1], IDLE_FRAMES[3], IDLE_FRAMES[4],
+	IDLE_FRAMES[1], IDLE_FRAMES[3], IDLE_FRAMES[4],
 ]
 const RUN_FRAMES: Array[Texture2D] = [
 	preload("res://assets/textures/player_run_0.png"),

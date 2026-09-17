@@ -4107,3 +4107,66 @@ in this project's own source — unrelated to, and unlike, either
 `RoomContainer` bug above), so this fix has not been watched running
 in a live build from this side. Pending an in-game pull/test to
 confirm the idle "leg disappearing" read is actually gone.
+
+### Character checkup, round two — reported still broken, and it was: the previous fix treated a real but secondary symptom, not the one actually being reported
+
+Pulled, tested, reported back in three words: still the same problem.
+No new video this time, which forced the same choice this project has
+hit before (HUD bars round four, `RoomContainer` round two, both
+above) — re-assert the previous finding on no new evidence, or go
+re-verify from scratch. Went and re-verified: this environment's own
+render pipeline turned out to be working again (unclear why — the
+same `--import` pass that reliably reproduced the total class-
+resolution failure earlier in this same session came back completely
+clean, first try, unchanged flags), so for the first time this round
+this project's own renders were actually available again instead of
+just static PNG measurements.
+
+**What the working render immediately showed.** A debug harness in
+the same style as round three's above (temporary scene, real
+`entities/player.tscn` instanced, `AnimatedSprite2D.frame` forced
+directly rather than timer-driven, screenshotted against a magenta
+background) — but this time also re-examining the *original* gameplay
+recording from the previous round side by side with it, specifically
+re-watching for left/right asymmetry rather than leg width. A short
+run of consecutive frames from that recording, all idle, all the same
+facing, showed the character's small red cape tatter present on
+*both* sides in some frames and only on the left in others — clearly
+not a facing/flip artifact (nothing changes facing between those
+frames), and clearly not what the previous fix targeted (leg/foot
+width, a bottom-of-frame measurement that never looked at the cape
+at all).
+
+**Root cause.** Re-measured all 6 source idle frames directly against
+this specific detail instead of the previous round's bottom-12%-only
+band: `idle_1`, `idle_3`, and `idle_4` all draw the same small,
+reduced cape wisp past the right hip — consistent with each other,
+not with anything missing. The other three each break that
+consistency in a different direction: `idle_0` is the *only* frame
+with a full, large cape on the right side (not reduced — the odd one
+out, not the other five); `idle_2` and `idle_5` reduce it further
+still, to almost nothing, on top of the already-documented narrow
+stepping-foot stance. The previous fix (`idle_0/1/3/4`) dropped
+`idle_2/5` for the leg symptom, correctly, but kept `idle_0` — the
+single frame carrying the actual dominant symptom being reported —
+in the loop. One frame in four still flashing a full right-side cape
+that the other three don't have reproduces exactly "the opposite side
+disappears," on a loop, regardless of facing, which is why the report
+came back unchanged after a fix that was real but aimed at a
+different (and evidently much less noticeable) inconsistency in the
+same six frames.
+
+**Fix.** `IDLE_LOOP_FRAMES` narrowed from `idle_0/1/3/4` to just
+`idle_1/3/4` — the only three of the six mutually consistent on both
+axes now checked (stance width and cape extent). `IDLE_FRAMES` itself
+still stays all six, unchanged, same reasoning as before.
+
+**Verified against a real render this time, both facings.** The
+actual `_build_sprite_frames()`-built "idle" animation (not just the
+three source PNGs in isolation) rendered through
+`entities/player.tscn`'s real `AnimatedSprite2D`, all 3 frames,
+`flip_h` both states — the right-side wisp stays the same small,
+present, reduced shape across all 3 in both facings; no frame flashes
+a full or absent cape against the other two. This is the first fix
+in this round actually confirmed against a live render rather than
+static PNG measurements or a syntax check alone.
