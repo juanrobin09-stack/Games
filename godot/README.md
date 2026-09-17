@@ -4269,3 +4269,42 @@ frames (a cosmetic, pre-existing tension in how tightly two adjacent
 swing effects sit against each other on the sheet itself, not a
 regression this round introduced, and not on the animation actually
 reported).
+
+### Character checkup, round four — the second sheet's own movement read worse, reverted to round two's frames rather than push a synthetic patch
+
+Reported back once more: the second sheet's own animations read as
+less natural in motion than the first sheet's did, on top of some
+remaining issue left unspecified — with explicit permission this
+time to fall back to a previously-stated option rather than keep
+pushing for a from-scratch fix. That previously-stated fallback
+(offered directly, before the second sheet existed) was patching the
+first sheet's own inconsistent frames by hand rather than switching
+art entirely; re-examining that option against what patching this
+specific defect actually requires changed the call.
+
+**Why patching was set aside rather than attempted.** The cape edit
+alone (trimming `idle_0`'s full right side down to `idle_1/3/4`'s
+wisp) is a same-frame edit — safe, since it only removes pixels
+already matching that frame's own lighting. The leg-stance edit
+`idle_2`/`idle_5` would need is not: it means synthesizing a second
+leg's worth of anatomy — foreshortening, shadow direction, contact
+point with the ground — none of which exists anywhere in either
+frame to copy from, only a different pose to approximate it from.
+Shipping that as a "fix" risks trading one visible defect (a frame
+that pops) for another (a limb that reads as pasted-on) precisely
+where this whole round has been about the character's own body
+reading as wrong. Not attempted for that reason, rather than
+attempted and hidden if it came out looking bad.
+
+**Reverted instead to round two's own already-verified state**: the
+first sheet's 24 frames restored exactly (`git checkout` against that
+round's own commit, diff confirmed empty against it), `player.gd`'s
+`IDLE_LOOP_FRAMES` (`idle_1/3/4`) and `SPRITE_SCALE` (0.6) restored
+alongside them. This is the same animation this project already
+rendered and confirmed clean across all 4 states, both facings, in
+round two above — no new render pass needed since nothing about it
+changed from what was already verified there. `idle_0/2/5` stay
+excluded from the loop specifically because patching either defect
+convincingly isn't achievable from what these two frames alone
+contain — not because excluding them is being treated as good enough
+on its own terms.
