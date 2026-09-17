@@ -62,6 +62,24 @@ const IDLE_FRAMES: Array[Texture2D] = [
 	preload("res://assets/textures/player_idle_4.png"),
 	preload("res://assets/textures/player_idle_5.png"),
 ]
+## The "idle" *animation* plays only this subset of IDLE_FRAMES, not all six —
+## diagnosed directly from a real gameplay recording reported as "the leg
+## disappears": idle_2 and idle_5 are genuine, correctly-extracted frames
+## (verified pixel-complete, nothing missing or corrupted — see the README's
+## own entry for this round), but the reference art draws them as a single
+## foot stepping forward, narrowing the silhouette's own base from ~45px
+## wide (every other idle frame) to ~20px. Looping all 6 at 6fps flashes
+## that narrow pose for one frame out of six, twice a cycle, which reads as
+## the leg popping in and out rather than as a weight shift — there's no
+## seventh in-between frame this reference sheet provides to smooth it, so
+## dropping the two outliers (not retiming or reordering them, which would
+## still cut just as abruptly, only later) is what actually removes the
+## effect rather than just spacing it out. IDLE_FRAMES itself stays all six,
+## matching the source sheet 1:1, since some other frame or feature might
+## want idle_2/5 later (a "shift weight" tell on a longer idle timer, say).
+const IDLE_LOOP_FRAMES: Array[Texture2D] = [
+	IDLE_FRAMES[0], IDLE_FRAMES[1], IDLE_FRAMES[3], IDLE_FRAMES[4],
+]
 const RUN_FRAMES: Array[Texture2D] = [
 	preload("res://assets/textures/player_run_0.png"),
 	preload("res://assets/textures/player_run_1.png"),
@@ -136,7 +154,7 @@ static func _build_sprite_frames() -> SpriteFrames:
 	var frames := SpriteFrames.new()
 	frames.remove_animation("default")
 	var specs := [
-		{"name": "idle", "textures": IDLE_FRAMES, "fps": 6.0, "loop": true},
+		{"name": "idle", "textures": IDLE_LOOP_FRAMES, "fps": 6.0, "loop": true},
 		{"name": "run", "textures": RUN_FRAMES, "fps": 12.0, "loop": true},
 		{"name": "attack", "textures": ATTACK_FRAMES, "fps": 20.0, "loop": false},
 		{"name": "dodge", "textures": DODGE_FRAMES, "fps": 27.0, "loop": false},

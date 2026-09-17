@@ -3988,3 +3988,122 @@ a side effect of the specific headless CLI flags this verification
 used to force a software-rendering context — reverted both times
 rather than kept, since neither is part of this fix and nothing here
 is the right place to decide this project's minimum-version baseline.
+
+### `RoomContainer` parse error, round two — the `.uid` fix didn't hold, because it was never the actual cause
+
+Reported again after the `.uid` commit above landed: the exact same
+"Could not parse global class 'RoomContainer'" error, on the same
+machine, unchanged after pulling that fix. That result pointed away
+from the `.uid` theory directly rather than toward a subtler variant
+of it — a committed, regenerated `.uid` set can't un-fix itself by
+being pulled a second time.
+
+**Diagnostic.** Duplicated `room_container.gd` under a throwaway
+class name as an isolated test, expecting a clean parse — a fresh
+class name shouldn't inherit whatever `RoomContainer` itself had
+wrong. It failed identically, which was the actual signal: a copy
+failing the same way as the original meant the defect lived in the
+file's own bytes, not in any project-wide state (cache, `.uid`,
+engine version) a fresh copy would otherwise start clean from.
+
+**Root cause.** Line 341 of the *local, on-disk* `room_container.gd`
+— never staged, never committed, invisible to every `git diff` /
+`git status` / `git show` run against it across this entire
+investigation — read `()## wall check), which is why this stays a
+separate function rather than` instead of the correct `## wall
+check), which is why this stays a separate function rather than`.
+Two stray characters directly in front of a `##` comment turn it
+from a comment into a bare `()` expression sitting in class-body
+position, which is a genuine parse error. GDScript reports that
+error at the exact line it occurs on, but every *other* script that
+merely referenced the `RoomContainer` type (its own return-typed
+functions, `run_state.gd`, `hud.gd`, …) only ever surfaced Godot's
+generic downstream wrapper — "could not parse global class" — never
+the specific one, which is exactly why every fix aimed at the
+class-resolution *system* (the `.uid` files, the `config/features`
+version tag, cache clears) addressed a real gap without ever
+touching the actual bug.
+
+**Fix.** User-side only — removed the two stray characters directly
+in the local file (equivalently: "Discard changes" in GitHub
+Desktop, since the corruption was never committed and the
+repository's own copy was correct the entire time). No repository
+change was needed or made for this specific error. The `.uid` commit
+stands regardless — it's still the correct, documented fix for the
+separate, real first-open failure mode described above; it just
+wasn't *this* failure. Lesson for next time a bug refuses to
+reproduce against the committed source: check the literal on-disk
+bytes of the reporter's own working copy before re-auditing engine
+or config theories again.
+
+### Character checkup: weapon rendering disabled for isolated feedback, and the "leg disappears" report traced to two idle frames — not a facing bug
+
+Two follow-up reports once the game was finally running end to end.
+First: with the character actually on screen and moving, the weapon
+still read as misplaced and the lower body still needed work —
+requested directly: disable the weapon entirely for now rather than
+keep re-verifying an already-confirmed weapon attachment (round
+three's own audit above, including all four aim directions on the
+corrected sprite) against a character silhouette that was still
+about to change. Gated behind one `const DRAW_WEAPON := false` guard
+on the single `_draw()` call site rather than deleting any of the
+weapon-drawing code, so turning it back on is a one-line flip once
+the character itself is signed off, not a redo.
+
+Second, once the weapon was confirmed gone: looking left or right,
+"the opposite side always disappears," and possibly the same for the
+legs. Two static screenshots weren't enough to actually see the
+claimed difference from here — correctly called out directly rather
+than accepted as a dead end — resolved instead once a real gameplay
+recording was provided and put through frame-by-frame analysis
+instead of asking for another screenshot.
+
+**Diagnostic.** Extracted every frame from the recording, auto-
+tracked the small moving on-screen character across them by warm-
+color pixel detection, and built tight crops for direct comparison
+against this project's own known reference frames (`player_idle_0`
+through `_5`, both as-is and mirrored). The two frames initially
+flagged as a possible left/right transition turned out, once actually
+placed side by side with the reference sheet, to be the *same*
+facing — two different idle frames of the same loop, not a flip.
+Separately, mirroring the deployed sprite textures directly confirmed
+they flip completely and correctly at the pixel level: nothing is
+missing or cut off on either side. That ruled out a facing/flip bug
+entirely.
+
+**Root cause.** Measured opaque-pixel width across the bottom ~12% of
+each idle frame (the legs/feet band) directly: `idle_0/1/3/4` all
+draw a wide two-legged stance, ~44-49px across; `idle_2` and `idle_5`
+— both genuine, pixel-complete frames, nothing corrupted or missing
+in extraction — draw a single stepping foot instead, ~18-21px across.
+Looping all six idle frames at 6 fps puts one of those two narrow
+frames on screen for one frame out of six, twice per loop, which
+reads as a leg (or, depending on which way the character is facing,
+"the opposite side") abruptly vanishing and reappearing, rather than
+as a natural weight shift. Checked `run` and `dodge` for the same
+pattern before touching anything: `run`'s own per-frame width swings
+are a normal alternating gait cycle (extended → tucked → extended),
+not a one-frame pop, so left unchanged; `dodge`'s 6 frames stay
+within a tight 10-14px band throughout with no outlier, also left
+unchanged. The issue is specific to `idle`.
+
+**Fix.** No new art, and no reordering or retiming of the existing 6
+idle frames — either would still cut the same way, only relocate
+when it happens during the loop. Added `IDLE_LOOP_FRAMES`, a 4-frame
+subset (`idle_0, idle_1, idle_3, idle_4`) that the "idle" *animation*
+actually plays; `IDLE_FRAMES` itself is untouched, still all 6,
+matching the source sheet 1:1, in case `idle_2`/`idle_5` turn out
+useful later for something that actually wants a weight-shift pose
+(a "shift" tell on a longer idle timer, say) rather than a looping
+cycle.
+
+**Not yet confirmed against a real render.** Verified only that this
+change parses cleanly (`--check-only` against the isolated script,
+plus a fresh `--import` pass) — the render pipeline used for round
+three's own frame-by-frame in-game confirmation above is currently
+broken in this environment (every global class, starting from the
+very first one loaded, fails to resolve here independent of anything
+in this project's own source — unrelated to, and unlike, either
+`RoomContainer` bug above), so this fix has not been watched running
+in a live build from this side. Pending an in-game pull/test to
+confirm the idle "leg disappearing" read is actually gone.
