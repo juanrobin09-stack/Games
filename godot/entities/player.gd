@@ -40,9 +40,11 @@ enum AnimState { IDLE, RUN, ATTACK, HIT, DEAD, DODGE, ABILITY }
 ## turnaround views, and 5 six-frame animation cycles on a near-black
 ## background) replaces the old fully-procedural body/cape/head _draw()
 ## below it in this file. Cropped tight per frame and alpha-matted from
-## that background (soft brightness ramp, not a hard cutoff, so the
-## silhouette edge stays anti-aliased rather than jagged) — see the
-## README's own entry for this change for the extraction methodology.
+## that background — see the README's own entries for the extraction
+## methodology, and for why this sheet was regenerated once already
+## (the first version drew its cape/stance inconsistently frame to frame;
+## the current textures come from a second, corrected sheet, re-extracted
+## from scratch rather than patched).
 ##
 ## Only 4 of the reference's 5 animation rows are used: "Marche" (walk)
 ## has no equivalent in AnimState (IDLE/RUN is a binary switch, no
@@ -62,26 +64,16 @@ const IDLE_FRAMES: Array[Texture2D] = [
 	preload("res://assets/textures/player_idle_4.png"),
 	preload("res://assets/textures/player_idle_5.png"),
 ]
-## The "idle" *animation* plays only this subset of IDLE_FRAMES, not all six —
-## diagnosed directly from a real gameplay recording reported as "the opposite
-## side disappears" (see the README's own entries for this round; the first
-## pass here only found and fixed part of it). idle_1/3/4 are the only three
-## of the six that draw a consistent pose: same wide two-legged stance, and
-## the same small reduced wisp of cape visible past the right hip. The other
-## three each break that consistency in a different way — idle_0 is the only
-## frame with a *full* cape on the right side (not reduced, not absent);
-## idle_2 and idle_5 both narrow the stance to a single stepping foot AND
-## reduce the right-side cape to almost nothing. Looping in any combination
-## that includes idle_0 still flashes a full right-side cape on top of three
-## frames that don't have one, once a cycle — the first pass here dropped
-## idle_2/5 for the leg-width symptom but kept idle_0, so that flash (the
-## actual dominant complaint) survived untouched. idle_1/3/4 alone removes
-## every version of the pop at once. IDLE_FRAMES itself stays all six,
-## matching the source sheet 1:1, in case idle_0/2/5 are useful later for
-## something that wants a one-off pose rather than a steady loop.
-const IDLE_LOOP_FRAMES: Array[Texture2D] = [
-	IDLE_FRAMES[1], IDLE_FRAMES[3], IDLE_FRAMES[4],
-]
+## All six play in the "idle" loop — a prior sheet had this animation
+## drop frames instead, because five of its six idle poses drew the cape
+## and stance inconsistently frame to frame (see the README's own entries
+## for that round). Verified directly against this sheet's own source
+## art before extracting anything, not assumed: all six idle poses here
+## draw the same two-legged stance and the same cape on both sides, and
+## the 24 extracted frames measure it too — 0 partially-transparent
+## pixels anywhere, idle's own left/right opaque-pixel split within 3
+## points of itself across all six frames, its leg-band width within 1px
+## across all six. Nothing here needs excluding.
 const RUN_FRAMES: Array[Texture2D] = [
 	preload("res://assets/textures/player_run_0.png"),
 	preload("res://assets/textures/player_run_1.png"),
@@ -109,12 +101,13 @@ const DODGE_FRAMES: Array[Texture2D] = [
 
 ## World-unit scale applied to every frame's own native pixel size (frames
 ## aren't pre-resized — this one constant is the single tuning knob for
-## in-game size, cheaper to retune than re-exporting 24 images). Chosen so
-## the idle silhouette (~88px tall natively) reads at ~53 units, a touch
-## taller than the old procedural silhouette's ~40-50 units — real
-## painted art needs a bit more presence to read as clearly at this
-## camera zoom (1.5x, see player.tscn) as a thin vector outline did.
-const SPRITE_SCALE := 0.6
+## in-game size, cheaper to retune than re-exporting 24 images). The
+## regenerated reference sheet's own native resolution is higher than the
+## first one's (idle now averages ~106px tall instead of ~88px) — scaled
+## down proportionally (0.6 * 88/106) to land on the same ~53-unit
+## on-screen size as before rather than letting the character grow
+## because its source art got sharper.
+const SPRITE_SCALE := 0.5
 ## Shifts the sprite's draw origin up from this node's local (0,0) so the
 ## idle pose's feet land near the shadow (DrawUtils.draw_soft_shadow below
 ## is centered at local y=20) instead of the sprite's own bounding-box
@@ -156,7 +149,7 @@ static func _build_sprite_frames() -> SpriteFrames:
 	var frames := SpriteFrames.new()
 	frames.remove_animation("default")
 	var specs := [
-		{"name": "idle", "textures": IDLE_LOOP_FRAMES, "fps": 6.0, "loop": true},
+		{"name": "idle", "textures": IDLE_FRAMES, "fps": 6.0, "loop": true},
 		{"name": "run", "textures": RUN_FRAMES, "fps": 12.0, "loop": true},
 		{"name": "attack", "textures": ATTACK_FRAMES, "fps": 20.0, "loop": false},
 		{"name": "dodge", "textures": DODGE_FRAMES, "fps": 27.0, "loop": false},

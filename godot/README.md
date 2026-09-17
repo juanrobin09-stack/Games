@@ -4170,3 +4170,102 @@ present, reduced shape across all 3 in both facings; no frame flashes
 a full or absent cape against the other two. This is the first fix
 in this round actually confirmed against a live render rather than
 static PNG measurements or a syntax check alone.
+
+### Character checkup, round three — rejected dropping frames at all, full transparency/clipping/blink audit, then a second reference sheet fixed it at the source
+
+Reported back again, explicitly rejecting the round-two approach on
+principle: excluding frames to stop a visible pop hides the symptom
+without fixing whatever made those frames inconsistent in the first
+place, and every one of the six idle frames should stay in play
+unless it's a literal duplicate or genuinely unused. Instructed:
+audit transparency, clipping, and a reported "blinking" exhaustively
+before touching anything else, frame by frame, and only remove a
+frame if it turns out to be redundant — never to make a symptom go
+away.
+
+**The audit, run before any fix.** Across all 24 committed frames
+(idle/run/attack/dodge): every single pixel's alpha is either 0 or
+≥250 — zero pixels in between, on any frame, so there is no partial
+transparency anywhere to begin with. `entities/player.gd` has exactly
+one line that ever changes `_sprite.modulate.a` away from 1.0 — the
+death fade — and it's gated on `not alive`; the hit-flash tint lerps
+toward `Palette.BLOOD_BRIGHT`, a 6-digit (fully opaque) hex color, so
+it never touches alpha either. The whole project has zero `.gdshader`
+files and no `material`/`self_modulate` use on the player sprite.
+Checked "blinking" specifically since there's no blink system of any
+kind in the code (confirmed again, as round three of the earlier
+opacity rounds already had): measured both eyes' pixel count and peak
+brightness on all 6 idle frames directly — 255 peak, ~13-15px each,
+on every single frame, no variation. Checked clipping by zooming x10
+into each frame's crop-box edges on a checkerboard: every edge shape
+that reaches its own boundary is a complete, anti-aliased silhouette
+tip (a cape point, a boot heel), never a hard rectangular cut.
+Checked per-frame centering: every frame's opaque content sits
+exactly centered on its own canvas horizontally (0px offset, all 6)
+and flush with the canvas's bottom edge (also all 6) — no jitter from
+inconsistent cropping. None of this found a bug of any kind.
+
+**Went to the actual pre-extraction source next, since the audit above
+only rules out corruption in the already-cropped PNGs, not whether
+something real got left out of the crop.** The original reference
+sheet (a ChatGPT-generated character sheet: portrait, 4 turnarounds,
+palette, and 5 six-frame animation rows) was recovered from this
+repo's own `main` branch — the read-only reference-image drop this
+project has used throughout — since it's not preserved anywhere in
+this working session otherwise. Its own "Idle" row, inspected directly
+pixel-for-pixel with no extraction involved yet, shows the *exact same*
+pattern already found in the cropped frames: pose 1 of 6 draws a full
+cape on both sides, the other 5 draw it only on the left. The
+extraction was faithful the whole time — there was never anything left
+uncropped to recover. This is a genuine limitation of the reference
+art itself, not a bug in this project's code or its asset pipeline.
+
+**A second, corrected reference sheet arrived directly in response
+to this finding** — regenerated from scratch with a consistent cape
+and stance across every one of its 6 idle poses, uploaded the same
+way to `main`. Re-extracted all 24 frames from it (idle/run/attack/
+dodge; "Marche" stays unused, same reasoning as always) with a
+rebuilt pipeline: per-cell brightness threshold, then
+`binary_closing` + `binary_fill_holes` before the existing ≥4px
+component-size floor, rather than a bare threshold — this specific
+source image's own shadow tones dip low enough to sit at the same
+brightness as its own near-black background (confirmed by sampling:
+7-9 vs. a background of 8-14), which a bare-threshold pass fragments
+into a scattered, holed mess; closing+fill first, *then* filtering by
+size, reconstructs the single solid silhouette that's actually there
+before deciding what's noise. Column boundaries between the 6 poses
+per row were read off each row's own brightness valleys rather than
+assumed uniform, since the attack row's swing effects visually
+connect adjacent poses in a couple of places (only that row — every
+row's own boundaries were sampled from real background valleys, not
+copied blind).
+
+**Result, measured the same way as the audit above, now across the
+new 24 frames:** still 0 partial-alpha pixels anywhere. Idle's
+left/right opaque-pixel split is 43.6-46.9% / 53.1-56.4% across all
+six frames — within 3 points of itself, where the old sheet ranged a
+full 20 points wide specifically because one frame (`idle_0`) had a
+cape the other five didn't. Idle's own leg-band width is 29-30px
+across all six — within 1px, where the old sheet's `idle_2`/`idle_5`
+sat at less than half the others' width. Nothing needs excluding
+anymore: `IDLE_LOOP_FRAMES` is gone, the "idle" animation plays all
+6 `IDLE_FRAMES` directly, matching the reference sheet's own row 1:1.
+
+**One knock-on change.** The new sheet's own native resolution is
+higher than the first one's (idle now averages ~106px tall instead
+of ~88px) — `SPRITE_SCALE` scaled down from 0.6 to 0.5 (0.6 × 88/106)
+specifically to keep the character the same on-screen size as before,
+rather than letting it grow just because its source art got sharper.
+
+**Verified against a real render, all 24 frames, both facings** — the
+same live-render harness as round two above (`entities/player.tscn`
+instanced, each frame forced directly, screenshotted against a
+magenta background), extended to cover every animation this time
+rather than idle alone. All 6 idle frames hold an identical cape
+and stance in both facings; run, attack, and dodge all render solid
+and complete, no fragment holes, no clipped effects beyond the
+already-noted attack-row boundary compromise on two of its six swing
+frames (a cosmetic, pre-existing tension in how tightly two adjacent
+swing effects sit against each other on the sheet itself, not a
+regression this round introduced, and not on the animation actually
+reported).
