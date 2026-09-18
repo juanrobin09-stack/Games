@@ -4643,3 +4643,57 @@ clean.
 This does **not** close the contrast question — whether
 `AMBIENT_COMPENSATION = 0.5` helps or hurts near a light source is a
 separate claim, still unverified, and is not touched here.
+
+### The ambient compensation was accused of making things worse. It doesn't.
+
+An audit pass claimed `AMBIENT_COMPENSATION = 0.5` — shipped to fix the
+"translucent" report — had "pushed the character's luminance onto the
+floor's brightest value" and made the worst case about 4x worse in the
+lit half of a room. That was plausible: the compensation is derived from
+`LevelFlow.ambient_color()` alone, so it is **position-invariant**, and
+the round that shipped it only tested two uniform ambient levels with no
+light source but the player's own.
+
+Measured with the real light rig this time: the real floor texture, the
+zone's `CanvasModulate` at `hollowRuins`' darkness of 0.5, the player's
+own 260-unit ember `PointLight2D` (`player.gd` `$Glow`, energy 1.0), and
+a real brazier light built from `obstacle_node.gd`'s own numbers (radius
+230, energy 1.05, `#ff7a2f`) placed at five distances. Each distance is
+shot three times on identical pixels — floor-only plate with the body
+hidden but every light still on, then the body with the shipped
+compensation, then the same frame with the compensation divided back
+out, which is exactly what `AMBIENT_COMPENSATION = 0.0` draws.
+
+Contrast measured **locally along the outline** — every body pixel on
+the silhouette edge against the floor pixel directly opposite it, which
+is what the eye actually compares — rather than as a global average:
+
+```
+brasier   sol moy  sol p95 | AVEC comp  med  % contour illisible | SANS comp  med  % illisible
+     70       8.7     15.1 |           0.660                0.2% |          0.555        2.3%
+    140       7.6     13.1 |           0.661                0.0% |          0.558        1.1%
+    220       6.8     11.7 |           0.643                0.0% |          0.536        1.0%
+    320       6.5     11.4 |           0.649                0.0% |          0.544        1.0%
+    600       6.5     11.4 |           0.649                0.0% |          0.544        1.0%
+```
+
+"Illegible" is local Michelson < 0.10, i.e. the two sides genuinely merge
+at that point on the outline. **The compensation helps at every distance,
+including hard against the brazier**, and cuts the illegible fraction of
+the silhouette by roughly 5-10x. The claim is refuted: the character sits
+4-6x brighter than the floor's own 95th percentile, not on it.
+
+What the audit got right is the mechanism, not the harm: the lift really
+is a constant — measured 1.400 at all five distances — because it reads
+only the `CanvasModulate`, which is uniform across a room. It cannot
+respond to a local light. It does not need to here, because the
+character's own ember glow lights it in step with the floor beside it and
+the compensation is a multiply on top, which preserves the ratio.
+
+Scope of this test, stated plainly: one floor texture, one zone darkness
+(0.5), one obstacle light type, the idle pose. `AMBIENT_COMPENSATION`
+stays at 0.5; no code changed in this entry.
+
+There is no bloom anywhere to confound this — the project has no
+`WorldEnvironment` and no glow post-processing; the only "glow" in it is
+`PointLight2D`.
