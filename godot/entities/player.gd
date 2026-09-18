@@ -197,8 +197,121 @@ static func _build_sprite_frames() -> SpriteFrames:
 		frames.set_animation_speed(anim_name, spec["fps"])
 		frames.set_animation_loop(anim_name, spec["loop"])
 		for tex in spec["textures"]:
-			frames.add_frame(anim_name, tex)
+			frames.add_frame(anim_name, _normalised_frame(tex))
 	return frames
+
+## Cache keyed by source texture, so the pass below runs once per distinct
+## frame per process rather than once per player instance.
+static var _normalised_cache: Dictionary = {}
+
+## The reference-sheet extraction left two faults in the frames, and
+## AnimatedSprite2D turns both into visible motion because it centres every
+## frame on that frame's own texture rect:
+##
+##   * two frames carry a speck that is detached from the character and is not
+##     part of it — player_run_2 (52px, below and behind the trailing foot) and
+##     player_attack_4 (85px, out to the side of the knee). Each renders as a
+##     fleck sitting on the floor for one frame of the cycle, and because it
+##     falls outside the body it also stretches that frame's rect, shoving the
+##     body several pixels the other way for exactly as long.
+##   * six frames are not cropped tight: player_run_1 and player_run_3 carry 7
+##     and 6 fully transparent bottom rows, player_attack_1 3 and
+##     player_dodge_1 4, while player_idle_5 and player_attack_4 carry 2 empty
+##     top rows. Centring on a rect taller than the drawing inside it offsets
+##     the body by half the empty margin, for that one frame.
+##
+## Both are corrected here, at load, rather than in the PNGs: keep the largest
+## connected run of opaque pixels, then crop to what is left. Nothing is
+## repainted, no asset file changes, and the 18 frames that were already clean
+## are returned as the very same texture object.
+static func _normalised_frame(tex: Texture2D) -> Texture2D:
+	if _normalised_cache.has(tex):
+		return _normalised_cache[tex]
+	var fixed: Texture2D = _normalise(tex)
+	_normalised_cache[tex] = fixed
+	return fixed
+
+static func _normalise(tex: Texture2D) -> Texture2D:
+	var img: Image = tex.get_image()
+	if img == null:
+		return tex
+	if img.is_compressed():
+		img.decompress()
+	img.convert(Image.FORMAT_RGBA8)
+	var w: int = img.get_width()
+	var h: int = img.get_height()
+	var n: int = w * h
+	var data: PackedByteArray = img.get_data()
+
+	# Flood fill with an explicit stack; 8-connected, so a silhouette that is
+	# only joined diagonally still counts as one piece.
+	var comp: PackedInt32Array = PackedInt32Array()
+	comp.resize(n)
+	var stack: PackedInt32Array = PackedInt32Array()
+	var next_id: int = 0
+	var best_id: int = 0
+	var best_size: int = 0
+	for start in range(n):
+		if comp[start] != 0 or data[start * 4 + 3] == 0:
+			continue
+		next_id += 1
+		var size: int = 0
+		stack.clear()
+		stack.push_back(start)
+		comp[start] = next_id
+		while not stack.is_empty():
+			var p: int = stack[stack.size() - 1]
+			stack.remove_at(stack.size() - 1)
+			size += 1
+			var px: int = p % w
+			var py: int = p / w
+			for dy in range(maxi(py - 1, 0), mini(py + 2, h)):
+				for dx in range(maxi(px - 1, 0), mini(px + 2, w)):
+					var q: int = dy * w + dx
+					if comp[q] != 0 or data[q * 4 + 3] == 0:
+						continue
+					comp[q] = next_id
+					stack.push_back(q)
+		if size > best_size:
+			best_size = size
+			best_id = next_id
+	if best_id == 0:
+		return tex
+
+	var min_x: int = w
+	var min_y: int = h
+	var max_x: int = -1
+	var max_y: int = -1
+	var stray: int = 0
+	for p in range(n):
+		var id: int = comp[p]
+		if id == best_id:
+			var px: int = p % w
+			var py: int = p / w
+			min_x = mini(min_x, px)
+			max_x = maxi(max_x, px)
+			min_y = mini(min_y, py)
+			max_y = maxi(max_y, py)
+		elif id != 0:
+			stray += 1
+	if stray == 0 and min_x == 0 and min_y == 0 and max_x == w - 1 and max_y == h - 1:
+		return tex
+
+	var cw: int = max_x - min_x + 1
+	var ch: int = max_y - min_y + 1
+	var out: PackedByteArray = PackedByteArray()
+	out.resize(cw * ch * 4)
+	for y in range(ch):
+		for x in range(cw):
+			var src: int = (min_y + y) * w + min_x + x
+			if comp[src] != best_id:
+				continue
+			var dst: int = (y * cw + x) * 4
+			for c in range(4):
+				out[dst + c] = data[src * 4 + c]
+	return ImageTexture.create_from_image(
+		Image.create_from_data(cw, ch, false, Image.FORMAT_RGBA8, out)
+	)
 
 ## The player's own unmodified stat floor (createBaseStats() in the TS
 ## source). recompute_stats() always re-derives `stats` from THIS, never

@@ -4440,3 +4440,70 @@ captures looked plausible. It was caught only by checking that the
 "facing left" images were actually mirrors of the "facing right" ones
 (they XORed to zero). A verification harness that agrees with itself is
 not evidence.
+
+### Character checkup, round six — extraction debris and loose crops
+
+A multi-lens audit of the same recording turned up a second defect class,
+independent of the idle loop and confirmed straight off the asset files:
+
+```
+frame                 taille   composants   detache   marges vides T/B/L/R
+player_run_2.png      89x84         2          52     0/0/0/0
+player_attack_4.png  123x90         2          85     2/0/0/0
+player_run_1.png      87x83         1           0     0/7/0/0
+player_run_3.png      78x81         1           0     0/6/0/0
+player_attack_1.png  114x80         1           0     0/3/0/0
+player_dodge_1.png    78x89         1           0     0/4/0/0
+player_idle_5.png     57x91         1           0     2/0/0/0
+(the other 17 frames: 1 component, no empty margin)
+```
+
+Two things are wrong here, and `AnimatedSprite2D` amplifies both because
+it centres each frame on **that frame's own texture rect**:
+
+**Detached specks.** `player_run_2` carries 52 opaque pixels that are
+not connected to the character — the silhouette ends at row 75, row 76
+is completely empty, and the speck sits at rows 77-83. On screen it is
+a small dark fleck lying on the floor below the trailing foot, for one
+frame of a six-frame cycle at 12fps, i.e. twice a second while running.
+`player_attack_4` has the same fault (85px, out beside the knee). These
+are extraction debris from the reference sheet, not parts of the body.
+
+**Loose crops.** Six frames were not cropped tight after extraction.
+Since the frame is centred on its rect, `player_run_1`'s 7 empty bottom
+rows lift its body by 3.5 source pixels for that frame alone, and
+`player_run_3`'s 6 rows by 3. The specks do the same thing in reverse:
+sitting below the body, they stretch the rect downward and push the
+body *up*.
+
+**Fix: a normalisation pass at load, in `_build_sprite_frames()`.** Each
+frame is flood-filled (8-connected, explicit stack), the largest
+connected run of opaque pixels is kept, and the result is cropped to
+what remains. Nothing is repainted, no pixel value changes, and **no
+asset file is modified** — the 18 frames that were already clean are
+returned as the very same texture object, unchanged. Cost is 130ms once
+per process for all 24 frames, memoised in `_normalised_cache`, so the
+second and every later player instance pays 0ms.
+
+**Verified** on real renders over the real floor. The speck is gone from
+`run_2`, and the run cycle's body centre — midpoint between the topmost
+and lowest pixel of the silhouette, i.e. where the character sits
+regardless of pose — stops wandering:
+
+```
+avant :  127.0  123.5  124.5  124.5  127.5  127.5     amplitude 4.0 px
+apres :  127.0  127.0  127.5  128.0  127.5  127.5     amplitude 1.0 px
+```
+
+The pose still changes frame to frame, as it should; the body no longer
+translates underneath it. Idle, attack and dodge were captured in the
+same pass as a regression check and are correct, with no loose fragment
+anywhere. `main.tscn` boots clean.
+
+Still open, from the same audit and deliberately not bundled into this
+change: the idle and run rows were drawn from different camera angles
+(front-on versus side-on), so every keypress cuts between them with no
+transition, and the idle animation keeps playing through the
+deceleration slide because `_update_state()` reads key state while the
+body moves on `velocity`. Both are behaviour changes rather than
+corrections of a defect, so they want a decision rather than a fix.
