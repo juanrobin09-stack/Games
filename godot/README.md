@@ -4515,3 +4515,54 @@ transition, and the idle animation keeps playing through the
 deceleration slide because `_update_state()` reads key state while the
 body moves on `velocity`. Both are behaviour changes rather than
 corrections of a defect, so they want a decision rather than a fix.
+
+### Movement animation follows the body, not the keyboard
+
+`_update_state()` decided between run and idle from `move_input` — raw key
+state — while `move_and_slide()` moves the character from `velocity`,
+which is integrated toward `move_input * move_speed` at `MOVE_ACCEL`
+(14.0) and therefore keeps carrying after the key comes up. Releasing a
+direction snapped the character into a standing pose while it was still
+visibly sliding, for about 0.14s and 12 world units each time.
+
+`moving` is now `move_input != 0 OR velocity.length() >= move_speed *
+MOVE_ANIM_THRESHOLD`. The threshold is **0.1, reused rather than
+invented**: `_read_input()`'s dodge already treats 0.1 as "is the player
+meaningfully holding a direction" (ported from `Game.ts`'s
+`performDodge`). The same number applied to the body's own speed is 19
+units/s at the base `move_speed` of 190 — under half a viewport pixel
+per frame, i.e. stopped as far as the eye is concerned.
+
+Both terms are load-bearing. The velocity term carries the run through
+the deceleration. The `move_input` term covers two cases the velocity
+term alone would break: holding a direction into a wall, where
+`move_and_slide()` cancels the velocity being asked for, and **reversing
+direction without releasing**, where velocity passes through zero and
+the character would blink to idle mid-turn.
+
+Verified by driving the real `_update_state()` / `move_and_slide()` tick
+by tick with a scripted `move_input` at 60Hz, reading `anim_state` and
+the distance actually travelled in each state:
+
+```
+1. immobile                         IDLE 20 ticks, 0.0 unites
+2. idle -> deplacement              IDLE 3 ticks -> RUN au premier tick touche
+3. deplacement -> relachement       RUN 48 ticks (8 apres le relachement, v=17.4
+   -> deceleration -> arret         a la bascule), puis IDLE: 0.9 unites en 0.37s
+4. gauche -> droite sans relacher   RUN 60/60 ticks, aucun passage par IDLE
+5. droite -> gauche sans relacher   RUN 60/60 ticks, aucun passage par IDLE
+6. appui/relachement rapide x4      RUN continu 28 ticks au lieu de 8 bascules
+```
+
+Case 3 is the fix: the run now covers the whole visible slide, and once
+it hands over to idle the character travels 0.9 units in a third of a
+second. Case 6 is a useful side effect — rapid tapping no longer strobes
+the animation state, which also removes most of the idle/run camera-angle
+flicker described below.
+
+Interactions checked: `is_attacking`, `is_dodging` and
+`is_channeling_ability` still gate the assignment, so attack and dodge
+keep owning the sprite; `_update_state()` returns early on `not alive`,
+so `AnimState.DEAD` is never overwritten; nothing outside `player.gd`
+reads `anim_state`; and no code path other than the dodge and this
+integrator writes `velocity`, so there is no enemy-push case to handle.

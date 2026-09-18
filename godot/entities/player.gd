@@ -33,6 +33,13 @@ const DODGE_STAMINA_COST := 15.0
 const BASE_ENERGY_REGEN := 6.0
 const DODGE_DURATION := 0.22
 const MOVE_ACCEL := 14.0
+## Below this fraction of move_speed the body is stopped as far as the eye is
+## concerned — at the base 190 move_speed it is 19 units/s, under half a viewport
+## pixel per frame. Reused rather than invented: _read_input()'s dodge already
+## treats 0.1 as "is the player meaningfully holding a direction", ported from
+## Game.ts's performDodge. Same number, same meaning, applied to the body's own
+## speed instead of to the input vector.
+const MOVE_ANIM_THRESHOLD := 0.1
 
 enum AnimState { IDLE, RUN, ATTACK, HIT, DEAD, DODGE, ABILITY }
 
@@ -851,7 +858,19 @@ func _update_state(dt: float) -> void:
 		var target_velocity: Vector2 = move_input * stats.move_speed
 		velocity += (target_velocity - velocity) * minf(1.0, MOVE_ACCEL * dt)
 
-	var moving: bool = move_input.x != 0.0 or move_input.y != 0.0
+	# The animation follows the BODY, not the keyboard. velocity is integrated
+	# toward move_input * move_speed at MOVE_ACCEL, so releasing a key does not
+	# stop the character — it keeps carrying for about 0.14s and roughly 12 world
+	# units, which is what produced "you let go and he snaps to a standing pose
+	# while still visibly sliding". Both terms are needed: the velocity term keeps
+	# the run playing through the deceleration, and the move_input term keeps it
+	# playing when the player holds a direction into a wall and move_and_slide()
+	# cancels the velocity they are asking for.
+	var moving: bool = (
+		move_input.x != 0.0
+		or move_input.y != 0.0
+		or velocity.length() >= stats.move_speed * MOVE_ANIM_THRESHOLD
+	)
 
 	if is_channeling_ability:
 		ability_anim_timer += dt
