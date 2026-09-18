@@ -4566,3 +4566,80 @@ keep owning the sprite; `_update_state()` returns early on `not alive`,
 so `AnimState.DEAD` is never overwritten; nothing outside `player.gd`
 reads `anim_state`; and no code path other than the dodge and this
 integrator writes `velocity`, so there is no enemy-push case to handle.
+
+### The character really was transparent — 855 pixels of it
+
+The "the character looks translucent" report has now been chased through
+alpha values, scaling, ambient darkening and frame selection, each time
+coming back clean. It was none of those. **Every one of the 24 frames
+ships holes punched through the body**, and through them the floor is
+genuinely visible:
+
+```
+frame            trous   px      frame            trous   px
+player_idle_0       12   65      player_attack_0      8   42
+player_idle_1        2   80      player_attack_1     10   72
+player_idle_2        2   38      player_attack_2      6   23
+player_idle_3        4   49      player_attack_3      3   55
+player_idle_4        5   43      player_attack_4      3   12
+player_idle_5        5   33      player_attack_5      4   21
+player_run_0         3   32      player_dodge_0       4   45
+player_run_1         3    3      player_dodge_1       7   26
+player_run_2         2   10      player_dodge_2       4   19
+player_run_3         2   30      player_dodge_3      10   84
+player_run_4         6   26      player_dodge_4       8   32
+player_run_5         1    8      player_dodge_5       2    7
+                                          TOTAL  24/24  855 px
+```
+
+A "hole" here is measured strictly: a transparent region that the
+outside of the frame cannot reach, 4-connected, so a gap that only
+leaks out diagonally still counts as enclosed. The biggest is 80px on
+`player_idle_1` — one of the two frames of the shipped idle loop — at
+the left hip. Composited over a bright ground the background reads
+straight through the torso.
+
+**Why the earlier passes missed it.** They all asked "is any pixel
+*semi*-transparent?" The answer was always no: alpha is strictly 0 or
+255 in every frame. The wrong question. These pixels are fully
+transparent, in the middle of the body.
+
+**Why they exist.** The alpha matte thresholds the reference sheet on
+brightness, and the deepest shadow inside the character — between an arm
+and the torso, under the cape — is as dark as the sheet's near-black
+background. Mean RGB inside the holes is (13, 7, 6). The threshold
+cannot tell them apart, so it cut them out.
+
+**Why filling them invents nothing.** The extraction only cleared
+`alpha`; the RGB is still sitting there on disk, untouched, at those
+exact coordinates. Setting alpha back to 255 restores the artist's own
+pixels. And the tone is right: `player_idle_1` already draws **1362
+opaque pixels that are as dark as, or darker than, the brightest hole
+pixel** — the holes are the same deep shadow the rest of the body keeps,
+cut out by accident rather than by intent.
+
+**Fix: a second pass in `_normalise()`.** After the largest connected
+component is kept, the transparent set is flooded inward from the
+border; anything it never reaches is inside the body and gets its alpha
+restored. The outside test keys on *body membership*, not transparency,
+and that matters in both directions: a detached speck outside the
+silhouette is opaque but not body, so the flood passes through it and it
+stays discarded, while a speck enclosed by the body is absorbed instead,
+which is right — anything inside the silhouette should be drawn. Still
+no asset file changes; the cost of the whole pass goes from 130ms to
+402ms, once per process, memoised.
+
+**Verified.** All 24 frames: 855px of holes to **0**, alpha still
+strictly binary (0 or 255, no intermediate value), detached specks still
+discarded (`run_2` and `attack_4` go from 2 components to 1). The
+floor-shift opacity test re-run on `player_idle_1`, the worst frame,
+with the test region now covering what used to be the hole: **1616 of
+1616 interior pixels bit-identical** with the floor moved 13px
+underneath. The tested interior is larger than the 1217 of the previous
+round precisely because the holes are now body. Idle, run and dodge
+captured over the real floor as a regression check. `main.tscn` boots
+clean.
+
+This does **not** close the contrast question — whether
+`AMBIENT_COMPENSATION = 0.5` helps or hurts near a light source is a
+separate claim, still unverified, and is not touched here.

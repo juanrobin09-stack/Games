@@ -247,6 +247,23 @@ static func _normalised_frame(tex: Texture2D) -> Texture2D:
 	_normalised_cache[tex] = fixed
 	return fixed
 
+## Marks one pixel as reachable-from-outside and queues it, if it is not already
+## marked and not part of the body. Kept separate so the four border loops and
+## the flood loop share exactly one definition of "this is outside".
+##
+## The test is membership of the body, NOT transparency, and that distinction is
+## load-bearing in both directions. A detached speck outside the silhouette is
+## opaque but not body, so the flood passes straight through it and it stays
+## discarded. A speck that happens to sit enclosed by the body is never reached,
+## so it is absorbed instead — which is right: anything inside the silhouette
+## should be drawn, whatever component the labeller put it in.
+static func _seed_outside(stack: PackedInt32Array, reach: PackedByteArray,
+		comp: PackedInt32Array, best_id: int, p: int) -> void:
+	if reach[p] != 0 or comp[p] == best_id:
+		return
+	reach[p] = 1
+	stack.push_back(p)
+
 static func _normalise(tex: Texture2D) -> Texture2D:
 	var img: Image = tex.get_image()
 	if img == null:
@@ -294,6 +311,37 @@ static func _normalise(tex: Texture2D) -> Texture2D:
 	if best_id == 0:
 		return tex
 
+	# Second pass: transparent pixels that the outside cannot reach are holes
+	# punched INSIDE the body, not background. Flood the transparent set inward
+	# from the border (4-connected, so a hole that only leaks diagonally still
+	# counts as enclosed) and make whatever it never reaches opaque again. The
+	# RGB is left exactly as it is on disk: the extraction only cleared alpha, so
+	# the artist's own pixels are still sitting there under it.
+	var reach: PackedByteArray = PackedByteArray()
+	reach.resize(n)
+	stack.clear()
+	for x in range(w):
+		_seed_outside(stack, reach, comp, best_id, x)
+		_seed_outside(stack, reach, comp, best_id, (h - 1) * w + x)
+	for y in range(h):
+		_seed_outside(stack, reach, comp, best_id, y * w)
+		_seed_outside(stack, reach, comp, best_id, y * w + w - 1)
+	while not stack.is_empty():
+		var t: int = stack[stack.size() - 1]
+		stack.remove_at(stack.size() - 1)
+		var tx: int = t % w
+		var ty: int = t / w
+		for d in [Vector2i(tx - 1, ty), Vector2i(tx + 1, ty), Vector2i(tx, ty - 1), Vector2i(tx, ty + 1)]:
+			if d.x < 0 or d.y < 0 or d.x >= w or d.y >= h:
+				continue
+			_seed_outside(stack, reach, comp, best_id, d.y * w + d.x)
+	var filled: int = 0
+	for p in range(n):
+		if reach[p] == 0 and comp[p] != best_id:
+			comp[p] = best_id
+			data[p * 4 + 3] = 255
+			filled += 1
+
 	var min_x: int = w
 	var min_y: int = h
 	var max_x: int = -1
@@ -310,7 +358,7 @@ static func _normalise(tex: Texture2D) -> Texture2D:
 			max_y = maxi(max_y, py)
 		elif id != 0:
 			stray += 1
-	if stray == 0 and min_x == 0 and min_y == 0 and max_x == w - 1 and max_y == h - 1:
+	if filled == 0 and stray == 0 and min_x == 0 and min_y == 0 and max_x == w - 1 and max_y == h - 1:
 		return tex
 
 	var cw: int = max_x - min_x + 1
