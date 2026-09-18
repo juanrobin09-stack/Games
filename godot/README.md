@@ -4376,3 +4376,67 @@ opacity check re-run on the shipped code (interior still bit-identical,
 `modulate.a` still 1.0) and a direct comparison against the standalone
 experiment that validated this approach, which it matches to within one
 value out of 255. The real `main.tscn` boots and runs clean.
+
+### Character checkup, round five — the idle cape, found by rendering it
+
+A new recording came back with the same report as before: *"when I look
+left or right, the opposite side always disappears."* Two earlier
+passes had answered this by picking a different subset of the six idle
+poses, both times on measurements taken from the raw PNGs against a
+flat background. Both were wrong, and for the same reason: the cape's
+red lining is dark and low-saturation in the source file, so every
+colour threshold fine enough to separate it from the robe also
+separated it from *itself* on half the frames. One of those bad
+measurements is what produced the previous loop — the code comment
+claimed idle_1/3/4 shared "the same small reduced wisp of cape past the
+right hip", which simply is not true.
+
+**What settled it was rendering the six poses in-engine** (real floor,
+real ambient `CanvasModulate`, the character's own Glow), plus a
+floor-only plate captured from the identical scene so the character
+could be isolated by difference instead of by colour key. Side by side
+at that size the answer needs no metric:
+
+* **idle_0 and idle_1 draw a cape flap on both sides of the hips.**
+* **idle_2, idle_3, idle_4 and idle_5 draw the left flap only** — the
+  character's right hip is bare robe.
+
+The loop in the build was idle_1 → idle_3 → idle_4. The right-hand flap
+was therefore on screen for one frame in three and gone for the other
+two, six times a second. That is the report, exactly: a piece of the
+character that keeps disappearing on one side.
+
+A second axis agrees on the same split. Silhouette width eight pixels
+off the ground: idle_0 45, idle_1 45, idle_3 40, idle_4 44 — both feet
+planted — against idle_2 21 and idle_5 22, which are mid-step on a
+single foot. (The source reference sheet has the same asymmetries, so
+this is the art itself, not a bad extraction — the six poses are six
+separate drawings of the character, not keyframes of one cycle.)
+
+**Fix: `IDLE_LOOP_FRAMES` is now idle_0 + idle_1**, at a new
+`IDLE_FPS` of 2.5 instead of 6. That is the only pair that agrees on
+both counts, and it is not a still: 509 silhouette pixels change
+between the two, nearly twice the 262 between idle_3 and idle_4, so the
+loop actually breathes more than the one it replaces. Two poses need
+the slower rate or the alternation reads as a buzz; 2.5fps puts a full
+breath at 0.8s. No third frame can join them without either re-opening
+the flicker or painting a cape flap the source art never had. All six
+textures stay in `IDLE_FRAMES`, untouched, as does every other asset.
+
+**Verified** on real renders in four conditions — dark zone and lit
+zone, facing left and facing right — with both loop frames captured in
+each. Both flaps are present in all eight images and nothing appears or
+vanishes between frames. The run cycle was captured alongside as a
+regression check and is unchanged and correct in both facings. The
+floor-shift opacity test was re-run on the shipped code: 1217 of 1217
+interior pixels bit-identical with the floor shifted 13px underneath,
+so the character is still fully opaque. `main.tscn` boots clean.
+
+One process note worth keeping: the first harness written for this
+verification set `facing` to ±1 and `anim_state` to a string. `facing`
+is an angle in radians and `anim_state` is the `AnimState` enum, so
+every case silently rendered the same idle pose facing right — and the
+captures looked plausible. It was caught only by checking that the
+"facing left" images were actually mirrors of the "facing right" ones
+(they XORed to zero). A verification harness that agrees with itself is
+not evidence.

@@ -62,26 +62,40 @@ const IDLE_FRAMES: Array[Texture2D] = [
 	preload("res://assets/textures/player_idle_4.png"),
 	preload("res://assets/textures/player_idle_5.png"),
 ]
-## The "idle" *animation* plays only this subset of IDLE_FRAMES, not all six —
-## diagnosed directly from a real gameplay recording reported as "the opposite
-## side disappears" (see the README's own entries for this round; the first
-## pass here only found and fixed part of it). idle_1/3/4 are the only three
-## of the six that draw a consistent pose: same wide two-legged stance, and
-## the same small reduced wisp of cape visible past the right hip. The other
-## three each break that consistency in a different way — idle_0 is the only
-## frame with a *full* cape on the right side (not reduced, not absent);
-## idle_2 and idle_5 both narrow the stance to a single stepping foot AND
-## reduce the right-side cape to almost nothing. Looping in any combination
-## that includes idle_0 still flashes a full right-side cape on top of three
-## frames that don't have one, once a cycle — the first pass here dropped
-## idle_2/5 for the leg-width symptom but kept idle_0, so that flash (the
-## actual dominant complaint) survived untouched. idle_1/3/4 alone removes
-## every version of the pop at once. IDLE_FRAMES itself stays all six,
-## matching the source sheet 1:1, in case idle_0/2/5 are useful later for
-## something that wants a one-off pose rather than a steady loop.
+## The "idle" *animation* plays only this subset of IDLE_FRAMES, not all six.
+## The six source poses are not keyframes of one cycle — they are six separate
+## drawings of the same character, and they disagree with each other about two
+## things that the eye reads instantly when they alternate:
+##
+##   * the cape. The character wears a red-lined cape that falls into a flap on
+##     each side of the hips. Only idle_0 and idle_1 draw BOTH flaps. idle_2,
+##     idle_3, idle_4 and idle_5 draw the left one only — the right side of the
+##     hips is bare robe. Rendered in-engine (real floor, real ambient, real
+##     glow) the difference is not subtle: the right flap is simply there or
+##     simply not.
+##   * the stance. idle_0/1/3/4 plant both feet (silhouette 40-45px wide eight
+##     pixels off the ground); idle_2 and idle_5 are mid-step on a single foot
+##     and collapse to 21-22px.
+##
+## So any loop that mixes the two groups makes a whole piece of the character
+## blink. That is the "the opposite side keeps disappearing" report: the loop
+## used to be idle_1 -> idle_3 -> idle_4, which shows the right-hand flap for
+## one frame in three and drops it for the other two, six times a second.
+##
+## idle_0 + idle_1 is the only pair that agrees on both counts — both flaps on
+## both frames, both feet on both frames — while still being two genuinely
+## different drawings: 509 silhouette pixels change between them, nearly twice
+## the 262 between idle_3 and idle_4, so the loop moves more than it used to. No
+## third frame can join them: idle_2..idle_5 all lack the right flap, and there
+## is no way to add one without painting pixels the source art never had.
+## IDLE_FRAMES itself stays all six, matching the source sheet 1:1, for anything
+## that wants a one-off pose rather than a steady loop.
 const IDLE_LOOP_FRAMES: Array[Texture2D] = [
-	IDLE_FRAMES[1], IDLE_FRAMES[3], IDLE_FRAMES[4],
+	IDLE_FRAMES[0], IDLE_FRAMES[1],
 ]
+## Two poses, so the cycle has to be slow or the alternation reads as a buzz
+## rather than a breath: 2.5fps puts a full breath at 0.8s.
+const IDLE_FPS := 2.5
 const RUN_FRAMES: Array[Texture2D] = [
 	preload("res://assets/textures/player_run_0.png"),
 	preload("res://assets/textures/player_run_1.png"),
@@ -172,7 +186,7 @@ static func _build_sprite_frames() -> SpriteFrames:
 	var frames := SpriteFrames.new()
 	frames.remove_animation("default")
 	var specs := [
-		{"name": "idle", "textures": IDLE_LOOP_FRAMES, "fps": 6.0, "loop": true},
+		{"name": "idle", "textures": IDLE_LOOP_FRAMES, "fps": IDLE_FPS, "loop": true},
 		{"name": "run", "textures": RUN_FRAMES, "fps": 12.0, "loop": true},
 		{"name": "attack", "textures": ATTACK_FRAMES, "fps": 20.0, "loop": false},
 		{"name": "dodge", "textures": DODGE_FRAMES, "fps": 27.0, "loop": false},
