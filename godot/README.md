@@ -4403,8 +4403,9 @@ at that size the answer needs no metric:
 
 The loop in the build was idle_1 → idle_3 → idle_4. The right-hand flap
 was therefore on screen for one frame in three and gone for the other
-two, six times a second. That is the report, exactly: a piece of the
-character that keeps disappearing on one side.
+two — at 6fps over three frames, 167ms on and 333ms off, twice a
+second. That is the report, exactly: a piece of the character that
+keeps disappearing on one side.
 
 A second axis agrees on the same split. Silhouette width eight pixels
 off the ground: idle_0 45, idle_1 45, idle_3 40, idle_4 44 — both feet
@@ -4415,9 +4416,16 @@ separate drawings of the character, not keyframes of one cycle.)
 
 **Fix: `IDLE_LOOP_FRAMES` is now idle_0 + idle_1**, at a new
 `IDLE_FPS` of 2.5 instead of 6. That is the only pair that agrees on
-both counts, and it is not a still: 509 silhouette pixels change
-between the two, nearly twice the 262 between idle_3 and idle_4, so the
-loop actually breathes more than the one it replaces. Two poses need
+both counts, and it is not a still: 562 silhouette texels change
+between the two, against 262 between idle_3 and idle_4, so the loop
+actually breathes more than the one it replaces. (That figure is
+measured with each frame centred on its own rect, as Godot places them,
+at 2x so the half-texel offsets land exactly; aligning the silhouettes
+by their feet instead gives 509 for the same pair, which is why the
+convention is worth writing down.) The right flap is not *identical*
+across the pair either — 120 hip-band texels on idle_0 against 100 on
+idle_1 — so it changes size as the pose settles. What it no longer does
+is leave. Two poses need
 the slower rate or the alternation reads as a buzz; 2.5fps puts a full
 breath at 0.8s. No third frame can join them without either re-opening
 the flicker or painting a cape flap the source art never had. All six

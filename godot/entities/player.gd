@@ -80,14 +80,23 @@ const IDLE_FRAMES: Array[Texture2D] = [
 ## So any loop that mixes the two groups makes a whole piece of the character
 ## blink. That is the "the opposite side keeps disappearing" report: the loop
 ## used to be idle_1 -> idle_3 -> idle_4, which shows the right-hand flap for
-## one frame in three and drops it for the other two, six times a second.
+## one frame in three and drops it for the other two — at 6fps over three
+## frames that is the flap appearing twice a second, 167ms on and 333ms off.
 ##
 ## idle_0 + idle_1 is the only pair that agrees on both counts — both flaps on
 ## both frames, both feet on both frames — while still being two genuinely
-## different drawings: 509 silhouette pixels change between them, nearly twice
-## the 262 between idle_3 and idle_4, so the loop moves more than it used to. No
-## third frame can join them: idle_2..idle_5 all lack the right flap, and there
-## is no way to add one without painting pixels the source art never had.
+## different drawings: 562 silhouette texels change between them, against 262
+## between idle_3 and idle_4, so the loop moves more than the one it replaces.
+## (Measured with each frame centred on its own rect, the way Godot places
+## them, at 2x so the half-texel offsets land exactly. That convention matters:
+## aligning the silhouettes by their feet instead gives 509 for the same pair.)
+##
+## The right flap is not *identical* across the pair — it is 120 hip-band texels
+## on idle_0 against 100 on idle_1, so it changes size as the pose settles. It
+## reads as the cape moving, which is what an idle loop is for; what it no
+## longer does is leave. No third frame can join them: idle_2..idle_5 all lack
+## the right flap, and there is no way to add one without painting pixels the
+## source art never had.
 ## IDLE_FRAMES itself stays all six, matching the source sheet 1:1, for anything
 ## that wants a one-off pose rather than a steady loop.
 const IDLE_LOOP_FRAMES: Array[Texture2D] = [
