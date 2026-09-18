@@ -288,6 +288,19 @@ func _update_ambient(room: RoomContainer) -> void:
 	var dark_tint := Color(4.0 / 255.0, 3.0 / 255.0, 8.0 / 255.0)
 	_ambient.color = Color(1.0, 1.0, 1.0).lerp(dark_tint, darkness)
 
+## What the ambient CanvasModulate above is currently multiplying the whole
+## scene by. Read by PlayerCharacter to cancel part of that darkening on its
+## own sprite (see its AMBIENT_COMPENSATION) — the character has to stay
+## readable against a floor that shares its own dark, low-saturation tones,
+## and measuring it from here means that compensation tracks whatever zone
+## the run is actually in instead of assuming one darkness value. White (no
+## darkening) before the first room exists, so callers outside a run — the
+## menus, a test scene — get a no-op rather than a null check of their own.
+func ambient_color() -> Color:
+	if _ambient == null or not is_instance_valid(_ambient):
+		return Color(1.0, 1.0, 1.0)
+	return _ambient.color
+
 ## Ports Game.ts's private syncCombatState — the only place GameState ever
 ## moves between EXPLORATION/COMBAT/BOSS (a real pre-existing gap: neither
 ## state was ever set anywhere in this port before this function), and the

@@ -4308,3 +4308,71 @@ excluded from the loop specifically because patching either defect
 convincingly isn't achievable from what these two frames alone
 contain — not because excluding them is being treated as good enough
 on its own terms.
+
+### The "translucent character", finally measured: not alpha, not scaling, not the darkening — contrast. Fixed with partial ambient compensation
+
+The report that wouldn't go away across every round above — the
+character looks slightly transparent, even at rest — with an
+instruction to stop at diagnosis and prove where the alpha actually
+goes wrong before changing anything. Three separate technical
+hypotheses got tested to destruction, each against real renders in a
+real scene (floor + the ambient `CanvasModulate` + the character's own
+Glow), not against a flat test background, which is exactly why the
+earlier passes kept coming back clean:
+
+**1. Alpha.** All 24 frames are bit-for-bit binary (0 or ≥250, zero
+intermediate pixels). No shader exists anywhere in the project, no
+`material`/`self_modulate` on the sprite, and the one line that ever
+moves `modulate.a` is the death fade behind `not alive`. The decisive
+test: render the same frame three times while shifting the floor tiles
+underneath it, then compare the character's own interior pixels. They
+came back *bit-identical* every time — a genuinely translucent pixel
+would have changed colour with the floor behind it. The four points in
+that sample window that did move sit in a gap in the silhouette
+(luminance 5-13, i.e. floor), not on the body.
+
+**2. Scaling.** `SPRITE_SCALE` 0.6 × camera zoom 1.5 = 0.9, a
+non-integer, so the natural suspicion was sub-pixel sampling. Tested
+four configurations with everything else pinned: the current 0.9, a
+sprite scale giving exactly 1.0 against the same zoom, zoom 1.0 at the
+current sprite scale, and full native 1:1 with no fractional scaling
+anywhere. All four look identical. Integer scaling changes nothing.
+
+**3. The ambient darkening itself.** Exempted the character from the
+`CanvasModulate` in three steps (none, half, full) and measured the
+20%→80% rise distance across the hood's edge on eight scanlines. The
+transition width is *identical* in all three — 1px on most lines, 2-3px
+where the edge runs diagonally. Only the amplitude changes, and exactly
+in the ratio applied (×1.43 and ×2.02 measured for ×1.40 and ×1.97
+applied). The darkening is a clean linear multiply; it blurs nothing.
+
+**So the edge was never soft.** A 1px transition is as hard as an edge
+can be at this resolution. What actually happens is that the
+character's dark, low-saturation tones and the floor's own dark tones
+get multiplied down into the same narrow band together, and the
+boundary between them stops carrying enough contrast to read — which
+the eye reports as "transparent".
+
+**Fix: partial ambient compensation, on the character's sprite only.**
+`LevelFlow.ambient_color()` (new, tiny accessor; white before a run
+exists, so menus and test scenes no-op) exposes what the
+`CanvasModulate` is currently multiplying by; `PlayerCharacter`'s new
+`AMBIENT_COMPENSATION` (0.5) cancels that darkening by its square root
+— half of it back, in multiplicative terms — and folds the result into
+the sprite's RGB at the end of `_update_sprite_animation()`, after the
+hit flash and clear of `tint.a`. One scalar across all three channels,
+so the character keeps the ambient's own colour cast rather than
+drifting to a different hue than its surroundings, and the factor is
+derived from the live ambient every frame, so it scales itself per
+zone: ×1.40 at `hollowRuins`' darkness of 0.5, ×1.08 in a lit area —
+i.e. it does essentially nothing where nothing is needed. No texture
+touched, no pixel edited, no outline drawn, no light added, scale
+untouched, floor and general lighting untouched. `AMBIENT_COMPENSATION
+= 0.0` reverts the whole thing.
+
+**Verified** against real renders: lit zone and dark zone, idle and
+run, both facings, with and without compensation — plus the floor-shift
+opacity check re-run on the shipped code (interior still bit-identical,
+`modulate.a` still 1.0) and a direct comparison against the standalone
+experiment that validated this approach, which it matches to within one
+value out of 255. The real `main.tscn` boots and runs clean.

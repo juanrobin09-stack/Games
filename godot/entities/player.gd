@@ -147,6 +147,22 @@ const WEAPON_ANGLE_CLAMP := deg_to_rad(70.0)
 ## off; nothing else about the weapon code below needs to change.
 const DRAW_WEAPON := false
 
+## How much of LevelFlow's ambient darkening the character's own sprite
+## cancels for itself: 0.0 takes the full dungeon darkness exactly like the
+## floor does, 1.0 ignores it entirely, 0.5 gives back half of it (in
+## multiplicative terms — the square root of the inverse). The character was
+## reported as looking translucent in play; measured against real renders it
+## isn't (interior pixels are bit-identical whatever the floor does behind
+## them, and the silhouette's own edge transition is 1-3px wide with or
+## without the darkening), so what's actually happening is that the
+## character's dark, low-saturation tones land on a floor sharing the same
+## narrow tonal range once both are multiplied down together. Lifting only
+## the character back up part-way restores the contrast that separates them
+## without touching a single texture pixel, and without adding a light that
+## would read as an artificial glow. Applied to the sprite's RGB alone —
+## never its alpha, which the death fade owns.
+const AMBIENT_COMPENSATION := 0.5
+
 ## Built once in _ready() from the const frame arrays above — programmatic
 ## rather than a hand-authored SpriteFrames .tres, matching this project's
 ## existing "build via code, not the editor" convention for anything this
@@ -597,7 +613,25 @@ func _update_sprite_animation() -> void:
 		_sprite.position = Vector2(0.0, SPRITE_Y_OFFSET)
 		if hit_flash_timer > 0.0:
 			tint = tint.lerp(Color(Palette.BLOOD_BRIGHT), (hit_flash_timer / 0.28) * 0.75)
-	_sprite.modulate = tint
+	# Last, so it lifts whatever tint the states above settled on (the hit
+	# flash included — a flash left at floor brightness would read dimmer
+	# than the body it flashes over) and so it stays clear of tint.a.
+	var lift := _ambient_compensation()
+	_sprite.modulate = Color(tint.r * lift, tint.g * lift, tint.b * lift, tint.a)
+
+## One scalar applied to all three channels rather than per-channel, so the
+## character keeps exactly the ambient's own colour cast — just less of its
+## darkness — instead of drifting to a different hue than everything around
+## it. Derived from the live ambient every frame, so a bright zone gets a
+## factor of ~1 on its own without special-casing.
+func _ambient_compensation() -> float:
+	if AMBIENT_COMPENSATION <= 0.0:
+		return 1.0
+	var ambient := LevelFlow.ambient_color()
+	var level: float = (ambient.r + ambient.g + ambient.b) / 3.0
+	if level >= 0.999:
+		return 1.0
+	return pow(1.0 / maxf(level, 0.02), AMBIENT_COMPENSATION)
 
 func _read_input() -> void:
 	var x := 0.0
