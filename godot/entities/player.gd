@@ -218,6 +218,10 @@ const WEAPON_ANGLE_CLAMP := deg_to_rad(70.0)
 ## off; nothing else about the weapon code below needs to change.
 const DRAW_WEAPON := false
 
+## Porte par _sprite seul, jamais par le noeud joueur : l'ombre portee, le glow
+## et les effets dessines dans _draw() gardent leur rendu d'origine.
+const SPRITE_CONTRAST_SHADER: Shader = preload("res://entities/player_contrast.gdshader")
+
 ## How much of LevelFlow's ambient darkening the character's own sprite
 ## cancels for itself: 0.0 takes the full dungeon darkness exactly like the
 ## floor does, 1.0 ignores it entirely, 0.5 gives back half of it (in
@@ -881,6 +885,15 @@ func _ready() -> void:
 	# band, against a texture whose alpha is strictly binary -- the softness is
 	# the filter's, not the art's.
 	_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	# Separe le dessin du personnage du sol qu'il traverse. Le shader lit le
+	# fond derriere chaque pixel et agit differemment selon lui : il creuse le
+	# trait, toujours, et n'ecarte le modele interne que sur un sol clair. Ni
+	# l'alpha, ni la silhouette, ni la cape, ni les yeux ou l'amulette ne sont
+	# touches -- voir player_contrast.gdshader pour les mesures qui fixent
+	# chaque seuil.
+	var contrast := ShaderMaterial.new()
+	contrast.shader = SPRITE_CONTRAST_SHADER
+	_sprite.material = contrast
 	add_child(_sprite)
 	_sprite.play("idle")
 
