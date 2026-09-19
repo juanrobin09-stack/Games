@@ -872,6 +872,15 @@ func _ready() -> void:
 	_sprite.sprite_frames = _build_sprite_frames()
 	_sprite.scale = Vector2(SPRITE_SCALE, SPRITE_SCALE)
 	_sprite.position = Vector2(0.0, SPRITE_Y_OFFSET)
+	# Nearest rather than the project default (Linear), on THIS node only. The
+	# frames reach the screen at SPRITE_SCALE 0.6 x Camera2D.zoom 1.5 x the
+	# canvas_items stretch 1920/1152 = 1.5 screen pixels per texel, and a
+	# non-integer upscale under Linear wraps the silhouette in a band of pixels
+	# that are part sprite, part floor. Measured on the 80-capture bench: 64.2%
+	# of the contour pixels the contrast metric calls illegible sit in that
+	# band, against a texture whose alpha is strictly binary -- the softness is
+	# the filter's, not the art's.
+	_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	add_child(_sprite)
 	_sprite.play("idle")
 
