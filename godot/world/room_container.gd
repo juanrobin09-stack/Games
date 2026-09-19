@@ -304,15 +304,27 @@ func set_active(active: bool) -> void:
 ## palette_wall below now that the walls are a real texture too — see
 ## _draw_walls()'s own comment for why that one couldn't just be stretched
 ## the same simple way.
-## Sol fourni tel quel (1672x941), etire sur la salle entiere comme le
-## precedent. Son rapport 1,78 est plus proche des 1,61 de la salle que le
-## 1,0 de floor_stone.png, donc la deformation diminue. Surtout, sa gamme est
-## nettement plus resserree -- ecart-type de luminance 9,4 contre 15,0 -- et
-## c'est cette dispersion, pas la luminance moyenne, qui noyait le personnage.
+## Sol fourni par l'utilisateur (1672x941). D'abord etire en un seul
+## draw_texture_rect sur toute la salle (comme floor_stone.png l'etait), ce
+## qui deformait l'image de ~10-15% (son rapport 1,78 contre 1,61 pour la
+## salle). Verifie ensuite que l'image se reboucle proprement sur elle-meme --
+## assemblage 2x2 zoome pile sur le point de jonction des 4 tuiles, aucune
+## ligne de coupure, aucun motif qui se repete -- donc plus besoin d'etirer :
+## FLOOR_TILE_SCALE fixe combien d'unites-monde vaut un pixel de la texture,
+## et draw_texture_rect(..., true) la reboucle nativement pour remplir le
+## rectangle donne, sans distorsion et sans code de tuilage a la main (les
+## tuiles de bord, partielles, sont decoupees par le moteur lui-meme).
 const FLOOR_TEXTURE := preload("res://assets/textures/floor_ember_crust.png")
+const FLOOR_TILE_SCALE := 0.16
 
 func _draw() -> void:
-	draw_texture_rect(FLOOR_TEXTURE, Rect2(0.0, 0.0, ROOM_WIDTH, ROOM_HEIGHT), false)
+	# draw_set_transform doit etre remis a l'identite avant _draw_walls() --
+	# meme convention que enemy.gd, un transform laisse actif fuiterait dans
+	# tous les draw_* suivants de ce _draw().
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2(FLOOR_TILE_SCALE, FLOOR_TILE_SCALE))
+	draw_texture_rect(FLOOR_TEXTURE,
+		Rect2(0.0, 0.0, ROOM_WIDTH / FLOOR_TILE_SCALE, ROOM_HEIGHT / FLOOR_TILE_SCALE), true)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	_draw_walls()
 
 ## Real WALL textures — a supplied sprite sheet of separately pre-cut
