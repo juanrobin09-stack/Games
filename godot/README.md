@@ -4697,3 +4697,94 @@ stays at 0.5; no code changed in this entry.
 There is no bloom anywhere to confound this — the project has no
 `WorldEnvironment` and no glow post-processing; the only "glow" in it is
 `PointLight2D`.
+
+### The walk row that was never extracted
+
+Pressing a movement key changed the character's camera angle. The supplied
+style sheet has five animation rows — Idle, **Marche**, Course, Attaque,
+Saut — and only four were ever extracted. Movement was routed to Course,
+which is the one row drawn from a different angle.
+
+Measured on the alpha channel alone, with no colour threshold: lateral
+mass bias (opaque texels right of the body axis minus left, over their
+sum, in the 55-88% height band) runs -0.11..-0.29 across Idle and
+-0.66..-0.86 across Course. A ~3x difference with an empty gap between
+the two clusters, and the same split holds under silhouette
+mirror-symmetry residual and bbox aspect ratio. Sorting all 24 shipped
+frames this way gives 11 front-camera and 13 profile, nothing in
+between — so **no existing frame could bridge the cut**, and no
+quarter-turn drawing exists in the sheet's own turnaround panel either
+(it offers Face / Droite / Dos / Gauche only).
+
+Which animation came from which row, confirmed by matching every shipped
+frame against every row (IoU 0.81-0.84 for the right row, <= 0.63 for
+any other):
+
+```
+jeu "idle"   -> Idle      jeu "attack" -> Attaque
+jeu "run"    -> Course    jeu "dodge"  -> Saut
+                          rangee "Marche" -> rien
+```
+
+**Marche is drawn at Idle's camera.** Extracting it is what removes the
+cut, and it invents nothing: it is the artist's own row, from the same
+`sept14_2031.png` the other 24 came from, at 1:1 with no rescaling.
+
+**The pipeline was tuned by making it reproduce the already-shipped
+frames.** Candidate parameters were scored by re-extracting the Idle row
+and comparing against those frames *as the engine draws them* (i.e. after
+`_normalise()`), aligned optimally:
+
+```
+seuil 12, fermeture 5, bouchage, dilatation 1px (carre)   IoU 0.912  aire 0.978x
+seuil 12, fermeture 7, bouchage, sans dilatation          IoU 0.858  aire 0.894x
+seuil brut, plus gros bloc, sans fermeture                IoU 0.699  aire  --
+hysteresis (germe 12 / croissance 8)                      IoU 0.629  aire 1.446x
+```
+
+The winner reproduces the shipped silhouettes to 91% IoU at 98% of their
+area. Hysteresis loses because the sheet's background is noisy near-black
+and the low threshold leaks straight into it.
+
+**Frame rate derived, not picked.** Ground contact measured over the
+bottom 10% of each silhouette with the red cape hem excluded — the band
+where two separate contacts actually resolve — gives a widest stride of
+63 texels. Two steps per six-frame cycle is `2 x 63 x SPRITE_SCALE = 75.6`
+world units, and at `move_speed` 190 that is a 0.40s cycle: **15fps**.
+Good to a few fps rather than exact (a tighter 6% band resolves one foot,
+underestimates the stride and argues for 25), but the direction is solid:
+Course was running at 12fps against a stride that wanted 17.3, which is
+why it skated.
+
+`RUN_FRAMES` and the `run` animation are **kept and still built**. Course
+is a good animation, just a different camera; it is the obvious basis for
+a sprint later, and deleting a working row to fix a routing problem would
+be the wrong trade. `AnimState.RUN` now maps to the `walk` animation.
+
+**Verified** by driving the real `_update_state()` / `move_and_slide()` /
+`_update_sprite_animation()` tick by tick at 60Hz and logging the
+animation the sprite is actually on, plus its flip:
+
+```
+1. idle -> marche              idle 12 ticks, puis walk/D des le 1er tick touche
+2. marche -> idle              walk 38 ticks (8 apres le relachement), puis idle
+3. gauche -> droite            walk/G -> walk/D, reste dans walk, seul le flip change
+4. droite -> gauche            walk/D -> walk/G, idem
+5. appui/relachement rapide    walk continu 28 ticks, 1 transition au lieu de 8
+6. deplacement prolonge        walk/D stable sur 120 ticks (2.0s)
+```
+
+Cases 3 and 4 are the point: turning around no longer changes animation
+at all, only `flip_h`. And the discontinuity at the idle/movement
+boundary, as silhouette IoU with each frame placed the way
+`AnimatedSprite2D` places it:
+
+```
+idle -> run    min 0.511   moyenne 0.540   max 0.610
+idle -> walk   min 0.640   moyenne 0.697   max 0.756
+reference: le plus gros changement DANS la boucle idle = 0.878
+```
+
+The cut is still there — walking is a different pose from standing — but
+it is now 30% of the union instead of 46%, and it is a change of pose
+rather than a change of camera. `main.tscn` boots clean.

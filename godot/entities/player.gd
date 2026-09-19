@@ -112,6 +112,47 @@ const IDLE_LOOP_FRAMES: Array[Texture2D] = [
 ## Two poses, so the cycle has to be slow or the alternation reads as a buzz
 ## rather than a breath: 2.5fps puts a full breath at 0.8s.
 const IDLE_FPS := 2.5
+## The supplied style sheet has five animation rows: Idle, Marche, Course,
+## Attaque, Saut. Four of them were extracted when the art landed; "Marche" was
+## dropped, and the game mapped movement onto Course instead. That is the whole
+## "the character switches camera every time I press a key" problem, because
+## Course is the ONE row drawn from a different angle. Measured on the alpha
+## channel alone, lateral mass bias (opaque texels right of the body axis minus
+## left, over their sum, in the 55-88% height band) is -0.11..-0.29 across the
+## Idle row and -0.66..-0.86 across Course: a ~3x difference with nothing in
+## between, and the same split holds under silhouette mirror-symmetry and bbox
+## aspect. Idle, Attaque and Saut are all drawn front-on; only Course is turned
+## nearly to profile and pitched forward.
+##
+## Marche is front-on, like Idle. Extracting it is what actually removes the
+## cut, and it costs no invention: it is the artist's own row, taken from the
+## same sheet as the other 24 at 1:1 with a pipeline tuned until it reproduced
+## the already-shipped Idle frames (IoU 0.912, silhouette area 0.978x, against
+## those frames as the engine draws them).
+const WALK_FRAMES: Array[Texture2D] = [
+	preload("res://assets/textures/player_walk_0.png"),
+	preload("res://assets/textures/player_walk_1.png"),
+	preload("res://assets/textures/player_walk_2.png"),
+	preload("res://assets/textures/player_walk_3.png"),
+	preload("res://assets/textures/player_walk_4.png"),
+	preload("res://assets/textures/player_walk_5.png"),
+]
+## Derived from the art's own stride rather than picked. Ground contact is
+## measured over the bottom 10% of each silhouette with the red cape hem
+## excluded, which is the band where the detector actually resolves two separate
+## contacts rather than one; the widest is 63 texels. A six-frame cycle is two
+## steps, so it covers 2 x 63 x SPRITE_SCALE = 75.6 world units, and at
+## move_speed 190 that is 0.40s -- 15fps for six frames.
+##
+## Treat this as good to a few fps, not exact: a tighter 6% band resolves only
+## one foot on most frames, underestimates the stride and argues for 25. What is
+## solid is the direction. The Course row was running at 12fps against a stride
+## that wanted 17.3, which is why it skated.
+const WALK_FPS := 15.0
+## Kept and still built, though locomotion no longer uses it: Course is a good
+## animation, just a different camera. It is the obvious basis for a sprint or
+## dash later, and deleting a working row to fix a routing problem would be the
+## wrong trade.
 const RUN_FRAMES: Array[Texture2D] = [
 	preload("res://assets/textures/player_run_0.png"),
 	preload("res://assets/textures/player_run_1.png"),
@@ -203,6 +244,7 @@ static func _build_sprite_frames() -> SpriteFrames:
 	frames.remove_animation("default")
 	var specs := [
 		{"name": "idle", "textures": IDLE_LOOP_FRAMES, "fps": IDLE_FPS, "loop": true},
+		{"name": "walk", "textures": WALK_FRAMES, "fps": WALK_FPS, "loop": true},
 		{"name": "run", "textures": RUN_FRAMES, "fps": 12.0, "loop": true},
 		{"name": "attack", "textures": ATTACK_FRAMES, "fps": 20.0, "loop": false},
 		{"name": "dodge", "textures": DODGE_FRAMES, "fps": 27.0, "loop": false},
@@ -787,7 +829,7 @@ func _update_sprite_animation() -> void:
 	match anim_state:
 		AnimState.ATTACK: target_anim = "attack"
 		AnimState.DODGE: target_anim = "dodge"
-		AnimState.RUN: target_anim = "run"
+		AnimState.RUN: target_anim = "walk"
 		_: target_anim = "idle"
 	if _sprite.animation != target_anim:
 		_sprite.play(target_anim)
