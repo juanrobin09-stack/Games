@@ -345,8 +345,19 @@ func _draw() -> void:
 ## (_setup_physics_bodies's collision geometry and projectile.gd's own
 ## wall check), which is why this stays a separate function rather than
 ## a change to get_walls() itself.
-const WALL_TEXTURE_H := preload("res://assets/textures/wall_horizontal.png")
-const WALL_TEXTURE_V := preload("res://assets/textures/wall_vertical.png")
+## Murs fournis par l'utilisateur (meme lot que floor_ember_crust.png). La
+## piece horizontale (1256x326) est une bande complete, murs+piliers+bannieres,
+## etiree une fois sur toute la largeur -- exactement comme WALL_TEXTURE_H
+## l'etait deja, aucun changement de mecanisme.
+## La piece verticale d'origine (238x873, chapiteau + banniere + base a
+## decombres) ne boucle pas : ses bords haut/bas ne se raccordent pas, et
+## _draw_wall_v_tiled() la repete verticalement sur toute la hauteur du mur.
+## wall_ember_v.png est donc un decoupage de 160px pris DANS la portion
+## generique du fut (aucune banniere, aucun chapiteau), les deux bords choisis
+## sur un joint de pierre pour que la repetition se lise comme un joint de
+## plus et non comme une coupure -- verifie en pile de 3 avant integration.
+const WALL_TEXTURE_H := preload("res://assets/textures/wall_ember_h.png")
+const WALL_TEXTURE_V := preload("res://assets/textures/wall_ember_v.png")
 
 ## Stretching a wall piece's whole texture across its destination in one
 ## draw_texture_rect call works fine everywhere else — every other piece
