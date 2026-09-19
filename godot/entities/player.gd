@@ -249,14 +249,92 @@ static func _build_sprite_frames() -> SpriteFrames:
 		{"name": "attack", "textures": ATTACK_FRAMES, "fps": 20.0, "loop": false},
 		{"name": "dodge", "textures": DODGE_FRAMES, "fps": 27.0, "loop": false},
 	]
+	# Pass one: clean every frame (strays, holes, tight crop) and note where its
+	# body anchor sits. Pass two: repaint them all onto one common canvas with
+	# that anchor at the middle. AnimatedSprite2D has no per-frame pivot -- it
+	# centres each frame on that frame's OWN texture rect -- so a tight crop turns
+	# "the cape reaches further this frame" into "the body moved", which is the
+	# whole judder. Once every frame is the same size with the anchor centred,
+	# centring the rect IS anchoring the body, and the engine needs no changes.
+	var imgs: Array[Image] = []
+	var anchors: PackedVector2Array = PackedVector2Array()
+	for spec in specs:
+		for tex in spec["textures"]:
+			var img: Image = _normalised_image(tex)
+			imgs.append(img)
+			anchors.append(_body_anchor(img))
+
+	# The anchor's offset from the bbox centre, averaged over the idle loop. Using
+	# the idle loop as the reference is what keeps the character exactly where it
+	# already sits: those frames move by 0.2 texels, so SPRITE_Y_OFFSET -- which
+	# was calibrated against the idle row in the first place -- still holds.
+	var k := Vector2.ZERO
+	for i in range(IDLE_LOOP_FRAMES.size()):
+		k += anchors[i] - Vector2(imgs[i].get_width(), imgs[i].get_height()) * 0.5
+	k /= float(maxi(IDLE_LOOP_FRAMES.size(), 1))
+
+	var half := Vector2.ZERO
+	for i in range(imgs.size()):
+		var sz := Vector2(imgs[i].get_width(), imgs[i].get_height())
+		half.x = maxf(half.x, maxf(anchors[i].x - k.x, sz.x - anchors[i].x + k.x))
+		half.y = maxf(half.y, maxf(anchors[i].y - k.y, sz.y - anchors[i].y + k.y))
+	var canvas := Vector2i(int(ceil(half.x)) * 2, int(ceil(half.y)) * 2)
+
+	var n := 0
 	for spec in specs:
 		var anim_name: String = spec["name"]
 		frames.add_animation(anim_name)
 		frames.set_animation_speed(anim_name, spec["fps"])
 		frames.set_animation_loop(anim_name, spec["loop"])
-		for tex in spec["textures"]:
-			frames.add_frame(anim_name, _normalised_frame(tex))
+		for _tex in spec["textures"]:
+			frames.add_frame(anim_name, _registered(imgs[n], anchors[n], k, canvas))
+			n += 1
 	return frames
+
+## Where the body is, independent of how far the cape happens to reach this
+## frame. x is the horizontal centroid of the top 30% of the silhouette -- the
+## hood and shoulders, the one mass that does not flap; y is the crown of the
+## hood, which after the tight crop is row 0.
+##
+## Both were picked by measurement, not taste. Tracking the eye pair (two hot
+## blobs at the same height in the upper skull) across every frame and asking how
+## far it wanders relative to each candidate anchor:
+##
+##            repere = centre de boite     repere = centroide de tete
+##   idle              7.0 px                      2.4 px
+##   walk             12.3 px                      3.0 px
+##   run               6.2 px                      0.7 px
+##   attack           26.4 px                      7.2 px
+##   dodge            10.0 px                      1.6 px
+##
+## and vertically, eye height measured down from the crown is 28.4-28.7 across
+## the whole run row -- 0.3 px of spread. The art has no head bob at all; every
+## pixel of the bob on screen was manufactured by bbox centring.
+static func _body_anchor(img: Image) -> Vector2:
+	var w := img.get_width()
+	var h := img.get_height()
+	var band := maxi(int(float(h) * 0.30), 1)
+	var sum_x := 0.0
+	var count := 0
+	for y in range(band):
+		for x in range(w):
+			if img.get_pixel(x, y).a > 0.0:
+				sum_x += float(x)
+				count += 1
+	if count == 0:
+		return Vector2(float(w) * 0.5, 0.0)
+	return Vector2(sum_x / float(count), 0.0)
+
+## Repaints one cleaned frame onto the shared canvas so its anchor lands k away
+## from the centre -- k being the offset the idle loop already had, so nothing
+## moves that was previously correct.
+static func _registered(img: Image, anchor: Vector2, k: Vector2, canvas: Vector2i) -> Texture2D:
+	var out := Image.create(canvas.x, canvas.y, false, Image.FORMAT_RGBA8)
+	out.fill(Color(0.0, 0.0, 0.0, 0.0))
+	var at := Vector2(canvas) * 0.5 + k - anchor
+	out.blit_rect(img, Rect2i(Vector2i.ZERO, Vector2i(img.get_width(), img.get_height())),
+		Vector2i(roundi(at.x), roundi(at.y)))
+	return ImageTexture.create_from_image(out)
 
 ## Cache keyed by source texture, so the pass below runs once per distinct
 ## frame per process rather than once per player instance.
@@ -279,13 +357,17 @@ static var _normalised_cache: Dictionary = {}
 ##     the body by half the empty margin, for that one frame.
 ##
 ## Both are corrected here, at load, rather than in the PNGs: keep the largest
-## connected run of opaque pixels, then crop to what is left. Nothing is
-## repainted, no asset file changes, and the 18 frames that were already clean
-## are returned as the very same texture object.
-static func _normalised_frame(tex: Texture2D) -> Texture2D:
+## connected run of opaque pixels, restore the alpha of anything the outside
+## cannot reach, then crop to what is left. Nothing is repainted and no asset
+## file changes.
+##
+## Returns an Image rather than a Texture2D because _build_sprite_frames() needs
+## the pixels again afterwards, to find each frame's body anchor and repaint it
+## onto the shared canvas.
+static func _normalised_image(tex: Texture2D) -> Image:
 	if _normalised_cache.has(tex):
 		return _normalised_cache[tex]
-	var fixed: Texture2D = _normalise(tex)
+	var fixed: Image = _normalise(tex)
 	_normalised_cache[tex] = fixed
 	return fixed
 
@@ -306,10 +388,10 @@ static func _seed_outside(stack: PackedInt32Array, reach: PackedByteArray,
 	reach[p] = 1
 	stack.push_back(p)
 
-static func _normalise(tex: Texture2D) -> Texture2D:
+static func _normalise(tex: Texture2D) -> Image:
 	var img: Image = tex.get_image()
 	if img == null:
-		return tex
+		return Image.create(1, 1, false, Image.FORMAT_RGBA8)
 	if img.is_compressed():
 		img.decompress()
 	img.convert(Image.FORMAT_RGBA8)
@@ -351,7 +433,7 @@ static func _normalise(tex: Texture2D) -> Texture2D:
 			best_size = size
 			best_id = next_id
 	if best_id == 0:
-		return tex
+		return img
 
 	# Second pass: transparent pixels that the outside cannot reach are holes
 	# punched INSIDE the body, not background. Flood the transparent set inward
@@ -401,7 +483,7 @@ static func _normalise(tex: Texture2D) -> Texture2D:
 		elif id != 0:
 			stray += 1
 	if filled == 0 and stray == 0 and min_x == 0 and min_y == 0 and max_x == w - 1 and max_y == h - 1:
-		return tex
+		return img
 
 	var cw: int = max_x - min_x + 1
 	var ch: int = max_y - min_y + 1
@@ -415,9 +497,7 @@ static func _normalise(tex: Texture2D) -> Texture2D:
 			var dst: int = (y * cw + x) * 4
 			for c in range(4):
 				out[dst + c] = data[src * 4 + c]
-	return ImageTexture.create_from_image(
-		Image.create_from_data(cw, ch, false, Image.FORMAT_RGBA8, out)
-	)
+	return Image.create_from_data(cw, ch, false, Image.FORMAT_RGBA8, out)
 
 ## The player's own unmodified stat floor (createBaseStats() in the TS
 ## source). recompute_stats() always re-derives `stats` from THIS, never

@@ -4788,3 +4788,78 @@ reference: le plus gros changement DANS la boucle idle = 0.878
 The cut is still there — walking is a different pose from standing — but
 it is now 30% of the union instead of 46%, and it is a change of pose
 rather than a change of camera. `main.tscn` boots clean.
+
+### Registering the frames on a body anchor instead of their bounding box
+
+`AnimatedSprite2D` has no per-frame pivot: it centres every frame on that
+frame's *own* texture rect. The frames are tight-cropped, and the crop
+follows the cape. So "the cape reaches further this frame" became "the
+body moved" — and the head and the feet moved in *opposite* directions,
+because a taller frame pushes its top up and its bottom down by the same
+half-height. That opposed motion is the judder.
+
+**The art itself has no head bob.** Eye height measured down from the
+hood crown across the whole run row is 28.4, 28.4, 28.4, 28.5, 28.6,
+28.7 source px — 0.3 px of spread. Every visible pixel of bob was
+manufactured by the engine.
+
+**Anchor chosen by measurement.** Tracking the eye pair (two hot blobs at
+the same height, a face apart, in the upper skull — a landmark the anchor
+itself never uses) and asking how far it wanders relative to each
+candidate:
+
+```
+                repere = centre de boite     repere = centroide de tete
+   idle                   7.0 px                      2.4 px
+   walk                  12.3 px                      3.0 px
+   run                    6.2 px                      0.7 px
+   attack                26.4 px                      7.2 px
+   dodge                 10.0 px                      1.6 px
+```
+
+So the anchor is **x = horizontal centroid of the top 30% of the
+silhouette** (hood and shoulders, the one mass that does not flap),
+**y = the crown**, which after the tight crop is row 0.
+
+**Implementation, still with no texture file touched.**
+`_build_sprite_frames()` now runs two passes: clean every frame as
+before, note its anchor, then repaint them all onto one shared 152x120
+canvas with the anchor at a fixed point. Once every frame is the same
+size with the anchor centred, centring the rect *is* anchoring the body,
+and the engine needs no changes. The fixed point is the offset the idle
+loop already had, so the frames that were previously correct do not move:
+the idle loop shifts 0.2 texels, and `SPRITE_Y_OFFSET` — calibrated
+against the idle row in the first place — still holds. Idle feet land
+within a quarter texel of where they were, so the ground shadow still
+matches.
+
+**Verified in-engine**, spreads in capture pixels (0.9 px per texel):
+
+```
+anim   | AVANT centre de boite        | APRES pivot par frame
+       | yeux y   yeux x   sol        | yeux y   yeux x   sol
+ idle  |   0.4      2.3     0.5       |   0.0      0.6     0.9
+ walk  |   6.1     11.1     5.9       |   2.0      2.7    11.7
+ run   |   4.7      5.6     4.5       |   0.3      0.3     9.0
+ dodge |   6.3      9.0     8.1       |   2.9      1.5    16.2
+ attack|   4.0     23.8     5.4       |   3.8      6.5    10.8
+```
+
+Across all 26 frames of all five animations the hood crown now sits
+within 4.0 px and the head axis within 2.02 px, and the first frame of
+each animation lands at y 101-102, x 132.55-133.30 — the animations
+register to each other to within about a pixel.
+
+**The honest cost.** Head-stable and feet-stable cannot both be true:
+the art's own crown-to-ground distance varies by up to 16 px, so
+something has to move. Anchoring on the ground instead would swing the
+eyes 10-14 px (against 2-3 px this way), so the head wins. What that
+means on screen is that the **lowest** point of the silhouette moves
+with the stride — walk goes 81 / 71 / 79 / 71 / 69 / 80 px below the
+crown, a clean alternation rather than a drift, and it is the leg
+articulating while the body stays put. The body itself does not jump:
+head 0.0 px, eyes 2.0 px through the whole walk cycle.
+
+Cost is 325ms once per process for all 30 frames (down from 402ms, since
+the cache now holds Images rather than rebuilding textures), 4ms for
+every player after the first. `main.tscn` boots clean.
