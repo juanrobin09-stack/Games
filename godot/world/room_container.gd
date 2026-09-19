@@ -412,6 +412,33 @@ func _draw_wall_v_tiled(x: float, y: float, w: float, h: float) -> void:
 	for i in range(tile_count):
 		draw_texture_rect(WALL_TEXTURE_V, Rect2(x, y + i * tile_h, w, tile_h), false)
 
+## Repete WALL_TEXTURE_H sur la largeur sans jamais deformer ses proportions.
+## _draw_wall_v_tiled ci-dessus fixe la LARGEUR (l'epaisseur du mur) et choisit
+## la hauteur de chaque tuile pour viser une nettete d'affichage correcte,
+## sans chercher a egaler le ratio de la source -- c'est defendable la, car
+## l'axe qu'il ne fixe pas (la hauteur) n'est pas celui qui posait probleme.
+## Pour Nord/Sud c'est l'inverse : chaque draw_texture_rect(WALL_TEXTURE_H,
+## Rect2(x,y,w,t), false) etirait la source (1256x326) dans un rectangle de
+## hauteur t=WALL_THICKNESS=46 ET de largeur w (jusqu'a ROOM_WIDTH=1000 sans
+## porte) -- deux facteurs d'echelle tres differents sur les deux axes
+## (~46/326=0.14 en hauteur contre ~1000/1256=0.80 en largeur), exactement la
+## deformation verticale des briques que Nord montrait. Ici l'axe fixe est la
+## HAUTEUR -- l'epaisseur du mur ne bouge jamais -- et UN SEUL facteur
+## d'echelle (scale = h / tex_h) s'applique aux deux axes a la fois : chaque
+## brique garde exactement son ratio d'origine. tile=true reboucle la texture
+## pour couvrir toute la largeur demandee et decoupe lui-meme la derniere
+## tuile partielle en bord de segment, sans code de comptage de tuiles a la
+## main -- meme mecanisme deja verifie sur le sol (FLOOR_TILE_SCALE). Nord et
+## Sud appellent tous les deux cette meme fonction, avec ou sans porte,
+## verrouillee ou non : c'est ce qui les rend visuellement identiques l'un a
+## l'autre et a la meme logique de repetition que les murs lateraux.
+func _draw_wall_h_tiled(x: float, y: float, w: float, h: float) -> void:
+	var tex_h := float(WALL_TEXTURE_H.get_height())
+	var scale := h / tex_h
+	draw_set_transform(Vector2(x, y), 0.0, Vector2(scale, scale))
+	draw_texture_rect(WALL_TEXTURE_H, Rect2(0.0, 0.0, w / scale, h / scale), true)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
 func _draw_walls() -> void:
 	var t := WALL_THICKNESS
 	var half := DOOR_WIDTH / 2.0
@@ -419,21 +446,21 @@ func _draw_walls() -> void:
 
 	if has_door(Direction.N):
 		var span := ROOM_WIDTH / 2.0 - half
-		draw_texture_rect(WALL_TEXTURE_H, Rect2(0.0, 0.0, span, t), false)
-		draw_texture_rect(WALL_TEXTURE_H, Rect2(ROOM_WIDTH / 2.0 + half, 0.0, span, t), false)
+		_draw_wall_h_tiled(0.0, 0.0, span, t)
+		_draw_wall_h_tiled(ROOM_WIDTH / 2.0 + half, 0.0, span, t)
 		if locked:
-			draw_texture_rect(WALL_TEXTURE_H, Rect2(ROOM_WIDTH / 2.0 - half, 0.0, DOOR_WIDTH, t), false)
+			_draw_wall_h_tiled(ROOM_WIDTH / 2.0 - half, 0.0, DOOR_WIDTH, t)
 	else:
-		draw_texture_rect(WALL_TEXTURE_H, Rect2(0.0, 0.0, ROOM_WIDTH, t), false)
+		_draw_wall_h_tiled(0.0, 0.0, ROOM_WIDTH, t)
 
 	if has_door(Direction.S):
 		var span := ROOM_WIDTH / 2.0 - half
-		draw_texture_rect(WALL_TEXTURE_H, Rect2(0.0, ROOM_HEIGHT - t, span, t), false)
-		draw_texture_rect(WALL_TEXTURE_H, Rect2(ROOM_WIDTH / 2.0 + half, ROOM_HEIGHT - t, span, t), false)
+		_draw_wall_h_tiled(0.0, ROOM_HEIGHT - t, span, t)
+		_draw_wall_h_tiled(ROOM_WIDTH / 2.0 + half, ROOM_HEIGHT - t, span, t)
 		if locked:
-			draw_texture_rect(WALL_TEXTURE_H, Rect2(ROOM_WIDTH / 2.0 - half, ROOM_HEIGHT - t, DOOR_WIDTH, t), false)
+			_draw_wall_h_tiled(ROOM_WIDTH / 2.0 - half, ROOM_HEIGHT - t, DOOR_WIDTH, t)
 	else:
-		draw_texture_rect(WALL_TEXTURE_H, Rect2(0.0, ROOM_HEIGHT - t, ROOM_WIDTH, t), false)
+		_draw_wall_h_tiled(0.0, ROOM_HEIGHT - t, ROOM_WIDTH, t)
 
 	if has_door(Direction.W):
 		var span := ROOM_HEIGHT / 2.0 - half
