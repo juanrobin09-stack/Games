@@ -304,7 +304,12 @@ func set_active(active: bool) -> void:
 ## palette_wall below now that the walls are a real texture too — see
 ## _draw_walls()'s own comment for why that one couldn't just be stretched
 ## the same simple way.
-const FLOOR_TEXTURE := preload("res://assets/textures/floor_stone.png")
+## Sol fourni tel quel (1672x941), etire sur la salle entiere comme le
+## precedent. Son rapport 1,78 est plus proche des 1,61 de la salle que le
+## 1,0 de floor_stone.png, donc la deformation diminue. Surtout, sa gamme est
+## nettement plus resserree -- ecart-type de luminance 9,4 contre 15,0 -- et
+## c'est cette dispersion, pas la luminance moyenne, qui noyait le personnage.
+const FLOOR_TEXTURE := preload("res://assets/textures/floor_ember_crust.png")
 
 func _draw() -> void:
 	draw_texture_rect(FLOOR_TEXTURE, Rect2(0.0, 0.0, ROOM_WIDTH, ROOM_HEIGHT), false)
