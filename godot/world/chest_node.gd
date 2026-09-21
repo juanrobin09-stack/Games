@@ -16,6 +16,19 @@ enum State { CLOSED, OPENING, OPENED }
 
 const OPEN_DURATION := 0.55
 
+## User-supplied art (closed/open lid states), background removed --
+## replaces the earlier procedural body-rect + animated lid-swing silhouette.
+## Sized off their own aspect ratio at draw time rather than a hardcoded
+## height, same convention as _draw_merchant_stall's STALL_TEXTURE.
+const CLOSED_TEXTURE := preload("res://assets/textures/chest_closed.png")
+const OPEN_TEXTURE := preload("res://assets/textures/chest_open.png")
+const SPRITE_W := 42.0
+## Both textures draw bottom-anchored to this fixed offset from `position`
+## instead of vertically centered, so opening (which grows the sprite
+## upward for the raised lid) doesn't also sink the chest's own floor
+## contact point down -- the base stays put, only the lid rises.
+const FLOOR_CONTACT_Y := 14.0
+
 var radius: float = 22.0
 var tier: UpgradeDefinition.Rarity = UpgradeDefinition.Rarity.COMMON
 var state: State = State.CLOSED
@@ -26,7 +39,7 @@ var glow_phase: float = 0.0
 ## scene now also renders — the classified C/B/A/S/SS chests, locked
 ## behind a matching key rather than the existing tier system above. Kept
 ## as extra fields on the one ChestNode rather than a second scene/script:
-## the interaction range-check, open/lid-swing state machine, and glow VFX
+## the interaction range-check, open/close state machine, and glow VFX
 ## below are identical for both kinds, only the color lookup and the
 ## reward differ (see _tier_color() and LevelFlow.open_classified_chest()).
 var is_classified: bool = false
@@ -110,58 +123,29 @@ func _tier_color() -> String:
 		UpgradeDefinition.Rarity.LEGENDARY: return "#f2b53d"
 		_: return "#ffffff"
 
-## Ports MathUtils.ts's easeOutBack exactly (drawChest.ts uses it for the
-## lid's opening swing) — kept local since this is the only draw function
-## in this pass that needs it.
-static func _ease_out_back(t: float) -> float:
-	var c1 := 1.70158
-	var c3 := c1 + 1.0
-	return 1.0 + c3 * pow(t - 1.0, 3.0) + c1 * pow(t - 1.0, 2.0)
-
 func _draw() -> void:
-	# Ports drawChest.ts. Silhouette size is fixed like the source (not
-	# derived from `radius`, which is interaction range only there too).
 	var color_hex := _tier_color()
 	var color := Color(color_hex)
-	var w := 34.0
-	var h := 24.0
 	var glow_pulse: float = 0.6 + sin(glow_phase * 2.0) * 0.25
 
-	DrawUtils.draw_soft_shadow(self, 0.0, h * 0.55, w * 0.7, h * 0.3, 0.45)
+	# The OPENING delay keeps showing the closed sprite so the reveal lands
+	# together with chest_open_burst() at the CLOSED -> OPENED transition
+	# (see _process) rather than showing an already-open chest before its
+	# own burst VFX fires.
+	var opened := state == State.OPENED
+	var tex: Texture2D = OPEN_TEXTURE if opened else CLOSED_TEXTURE
+	var w := SPRITE_W
+	var h := w * (tex.get_height() / float(tex.get_width()))
 
-	var glow_radius: float = w * (1.6 if state == State.OPENED else 1.1) * glow_pulse
-	var glow_alpha: float = 0.55 if state == State.OPENED else 0.4
-	DrawUtils.draw_glow_circle(self, 0.0, -4.0, glow_radius, color_hex, glow_alpha)
+	DrawUtils.draw_soft_shadow(self, 0.0, FLOOR_CONTACT_Y - 2.0, w * 0.6, w * 0.22, 0.45)
 
-	var lid_open: float = 0.0
-	if state == State.OPENING:
-		lid_open = _ease_out_back(minf(1.0, state_timer / 0.5))
-	elif state == State.OPENED:
-		lid_open = 1.0
+	var glow_center_y: float = FLOOR_CONTACT_Y - h * 0.5
+	var glow_radius: float = w * (1.5 if opened else 1.05) * glow_pulse
+	var glow_alpha: float = 0.55 if opened else 0.4
+	DrawUtils.draw_glow_circle(self, 0.0, glow_center_y, glow_radius, color_hex, glow_alpha)
 
-	# Body. roundedRectPath's rounded corners simplify to a plain rect —
-	# Godot's immediate-mode API has no rounded-rect primitive.
-	draw_rect(Rect2(-w / 2.0, -h / 2.0, w, h), Color("#241a12"), true)
-	draw_rect(Rect2(-w / 2.0, -h / 2.0, w, h), color, false, 2.0)
+	draw_texture_rect(tex, Rect2(-w / 2.0, FLOOR_CONTACT_Y - h, w, h), false)
 
-	# Lid, hinged at the body's back-top-left corner, swinging open up to
-	# -75deg as lid_open -> 1. Points are computed already-rotated (project
-	# convention) instead of using draw_set_transform.
-	var lid_pivot := Vector2(-w / 2.0, -h / 2.0)
-	var lid_angle: float = (-lid_open * PI) / 2.4
-	var lid_points := PackedVector2Array()
-	lid_points.append(lid_pivot + Vector2(0.0, -8.0).rotated(lid_angle))
-	lid_points.append(lid_pivot + Vector2(w, -8.0).rotated(lid_angle))
-	lid_points.append(lid_pivot + Vector2(w, 2.0).rotated(lid_angle))
-	lid_points.append(lid_pivot + Vector2(0.0, 2.0).rotated(lid_angle))
-	draw_colored_polygon(lid_points, Color("#2e2118"))
-	var lid_outline := lid_points.duplicate()
-	lid_outline.append(lid_points[0])
-	draw_polyline(lid_outline, color, 2.0, true)
-
-	# Latch dot.
-	draw_circle(Vector2(0.0, -h * 0.1), 2.4, color)
-
-	if state == State.OPENED:
+	if opened:
 		var sparkle_alpha: float = 0.5 + sin(glow_phase * 4.0) * 0.3
-		draw_circle(Vector2(0.0, -h * 0.6 - 6.0), 2.0, Color(color.r, color.g, color.b, sparkle_alpha))
+		draw_circle(Vector2(0.0, FLOOR_CONTACT_Y - h - 6.0), 2.0, Color(color.r, color.g, color.b, sparkle_alpha))
