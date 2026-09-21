@@ -20,3 +20,5 @@ contact_damage = 6.0
 xp_weight = 1
 color = "#3d3229"
 accent_color = "#ff7b3d"
+loot_table_id = "enemyCommonZ0"
+drop_chance = 0.08

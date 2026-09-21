@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="DungeonChestConfig" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/dungeon_chest_config.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "z0chestB"
+zone_index = 0
+chest_class_id = "chestB"
+spawn_chance = 0.03
+loot_table_id = "chestBZ0"

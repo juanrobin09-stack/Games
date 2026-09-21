@@ -92,3 +92,29 @@ static func rarity_color(rarity: UpgradeDefinition.Rarity) -> String:
 		UpgradeDefinition.Rarity.EPIC: return RARITY_EPIC
 		UpgradeDefinition.Rarity.LEGENDARY: return RARITY_LEGENDARY
 		_: return "#ffffff"
+
+## LootRarity.Tier (E..SS) — the loot/upgrades system's own 7-step scale (items,
+## classified chests/keys, loot tables). Kept visually distinct from the
+## RARITY_* set above (that one already means "upgrade rarity" everywhere
+## in the UI) while staying inside the same dark-fantasy/bronze-copper/
+## dark-red/ember family the rest of this palette uses: dull ash and bronze
+## at the bottom, through copper and dark red, up to ember orange and a
+## hot gold-white at SS.
+const LOOT_RARITY_E := "#5a5248"
+const LOOT_RARITY_D := "#7d6a4a"
+const LOOT_RARITY_C := "#a9803f"
+const LOOT_RARITY_B := "#c46a2e"
+const LOOT_RARITY_A := "#9c2b22"
+const LOOT_RARITY_S := "#ff7b3d"
+const LOOT_RARITY_SS := "#ffd76a"
+
+static func loot_rarity_color(tier: LootRarity.Tier) -> String:
+	match tier:
+		LootRarity.Tier.E: return LOOT_RARITY_E
+		LootRarity.Tier.D: return LOOT_RARITY_D
+		LootRarity.Tier.C: return LOOT_RARITY_C
+		LootRarity.Tier.B: return LOOT_RARITY_B
+		LootRarity.Tier.A: return LOOT_RARITY_A
+		LootRarity.Tier.S: return LOOT_RARITY_S
+		LootRarity.Tier.SS: return LOOT_RARITY_SS
+		_: return "#ffffff"

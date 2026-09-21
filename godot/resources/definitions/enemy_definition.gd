@@ -43,3 +43,14 @@ enum Behavior { CHASER, TANK, RANGED, HEAVY, STALKER, ELITE, BLOAT, WARDEN }
 @export var turn_rate: float = 0.0
 ## Heart-room champion: boss-style HP bar and a second phase at half health.
 @export var champion: bool = false
+
+## A LootTableDefinition.id this enemy rolls on death. Empty (the default)
+## means no drop at all — deliberately opt-in per enemy, not a blanket
+## "every enemy can drop everything" default; see loot_table_definition.gd.
+@export var loot_table_id: String = ""
+## Independent chance (0..1) that a death even attempts the roll above —
+## LootTableDefinition.roll() always returns something once it runs (a
+## weighted pick, not a chance-of-nothing itself), so THIS is what keeps a
+## common enemy from dropping loot on every single kill. Only meaningful
+## when loot_table_id is set.
+@export_range(0.0, 1.0) var drop_chance: float = 1.0

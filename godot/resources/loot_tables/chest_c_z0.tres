@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="LootTableDefinition" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/loot_table_definition.gd" id="1"]
+[ext_resource type="Script" path="res://resources/definitions/loot_entry_definition.gd" id="2"]
+
+[sub_resource type="Resource" id="LootEntry_1"]
+script = ExtResource("2")
+kind = 0
+ref_id = "emberShard"
+weight = 1.0
+min_qty = 1
+max_qty = 2
+
+[resource]
+script = ExtResource("1")
+id = "chestCZ0"
+entries = Array[Resource]([SubResource("LootEntry_1")])

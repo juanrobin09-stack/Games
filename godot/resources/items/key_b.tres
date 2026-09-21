@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="ItemDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/item_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "keyB"
+name = "Key B"
+description = "Opens a Chest B."
+icon = "keyB"
+rarity = 3
+item_type = 2
+key_tier = 3

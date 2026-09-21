@@ -510,8 +510,33 @@ func damage_player_to_enemy(player: PlayerCharacter, enemy: EnemyCharacter, base
 		if burn_def != null:
 			StatusEffectRuntime.apply(enemy, burn_def, player, maxf(2.0, dmg * 0.16))
 
+	if not blocked:
+		_apply_on_hit_triggered_effects(player, enemy)
+
 	if not enemy.alive:
 		on_enemy_death(player, enemy)
+
+## Generic ON_HIT proc handler for UpgradeDefinition.triggered_effects — the
+## field existed since build-order step 7 (see upgrade_definition.gd's own
+## comment) with nothing reading it yet; this is that missing consumer.
+## Loops every upgrade the player owns (not just one hardcoded upgrade),
+## same as burn_chance above is a special case of the same idea for the one
+## proc that predates TriggeredEffect existing at all. Only status_effect
+## procs are handled — TriggeredEffect.stat_modifier is for a future
+## non-DoT proc (e.g. a brief flat damage buff) that nothing authors yet;
+## adding that branch here with no upgrade to exercise it would be
+## unverifiable dead code.
+func _apply_on_hit_triggered_effects(player: PlayerCharacter, enemy: EnemyCharacter) -> void:
+	for owned in player.upgrades:
+		for effect in owned.def.triggered_effects:
+			if effect.trigger != TriggeredEffect.Trigger.ON_HIT:
+				continue
+			if effect.status_effect == null:
+				continue
+			if randf() >= effect.chance:
+				continue
+			var target: Node = enemy if effect.target == TriggeredEffect.Target.ENEMY else player
+			StatusEffectRuntime.apply(target, effect.status_effect, player)
 
 ## Centralizes the fallout of an enemy dying, however it died (a direct
 ## hit here, or a status-effect tick discovered in apply_status_tick_damage)
@@ -535,7 +560,50 @@ func on_enemy_death(player: PlayerCharacter, enemy: EnemyCharacter) -> void:
 		player.heal(heal_amount)
 		if parent != null:
 			FloatingText.spawn(parent, player.global_position + Vector2(0.0, -player.radius - 6.0), "+%d" % roundi(heal_amount), Color(Palette.EMBER4))
+	if player != null and enemy.def.loot_table_id != "":
+		_roll_enemy_drop(player, enemy)
 	enemy_died.emit(enemy)
+
+## Loot-system pass: an enemy configured with a loot_table_id rolls it once
+## on death and grants whatever came out — items go to the player's
+## inventory, upgrades go through the same add_upgrade() every other
+## upgrade grant uses. Silent no-op if the table id doesn't resolve (a
+## typo'd id shouldn't be a hard error mid-combat) or rolls empty (a
+## table with no entries, or every weight <= 0, is a valid "nothing this
+## time" table per LootTableDefinition.roll()'s own contract).
+func _roll_enemy_drop(player: PlayerCharacter, enemy: EnemyCharacter) -> void:
+	var table: LootTableDefinition = DataRegistry.get_loot_table(enemy.def.loot_table_id)
+	if table == null:
+		return
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	if rng.randf() >= enemy.def.drop_chance:
+		return
+	var picks := table.roll(rng, 1)
+	var parent := enemy.get_parent()
+	for entry in picks:
+		var qty: int = rng.randi_range(mini(entry.min_qty, entry.max_qty), maxi(entry.min_qty, entry.max_qty))
+		if qty <= 0:
+			continue
+		match entry.kind:
+			LootEntryDefinition.Kind.ITEM:
+				var item: ItemDefinition = DataRegistry.get_item(entry.ref_id)
+				if item == null:
+					continue
+				player.add_item(item.id, qty)
+				if parent != null:
+					var label: String = "%s [%s]" % [item.name, LootRarity.label(item.rarity)]
+					if qty > 1:
+						label = "%s x%d" % [label, qty]
+					FloatingText.spawn(parent, enemy.global_position + Vector2(0.0, -enemy.radius - 10.0), label, Color(Palette.loot_rarity_color(item.rarity)))
+			LootEntryDefinition.Kind.UPGRADE:
+				var up: UpgradeDefinition = DataRegistry.get_upgrade(entry.ref_id)
+				if up == null:
+					continue
+				RunState.record_upgrade(up.id)
+				player.add_upgrade(up)
+				if parent != null:
+					FloatingText.spawn(parent, enemy.global_position + Vector2(0.0, -enemy.radius - 10.0), up.name, Color(Palette.rarity_color(up.rarity)))
 
 func damage_enemy_to_player(player: PlayerCharacter, base_damage: float, opts: Dictionary = {}) -> bool:
 	if player == null:

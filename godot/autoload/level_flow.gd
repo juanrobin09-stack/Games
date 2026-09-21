@@ -420,6 +420,12 @@ func get_interaction() -> Variant:
 	if room.type == RoomContainer.Type.CHEST and room.chest != null and room.chest.can_interact():
 		if p.distance_to(room.chest.position) < 75.0:
 			return {"label": I18n.t("interact.openChest", "Open Chest"), "action": func(): open_chest(room)}
+	for cc in room.classified_chests:
+		if cc.can_interact() and p.distance_to(cc.position) < 75.0:
+			var tier_label: String = LootRarity.label(cc.chest_tier)
+			var label: String = I18n.t("interact.openChestClass", "Open Chest {tier}").format({"tier": tier_label}) if player.has_key(cc.chest_tier) \
+				else I18n.t("interact.openChestClassLocked", "Locked — needs Key {tier}").format({"tier": tier_label})
+			return {"label": label, "action": func(): open_classified_chest(room, cc)}
 	if room.type == RoomContainer.Type.SHOP:
 		var stall := _find_obstacle(room, ObstacleNode.Visual.MERCHANT_STALL)
 		if stall != null and p.distance_to(stall.position) < 110.0:
@@ -505,6 +511,8 @@ func _grant_room_clear_reward(room: RoomContainer) -> void:
 		return
 	room.reward_granted = true
 
+	_roll_classified_chests(room)
+
 	if room.type == RoomContainer.Type.ELITE and RunState.zone_index == 2 and not player.unlocked_weapons.has("bow"):
 		player.unlocked_weapons.append("bow")
 		player.weapon_id = "bow"
@@ -538,6 +546,27 @@ func _grant_room_clear_reward(room: RoomContainer) -> void:
 		if room.type == RoomContainer.Type.HEART:
 			open_stairs(room, true)
 	)
+
+## Loot-system pass: bonus classified chests (see world/classified_chest_rules.gd
+## and resources/definitions/dungeon_chest_config.gd), rolled once per
+## cleared room alongside (not instead of) the normal upgrade-choice
+## reward above. A dedicated Type.CHEST room's own `room.chest` is
+## untouched by this — these are additional, independent chests placed
+## via room.add_classified_chest(), never room.set_chest_node().
+func _roll_classified_chests(room: RoomContainer) -> void:
+	var rng := LevelGenerator.rng_from("%s:classifiedchest:%s" % [RunState.seed_value, room.key])
+	var hits := ClassifiedChestRules.roll_spawns(rng, RunState.zone_index)
+	for i in range(hits.size()):
+		var config: DungeonChestConfig = hits[i]
+		var chest_class: ChestClassDefinition = DataRegistry.get_chest_class(config.chest_class_id)
+		if chest_class == null:
+			continue
+		var center := Vector2(RoomContainer.ROOM_WIDTH / 2.0, RoomContainer.ROOM_HEIGHT / 2.0)
+		var offset := Vector2(rng.randf_range(-220.0, 220.0), rng.randf_range(-150.0, 150.0))
+		var pos: Vector2 = center + offset * (float(i) / maxf(1.0, float(hits.size())) + 0.4)
+		var node: ChestNode = LevelGenerator.CHEST_SCENE.instantiate()
+		room.add_classified_chest(node)
+		node.setup_classified(pos, chest_class.tier, chest_class.required_key_item_id, config.loot_table_id)
 
 # ---------------------------------------------------------------- Stairs & descent
 
@@ -825,6 +854,62 @@ func open_chest(room: RoomContainer) -> void:
 	var level: int = UpgradePool.upcoming_upgrade_level(def.id, player.upgrades)
 	_grant_upgrade(def)
 	RewardPopup.show_reward(ui_root, def, I18n.t("reward.chest", "Chest Reward"), level)
+
+## Reuses the same 4 chest-open sounds as _chest_sound_for() above, mapped
+## from the loot-system's own LootRarity.Tier — no new audio assets needed for
+## a scale that only differs from UpgradeDefinition.Rarity in how many
+## steps it has.
+static func _classified_chest_sound_for(tier: LootRarity.Tier) -> String:
+	match tier:
+		LootRarity.Tier.SS:
+			return "chestOpenLegendary"
+		LootRarity.Tier.S:
+			return "chestOpenEpic"
+		LootRarity.Tier.A, LootRarity.Tier.B:
+			return "chestOpenRare"
+		_:
+			return "chestOpenCommon"
+
+## Loot-system pass: opens one of the bonus classified chests rolled by
+## _roll_classified_chests(). Unlike open_chest() above, this one CAN fail
+## at the door — no matching key consumes nothing and grants nothing,
+## with its own toast telling the player exactly what's missing, same
+## spirit as a locked room door's own clear feedback rather than a silent
+## no-op.
+func open_classified_chest(room: RoomContainer, chest: ChestNode) -> void:
+	if chest == null or not chest.can_interact():
+		return
+	if not player.consume_key(chest.chest_tier):
+		hud.show_toast(I18n.t("toast.chestClassLocked", "Locked — requires Key {tier}.").format({"tier": LootRarity.label(chest.chest_tier)}))
+		AudioEngine.play_sfx("shieldClang")
+		return
+	chest.open()
+	AudioEngine.play_sfx(_classified_chest_sound_for(chest.chest_tier))
+	var table: LootTableDefinition = DataRegistry.get_loot_table(chest.loot_table_id)
+	if table == null:
+		return
+	var rng := LevelGenerator.rng_from("%s:classifiedchestloot:%s:%s" % [RunState.seed_value, room.key, chest.loot_table_id])
+	for entry in table.roll(rng, 1):
+		var qty: int = rng.randi_range(mini(entry.min_qty, entry.max_qty), maxi(entry.min_qty, entry.max_qty))
+		if qty <= 0:
+			continue
+		match entry.kind:
+			LootEntryDefinition.Kind.ITEM:
+				var item: ItemDefinition = DataRegistry.get_item(entry.ref_id)
+				if item == null:
+					continue
+				player.add_item(item.id, qty)
+				var label: String = "%s [%s]" % [item.name, LootRarity.label(item.rarity)]
+				if qty > 1:
+					label = "%s x%d" % [label, qty]
+				hud.show_toast(I18n.t("toast.chestClassLoot", "Found: {item}").format({"item": label}))
+			LootEntryDefinition.Kind.UPGRADE:
+				var up: UpgradeDefinition = DataRegistry.get_upgrade(entry.ref_id)
+				if up == null:
+					continue
+				var level: int = UpgradePool.upcoming_upgrade_level(up.id, player.upgrades)
+				_grant_upgrade(up)
+				RewardPopup.show_reward(ui_root, up, I18n.t("reward.chestClass", "Chest {tier} Reward").format({"tier": LootRarity.label(chest.chest_tier)}), level)
 
 ## Ports Game.ts's private openShopRoom. reroll_count is boxed in a 1-
 ## element Array, not a plain int — GDScript lambdas capture locals BY

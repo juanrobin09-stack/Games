@@ -19,6 +19,10 @@ const CATEGORIES := {
 	"unlocks": "res://resources/unlocks/",
 	"synergies": "res://resources/synergies/",
 	"status_effects": "res://resources/status_effects/",
+	"items": "res://resources/items/",
+	"loot_tables": "res://resources/loot_tables/",
+	"chest_classes": "res://resources/chest_classes/",
+	"dungeon_chest_configs": "res://resources/dungeon_chest_configs/",
 }
 
 var _by_category: Dictionary = {}
@@ -92,3 +96,22 @@ func get_synergy(id: String) -> SynergyDefinition:
 
 func get_status_effect(id: String) -> StatusEffectDefinition:
 	return get_by_id("status_effects", id) as StatusEffectDefinition
+
+func get_item(id: String) -> ItemDefinition:
+	return get_by_id("items", id) as ItemDefinition
+
+func get_loot_table(id: String) -> LootTableDefinition:
+	return get_by_id("loot_tables", id) as LootTableDefinition
+
+func get_chest_class(id: String) -> ChestClassDefinition:
+	return get_by_id("chest_classes", id) as ChestClassDefinition
+
+## All configs authored for a given zone — DungeonChestConfig rows are
+## per-(zone, class), so callers filter by zone rather than looking one up
+## by a single id.
+func dungeon_chest_configs_for_zone(zone_index: int) -> Array[DungeonChestConfig]:
+	var out: Array[DungeonChestConfig] = []
+	for c in all("dungeon_chest_configs"):
+		if c.zone_index == zone_index:
+			out.append(c)
+	return out

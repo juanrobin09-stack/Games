@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="LootTableDefinition" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/loot_table_definition.gd" id="1"]
+[ext_resource type="Script" path="res://resources/definitions/loot_entry_definition.gd" id="2"]
+
+[sub_resource type="Resource" id="LootEntry_1"]
+script = ExtResource("2")
+kind = 0
+ref_id = "ashenRelic"
+weight = 1.0
+min_qty = 1
+max_qty = 1
+
+[sub_resource type="Resource" id="LootEntry_2"]
+script = ExtResource("2")
+kind = 0
+ref_id = "emberShard"
+weight = 2.0
+min_qty = 3
+max_qty = 5
+
+[resource]
+script = ExtResource("1")
+id = "chestAZ0"
+entries = Array[Resource]([SubResource("LootEntry_1"), SubResource("LootEntry_2")])

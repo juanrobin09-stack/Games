@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="UpgradeDefinition" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://resources/definitions/upgrade_definition.gd" id="1"]
+[ext_resource type="Script" path="res://resources/definitions/triggered_effect.gd" id="2"]
+[ext_resource type="Resource" path="res://resources/status_effects/hemorrhage.tres" id="3"]
+
+[sub_resource type="Resource" id="TriggeredEffect_1"]
+script = ExtResource("2")
+trigger = 0
+chance = 1.0
+status_effect = ExtResource("3")
+target = 1
+
+[resource]
+script = ExtResource("1")
+id = "hemorrhage"
+name = "Hemorrhage"
+description = "Every weapon hit opens a wound: the target bleeds for 4 damage/sec over 5s. A fresh hit refreshes the full 5s and adds one stack (up to 3, +4 dmg/sec each) instead of replacing what's already bleeding -- three stacks means 12 dmg/sec. Stacks fall off together when the timer runs out; they do not tick down one at a time."
+rarity = 2
+tags = Array[String]([])
+triggered_effects = Array[Resource]([SubResource("TriggeredEffect_1")])
+icon = "hemorrhage"

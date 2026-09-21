@@ -78,6 +78,12 @@ var enemies: Array[EnemyCharacter] = []
 var obstacles: Array[ObstacleNode] = []
 var pickups: Array[Node2D] = []
 var chest: ChestNode = null
+## Loot-system pass: bonus classified chests (C/B/A/S/SS, key-locked),
+## rolled independently on room-clear — separate from `chest` above, which
+## stays the single dedicated Type.CHEST room reward exactly as it was.
+## A room can hold any number of these (each roll is independent; see
+## world/classified_chest_rules.gd), unlike `chest`'s one-per-room slot.
+var classified_chests: Array[ChestNode] = []
 
 var _is_active: bool = false
 var _physics_bodies: Array[CollisionObject2D] = []
@@ -262,6 +268,10 @@ func add_pickup(pickup: Node2D) -> void:
 func set_chest_node(c: ChestNode) -> void:
 	add_child(c)
 	chest = c
+
+func add_classified_chest(c: ChestNode) -> void:
+	add_child(c)
+	classified_chests.append(c)
 
 func _set_body_collision_enabled(body: CollisionObject2D, enabled: bool) -> void:
 	body.collision_layer = 1 if enabled else 0

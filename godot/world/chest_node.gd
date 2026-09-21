@@ -22,6 +22,22 @@ var state: State = State.CLOSED
 var state_timer: float = 0.0
 var glow_phase: float = 0.0
 
+## Loot-system pass: a SECOND, independent kind of chest this same node/
+## scene now also renders — the classified C/B/A/S/SS chests, locked
+## behind a matching key rather than the existing tier system above. Kept
+## as extra fields on the one ChestNode rather than a second scene/script:
+## the interaction range-check, open/lid-swing state machine, and glow VFX
+## below are identical for both kinds, only the color lookup and the
+## reward differ (see _tier_color() and LevelFlow.open_classified_chest()).
+var is_classified: bool = false
+var chest_tier: LootRarity.Tier = LootRarity.Tier.C
+## An ItemDefinition.id (ItemType.KEY) and a LootTableDefinition.id,
+## resolved once at spawn time from DungeonChestConfig/ChestClassDefinition
+## for the zone the chest spawned in — the chest itself doesn't need to
+## remember which zone that was.
+var required_key_item_id: String = ""
+var loot_table_id: String = ""
+
 func _ready() -> void:
 	# Counters RoomContainer's own z_index = -10 (see its own comment) so
 	# the chest doesn't inherit that and vanish behind the room's floor.
@@ -31,6 +47,13 @@ func _ready() -> void:
 func setup(pos: Vector2, p_tier: UpgradeDefinition.Rarity) -> void:
 	position = pos
 	tier = p_tier
+
+func setup_classified(pos: Vector2, p_tier: LootRarity.Tier, key_item_id: String, table_id: String) -> void:
+	position = pos
+	is_classified = true
+	chest_tier = p_tier
+	required_key_item_id = key_item_id
+	loot_table_id = table_id
 
 func can_interact() -> bool:
 	return state == State.CLOSED
@@ -77,6 +100,8 @@ func _update_light() -> void:
 ## Color, so it can feed DrawUtils.draw_glow_circle directly — see Palette's
 ## own "wrap in Color(...) at the point of use" convention).
 func _tier_color() -> String:
+	if is_classified:
+		return Palette.loot_rarity_color(chest_tier)
 	match tier:
 		UpgradeDefinition.Rarity.COMMON: return "#b9b3a6"
 		UpgradeDefinition.Rarity.UNCOMMON: return "#6fd17a"

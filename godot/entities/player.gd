@@ -519,6 +519,11 @@ var ability_id: String = "emberBurst"
 var unlocked_weapons: Array[String] = ["emberBlade"]
 var unlocked_abilities: Array[String] = ["emberBurst"]
 
+## Loot-system pass: ItemDefinition.id -> count owned this run. Per-run
+## state like `upgrades`/`embers` above, not meta-progression — a fresh run
+## starts with an empty bag, same as it starts with no upgrades.
+var items: Dictionary = {}
+
 var radius: float = 15.0
 var hp: float = 100.0
 var shield_charges: int = 0
@@ -851,6 +856,38 @@ func add_upgrade(def: UpgradeDefinition) -> Array[String]:
 		if not before.has(id):
 			newly_active.append(id)
 	return newly_active
+
+## Loot-system pass — the `items` bag's own add_upgrade()-equivalent. No
+## stacking cap (unlike upgrades): a material/relic/key just accumulates.
+func add_item(id: String, count: int = 1) -> void:
+	items[id] = item_count(id) + count
+
+func item_count(id: String) -> int:
+	return items.get(id, 0)
+
+## True if the player holds at least one KEY item whose key_tier matches
+## (looked up through DataRegistry rather than a naming convention like
+## "key_c", so a key's id can be anything its ItemDefinition says it is).
+func has_key(tier: LootRarity.Tier) -> bool:
+	return _find_key_id(tier) != ""
+
+## Consumes one matching key (see has_key) and returns whether one was
+## actually found and spent.
+func consume_key(tier: LootRarity.Tier) -> bool:
+	var id := _find_key_id(tier)
+	if id == "":
+		return false
+	items[id] = item_count(id) - 1
+	return true
+
+func _find_key_id(tier: LootRarity.Tier) -> String:
+	for id in items.keys():
+		if item_count(id) <= 0:
+			continue
+		var def: ItemDefinition = DataRegistry.get_item(id)
+		if def != null and def.item_type == ItemDefinition.ItemType.KEY and def.key_tier == tier:
+			return id
+	return ""
 
 func _ready() -> void:
 	add_to_group("player")
