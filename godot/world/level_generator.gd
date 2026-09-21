@@ -251,8 +251,10 @@ static func _clear_of_door_lanes(room: RoomContainer, x: float, y: float, radius
 			return false
 	return true
 
-static func scatter_obstacles(room: RoomContainer, rng: RandomNumberGenerator, zone_index: int, count: int, avoid_center_radius: float = 130.0, keep_clear: Array = []) -> void:
+static func scatter_obstacles(room: RoomContainer, rng: RandomNumberGenerator, zone_index: int, count: int, avoid_center_radius: float = 130.0, keep_clear: Array = [], exclude: Array = []) -> void:
 	var visuals: Array = _obstacle_visuals_by_zone(zone_index)
+	if not exclude.is_empty():
+		visuals = visuals.filter(func(v): return not exclude.has(v))
 	var margin: float = RoomContainer.WALL_THICKNESS + 90.0
 	var w := RoomContainer.ROOM_WIDTH
 	var h := RoomContainer.ROOM_HEIGHT
@@ -691,7 +693,12 @@ static func populate_room_content(room: RoomContainer, zone: ZoneDefinition, opt
 			# the counter and its hitbox together — no separate collision
 			# adjustment needed for them to stay matched to the bigger sprite.
 			stall.setup(pos, 29.9, ObstacleNode.Visual.MERCHANT_STALL)
-			scatter_obstacles(room, rng, zone.index, rng.randi_range(1, 2))
+			# CRYSTAL (Zone 1's ambient ruin decoration -- a floating glowing
+			# shard, see obstacle_node.gd's _draw_crystal) reads as a stray
+			# loot/magic object next to a merchant's wooden counter, so it's
+			# the one visual excluded from a shop's scatter; every other
+			# room type keeps the full zone pool unchanged.
+			scatter_obstacles(room, rng, zone.index, rng.randi_range(1, 2), 130.0, [], [ObstacleNode.Visual.CRYSTAL])
 
 		RoomContainer.Type.EVENT:
 			var pos: Vector2 = _landmark_position(rng)

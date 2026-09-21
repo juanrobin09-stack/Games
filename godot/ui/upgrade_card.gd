@@ -20,6 +20,7 @@ const CARD_SIZE := Vector2(220.0, 210.0)
 const CARD_SIZE_NO_TAGS := Vector2(220.0, 155.0)
 const PADDING := 12.0
 const ICON_BADGE_SIZE := 40.0
+const CONTENT_SEPARATION := 8.0
 
 var def: UpgradeDefinition = null
 var level: int = 1
@@ -36,11 +37,19 @@ func _ready() -> void:
 	var effective_size: Vector2 = CARD_SIZE if show_tags else CARD_SIZE_NO_TAGS
 	custom_minimum_size = effective_size
 	size = effective_size
+	# UpgradeSelectUI lays its 3 cards out in an HBoxContainer, and
+	# InventoryUI's Build tab lays owned-upgrade cards out in a GridContainer
+	# -- both stretch a plain Control to match the tallest cell in its row by
+	# default (size_flags_vertical's default is SIZE_FILL). Without this, a
+	# row with one long-description card would silently stretch every OTHER
+	# card in it to match, leaving them full of dead space below their own
+	# (correctly short) content.
+	size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	mouse_filter = Control.MOUSE_FILTER_STOP if clickable else Control.MOUSE_FILTER_IGNORE
 	if clickable:
 		mouse_entered.connect(func(): _hovering = true; queue_redraw())
 		mouse_exited.connect(func(): _hovering = false; queue_redraw())
-	_build_content()
+	_build_content(effective_size)
 
 func _rarity_color() -> Color:
 	return Color(Palette.rarity_color(def.rarity)) if def != null else Color(Palette.BORDER)
@@ -58,12 +67,37 @@ func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		chosen.emit(def)
 
-func _build_content() -> void:
+## Font.get_multiline_string_size() reports the exact size TextServer wraps
+## `text` into at `width` -- the same word-break a Label with
+## autowrap_mode = AUTOWRAP_WORD uses to draw it. A Label's own
+## get_minimum_size() can't be used for this instead: it reflects whatever
+## width the Label happened to have on its LAST layout pass, not the width
+## it's about to be given, so sizing a container off it under-counts a long
+## description's true height every time.
+##
+## That raw font metric alone still under-counts a multi-line result, though:
+## Label inserts its own "line_spacing" theme constant BETWEEN wrapped lines
+## on top of the font's own line height, which get_multiline_string_size()
+## (a Font-level call with no notion of any particular Label's theme) never
+## adds. Invisible for a 1-2 line name/short description; a several-line
+## description like Hemorrhage's loses a handful of pixels per extra line,
+## which is exactly the gap that let its tags row peek past the card's
+## bottom edge even after the base height fix.
+static func _wrapped_height(label: Label, text: String, width: float) -> float:
+	var font: Font = label.get_theme_font("font")
+	var font_size: int = label.get_theme_font_size("font_size")
+	var base: float = font.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, width, font_size).y
+	var line_height: float = font.get_height(font_size)
+	var line_count: float = 1.0 if line_height <= 0.0 else roundf(base / line_height)
+	var line_spacing: float = label.get_theme_constant("line_spacing")
+	return base + maxf(0.0, line_count - 1.0) * line_spacing
+
+func _build_content(effective_size: Vector2) -> void:
 	if def == null:
 		return
 	var col := VBoxContainer.new()
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	col.add_theme_constant_override("separation", 8)
+	col.add_theme_constant_override("separation", int(CONTENT_SEPARATION))
 	col.set_anchors_preset(Control.PRESET_FULL_RECT)
 	col.offset_left = PADDING
 	col.offset_top = PADDING
@@ -111,14 +145,34 @@ func _build_content() -> void:
 	desc_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(desc_label)
 
+	var tags_row: HBoxContainer = null
 	if show_tags:
-		var tags_row := HBoxContainer.new()
+		tags_row = HBoxContainer.new()
 		tags_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		tags_row.add_theme_constant_override("separation", 6)
 		col.add_child(tags_row)
 		if first_tag_text != "":
 			tags_row.add_child(_make_tag(first_tag_text, _rarity_color()))
 		tags_row.add_child(_make_tag("%s %d" % [I18n.t("upgrade.level", "Level"), level], Color(Palette.TEXT_DIM)))
+
+	# The description is the one field with genuinely unbounded length; grow
+	# the card just enough to fit its wrapped text (and the wrapped name,
+	# for symmetry) instead of letting either spill past the frame _draw()
+	# paints at `size` -- Controls don't clip their own children by default,
+	# so an under-sized box doesn't hide overflow, it lets it bleed onto
+	# whatever is behind the card. maxf() is a no-op for every card whose
+	# content already fits CARD_SIZE/CARD_SIZE_NO_TAGS, so short
+	# descriptions render pixel-identical to before.
+	var content_width: float = effective_size.x - PADDING * 2.0
+	var gaps: int = 3 if show_tags else 2
+	var content_height: float = ICON_BADGE_SIZE + CONTENT_SEPARATION * gaps \
+		+ _wrapped_height(name_label, name_label.text, content_width) \
+		+ _wrapped_height(desc_label, desc_label.text, content_width)
+	if tags_row != null:
+		content_height += tags_row.get_combined_minimum_size().y
+	var final_size := Vector2(effective_size.x, maxf(effective_size.y, ceil(content_height + PADDING * 2.0)))
+	custom_minimum_size = final_size
+	size = final_size
 
 func _make_tag(text: String, color: Color) -> Control:
 	var wrap := PanelContainer.new()
