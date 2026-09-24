@@ -7,14 +7,15 @@ extends Node2D
 ## than a parallel enum, since it's the exact same rarity scale.
 ##
 ## Reward-granting itself (rolling and applying the actual upgrade) lives in
-## LevelFlow.open_chest() — this node only plays out the closed -> opening
-## -> opened state machine and its own visuals; a chest has no player-choice
-## step (unlike a room-clear reward or a shop offer), so it needed no real
-## UI to wire for real (see GODOT_MIGRATION.md §5, build-order step 9).
-
-enum State { CLOSED, OPENING, OPENED }
-
-const OPEN_DURATION := 0.55
+## LevelFlow.open_chest() — this node only plays out the closed -> opened
+## state machine and its own visuals; a chest has no player-choice step
+## (unlike a room-clear reward or a shop offer), so it needed no real UI to
+## wire for real (see GODOT_MIGRATION.md §5, build-order step 9). The switch
+## is instant: LevelFlow.open_chest()/open_classified_chest() already grant
+## and show the reward the instant they call open() below, so the chest's
+## own sprite swap and burst VFX fire in that same call rather than lagging
+## behind on a timer the player has no way to perceive.
+enum State { CLOSED, OPENED }
 
 ## User-supplied art (closed/open lid states), background removed --
 ## replaces the earlier procedural body-rect + animated lid-swing silhouette.
@@ -32,7 +33,6 @@ const FLOOR_CONTACT_Y := 14.0
 var radius: float = 22.0
 var tier: UpgradeDefinition.Rarity = UpgradeDefinition.Rarity.COMMON
 var state: State = State.CLOSED
-var state_timer: float = 0.0
 var glow_phase: float = 0.0
 
 ## Loot-system pass: a SECOND, independent kind of chest this same node/
@@ -71,26 +71,21 @@ func setup_classified(pos: Vector2, p_tier: LootRarity.Tier, key_item_id: String
 func can_interact() -> bool:
 	return state == State.CLOSED
 
+## Ports Game.ts's spawnChestOpenBurst — fired there once a resolved reward
+## is shown, which happens synchronously in the same LevelFlow call that
+## invokes this, so the burst fires right here rather than on a delay.
 func open() -> void:
 	if state != State.CLOSED:
 		return
-	state = State.OPENING
-	state_timer = 0.0
+	state = State.OPENED
+	var parent := get_parent()
+	if parent != null:
+		VfxPresets.chest_open_burst(parent, global_position, _tier_color())
+	queue_redraw()
+	_update_light()
 
 func _process(dt: float) -> void:
-	state_timer += dt
 	glow_phase += dt
-	if state == State.OPENING and state_timer > OPEN_DURATION:
-		state = State.OPENED
-		state_timer = 0.0
-		# Ports Game.ts's spawnChestOpenBurst — fired there once a resolved
-		# reward is shown, which needs the upgrade-ownership system (step 9,
-		# not built yet). Firing on the chest's own OPENING -> OPENED
-		# transition instead ties it to something that already exists and
-		# happens right when the lid visually finishes opening anyway.
-		var parent := get_parent()
-		if parent != null:
-			VfxPresets.chest_open_burst(parent, global_position, _tier_color())
 	queue_redraw()
 	_update_light()
 
@@ -128,10 +123,6 @@ func _draw() -> void:
 	var color := Color(color_hex)
 	var glow_pulse: float = 0.6 + sin(glow_phase * 2.0) * 0.25
 
-	# The OPENING delay keeps showing the closed sprite so the reveal lands
-	# together with chest_open_burst() at the CLOSED -> OPENED transition
-	# (see _process) rather than showing an already-open chest before its
-	# own burst VFX fires.
 	var opened := state == State.OPENED
 	var tex: Texture2D = OPEN_TEXTURE if opened else CLOSED_TEXTURE
 	var w := SPRITE_W
