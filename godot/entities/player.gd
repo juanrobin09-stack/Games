@@ -591,15 +591,16 @@ var status_effects: Array = []
 @export var body_color: Color = Color("#e0c9a6")
 @onready var camera: Camera2D = $Camera2D
 
-## Mouse-wheel camera zoom (see _unhandled_input). CAMERA_ZOOM_MIN is the
-## point where the whole 1000x620 room (RoomContainer.ROOM_WIDTH/HEIGHT)
-## just fits the 1152x648 base viewport -- max(1152/1000, 648/620) ≈ 1.152
-## -- rounded up for a small margin; zooming out further would only add
-## empty space around an already-fully-visible room, not reveal more of
-## it. CAMERA_ZOOM_MAX is an arbitrary, moderate close-in past the 1.5
-## default. player.tscn's own Camera2D.zoom = Vector2(1.5, 1.5) is still
-## the starting value -- this only widens what the player can dial it to.
-const CAMERA_ZOOM_MIN := 1.2
+## Mouse-wheel camera zoom (see _unhandled_input). The camera isn't
+## clamped to the room's own bounds, on purpose -- zooming out past
+## CAMERA_ZOOM_MIN shows space beyond the active room's 1000x620
+## rectangle too (nothing is drawn out there, so it reads as empty/grey;
+## that's the actual, un-hidden edge of the room, not a missing texture).
+## 0.5 shows roughly 2x the room's own width and height. CAMERA_ZOOM_MAX
+## is an arbitrary, moderate close-in past the 1.5 default. player.tscn's
+## own Camera2D.zoom = Vector2(1.5, 1.5) is still the starting value --
+## this only widens what the player can dial it to.
+const CAMERA_ZOOM_MIN := 0.5
 const CAMERA_ZOOM_MAX := 2.2
 const CAMERA_ZOOM_STEP := 0.1
 
@@ -920,16 +921,6 @@ func _ready() -> void:
 	glow.color = Color(Palette.EMBER4)
 	glow.energy = 1.0
 	glow.enabled = true
-
-	# Every room shares the same local 0..ROOM_WIDTH,0..ROOM_HEIGHT rectangle
-	# (see RoomContainer's own header comment), so this one clamp is correct
-	# for whichever room is active -- without it, standing near a wall shows
-	# empty space above/beside the room (nothing is drawn there; it's not a
-	# missing texture, there's genuinely nothing past the room's own bounds).
-	camera.limit_left = 0
-	camera.limit_top = 0
-	camera.limit_right = int(RoomContainer.ROOM_WIDTH)
-	camera.limit_bottom = int(RoomContainer.ROOM_HEIGHT)
 
 	_sprite = AnimatedSprite2D.new()
 	_sprite.sprite_frames = _build_sprite_frames()
