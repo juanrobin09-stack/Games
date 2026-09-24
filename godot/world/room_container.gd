@@ -327,7 +327,45 @@ func set_active(active: bool) -> void:
 const FLOOR_TEXTURE := preload("res://assets/textures/floor_ember_crust.png")
 const FLOOR_TILE_SCALE := 0.16
 
+## Loot-system-era camera pass: the follow camera can now zoom out
+## (PlayerCharacter.CAMERA_ZOOM_MIN) past this room's own 0..ROOM_WIDTH,
+## 0..ROOM_HEIGHT rectangle, and isn't clamped to it — on request, so the
+## player can pull back and see past the room's edge, not to hide that
+## edge. These four supplied cavern-vista images (user-provided, split
+## from one 4-quadrant NORD/EST/SUD/OUEST reference and cropped clean of
+## its label badges) fill what used to be flat empty grey out there.
+## Stretched to fill their panel rather than tiled: unlike FLOOR_TEXTURE
+## above, these are one-off illustrated scenes (a specific waterfall, a
+## specific hung lantern), not a pattern designed to repeat — tiling one
+## would repeat that same lantern/waterfall visibly, which reads far more
+## artificial than a single stretched image does.
+const BACKDROP_NORTH := preload("res://assets/textures/backdrop_north.png")
+const BACKDROP_SOUTH := preload("res://assets/textures/backdrop_south.png")
+const BACKDROP_EAST := preload("res://assets/textures/backdrop_east.png")
+const BACKDROP_WEST := preload("res://assets/textures/backdrop_west.png")
+## How far past the room's own edge each panel reaches. CAMERA_ZOOM_MIN's
+## own view is 1152x648 (project base resolution) / 0.5 = 2304x1296;
+## standing right at the room's edge at that zoom can reveal up to HALF
+## the view on that axis beyond it -- 1152 horizontally (the binding case,
+## since the viewport is wider than it is tall), 648 vertically. One
+## shared margin (used for every panel's depth, horizontal or vertical)
+## has to cover the larger of the two or a corner position leaves a gap
+## on the wide axis -- confirmed the hard way with a real screenshot
+## before this was 1200 instead of an under-sized 700.
+const BACKDROP_MARGIN := 1200.0
+
+func _draw_backdrop() -> void:
+	var span := ROOM_WIDTH + BACKDROP_MARGIN * 2.0
+	# North/south panels run the full span (room width plus both margins)
+	# so they also cover the corners; east/west only need to fill the gap
+	# between them, exactly ROOM_HEIGHT tall.
+	draw_texture_rect(BACKDROP_NORTH, Rect2(-BACKDROP_MARGIN, -BACKDROP_MARGIN, span, BACKDROP_MARGIN), false)
+	draw_texture_rect(BACKDROP_SOUTH, Rect2(-BACKDROP_MARGIN, ROOM_HEIGHT, span, BACKDROP_MARGIN), false)
+	draw_texture_rect(BACKDROP_EAST, Rect2(ROOM_WIDTH, 0.0, BACKDROP_MARGIN, ROOM_HEIGHT), false)
+	draw_texture_rect(BACKDROP_WEST, Rect2(-BACKDROP_MARGIN, 0.0, BACKDROP_MARGIN, ROOM_HEIGHT), false)
+
 func _draw() -> void:
+	_draw_backdrop()
 	# draw_set_transform doit etre remis a l'identite avant _draw_walls() --
 	# meme convention que enemy.gd, un transform laisse actif fuiterait dans
 	# tous les draw_* suivants de ce _draw().
