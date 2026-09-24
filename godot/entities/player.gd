@@ -591,6 +591,18 @@ var status_effects: Array = []
 @export var body_color: Color = Color("#e0c9a6")
 @onready var camera: Camera2D = $Camera2D
 
+## Mouse-wheel camera zoom (see _unhandled_input). CAMERA_ZOOM_MIN is the
+## point where the whole 1000x620 room (RoomContainer.ROOM_WIDTH/HEIGHT)
+## just fits the 1152x648 base viewport -- max(1152/1000, 648/620) ≈ 1.152
+## -- rounded up for a small margin; zooming out further would only add
+## empty space around an already-fully-visible room, not reveal more of
+## it. CAMERA_ZOOM_MAX is an arbitrary, moderate close-in past the 1.5
+## default. player.tscn's own Camera2D.zoom = Vector2(1.5, 1.5) is still
+## the starting value -- this only widens what the player can dial it to.
+const CAMERA_ZOOM_MIN := 1.2
+const CAMERA_ZOOM_MAX := 2.2
+const CAMERA_ZOOM_STEP := 0.1
+
 var _sprite: AnimatedSprite2D
 ## Hysteresis for flip_h: only re-evaluated while the aim direction has a
 ## meaningful horizontal component, so aiming near-exactly up/down doesn't
@@ -909,6 +921,16 @@ func _ready() -> void:
 	glow.energy = 1.0
 	glow.enabled = true
 
+	# Every room shares the same local 0..ROOM_WIDTH,0..ROOM_HEIGHT rectangle
+	# (see RoomContainer's own header comment), so this one clamp is correct
+	# for whichever room is active -- without it, standing near a wall shows
+	# empty space above/beside the room (nothing is drawn there; it's not a
+	# missing texture, there's genuinely nothing past the room's own bounds).
+	camera.limit_left = 0
+	camera.limit_top = 0
+	camera.limit_right = int(RoomContainer.ROOM_WIDTH)
+	camera.limit_bottom = int(RoomContainer.ROOM_HEIGHT)
+
 	_sprite = AnimatedSprite2D.new()
 	_sprite.sprite_frames = _build_sprite_frames()
 	_sprite.scale = Vector2(SPRITE_SCALE, SPRITE_SCALE)
@@ -1004,6 +1026,26 @@ func _ambient_compensation() -> float:
 	if level >= 0.999:
 		return 1.0
 	return pow(1.0 / maxf(level, 0.02), AMBIENT_COMPENSATION)
+
+## Scroll wheel zooms the follow camera in/out, clamped to
+## [CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX]. Godot's Camera2D.zoom follows this
+## project's existing convention (see room_container.gd's CAMERA_ZOOM
+## comment): a HIGHER value magnifies (zoomed in, less of the room
+## visible), a LOWER value shows more of the room (zoomed out) -- wheel up
+## zooms in, wheel down zooms out, the usual convention. Reads _unhandled_
+## input rather than _read_input()'s per-frame polling since a wheel tick
+## is a discrete event, not held state; it naturally stops firing while a
+## modal has paused the tree, same as every other player input already does.
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			_zoom_camera(CAMERA_ZOOM_STEP)
+		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			_zoom_camera(-CAMERA_ZOOM_STEP)
+
+func _zoom_camera(step: float) -> void:
+	var z: float = clampf(camera.zoom.x + step, CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX)
+	camera.zoom = Vector2(z, z)
 
 func _read_input() -> void:
 	var x := 0.0
