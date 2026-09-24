@@ -331,18 +331,17 @@ const FLOOR_TILE_SCALE := 0.16
 ## (PlayerCharacter.CAMERA_ZOOM_MIN) past this room's own 0..ROOM_WIDTH,
 ## 0..ROOM_HEIGHT rectangle, and isn't clamped to it — on request, so the
 ## player can pull back and see past the room's edge, not to hide that
-## edge. These four supplied cavern-vista images (user-provided, split
-## from one 4-quadrant NORD/EST/SUD/OUEST reference and cropped clean of
-## its label badges) fill what used to be flat empty grey out there.
-## Stretched to fill their panel rather than tiled: unlike FLOOR_TEXTURE
-## above, these are one-off illustrated scenes (a specific waterfall, a
-## specific hung lantern), not a pattern designed to repeat — tiling one
-## would repeat that same lantern/waterfall visibly, which reads far more
-## artificial than a single stretched image does.
-const BACKDROP_NORTH := preload("res://assets/textures/backdrop_north.png")
-const BACKDROP_SOUTH := preload("res://assets/textures/backdrop_south.png")
-const BACKDROP_EAST := preload("res://assets/textures/backdrop_east.png")
-const BACKDROP_WEST := preload("res://assets/textures/backdrop_west.png")
+## edge. This user-supplied cavern-vista image fills what used to be flat
+## empty grey out there. An earlier pass used four different DIRECTIONAL
+## images (one per side, cut from a single NORD/EST/SUD/OUEST reference);
+## replaced with this one shared image on the user's own request, since
+## it reads as a single symmetric surrounding view rather than four
+## unrelated scenes. Stretched to fill each panel rather than tiled:
+## unlike FLOOR_TEXTURE above, this is a one-off illustrated scene (a
+## specific waterfall, specific hung lanterns), not a pattern designed to
+## repeat — tiling it would repeat those same lanterns visibly across
+## each panel, which reads far more artificial than a single stretch does.
+const BACKDROP_TEXTURE := preload("res://assets/textures/backdrop.png")
 ## How far past the room's own edge each panel reaches. CAMERA_ZOOM_MIN's
 ## own view is 1152x648 (project base resolution) / 0.5 = 2304x1296;
 ## standing right at the room's edge at that zoom can reveal up to HALF
@@ -358,11 +357,13 @@ func _draw_backdrop() -> void:
 	var span := ROOM_WIDTH + BACKDROP_MARGIN * 2.0
 	# North/south panels run the full span (room width plus both margins)
 	# so they also cover the corners; east/west only need to fill the gap
-	# between them, exactly ROOM_HEIGHT tall.
-	draw_texture_rect(BACKDROP_NORTH, Rect2(-BACKDROP_MARGIN, -BACKDROP_MARGIN, span, BACKDROP_MARGIN), false)
-	draw_texture_rect(BACKDROP_SOUTH, Rect2(-BACKDROP_MARGIN, ROOM_HEIGHT, span, BACKDROP_MARGIN), false)
-	draw_texture_rect(BACKDROP_EAST, Rect2(ROOM_WIDTH, 0.0, BACKDROP_MARGIN, ROOM_HEIGHT), false)
-	draw_texture_rect(BACKDROP_WEST, Rect2(-BACKDROP_MARGIN, 0.0, BACKDROP_MARGIN, ROOM_HEIGHT), false)
+	# between them, exactly ROOM_HEIGHT tall. Same texture on all four --
+	# see BACKDROP_TEXTURE's own comment for why this replaced four
+	# different directional images.
+	draw_texture_rect(BACKDROP_TEXTURE, Rect2(-BACKDROP_MARGIN, -BACKDROP_MARGIN, span, BACKDROP_MARGIN), false)
+	draw_texture_rect(BACKDROP_TEXTURE, Rect2(-BACKDROP_MARGIN, ROOM_HEIGHT, span, BACKDROP_MARGIN), false)
+	draw_texture_rect(BACKDROP_TEXTURE, Rect2(ROOM_WIDTH, 0.0, BACKDROP_MARGIN, ROOM_HEIGHT), false)
+	draw_texture_rect(BACKDROP_TEXTURE, Rect2(-BACKDROP_MARGIN, 0.0, BACKDROP_MARGIN, ROOM_HEIGHT), false)
 
 func _draw() -> void:
 	_draw_backdrop()
